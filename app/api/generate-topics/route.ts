@@ -556,7 +556,7 @@ function findExactQuotes(
 
 export async function POST(request: Request) {
   try {
-    const { transcript, model = 'gemini-2.5-flash' } = await request.json();
+    const { transcript, model = 'gemini-2.5-flash', targetLanguage = 'en' } = await request.json();
 
     if (!transcript || !Array.isArray(transcript)) {
       return NextResponse.json(
@@ -584,8 +584,16 @@ export async function POST(request: Request) {
     
     const transcriptWithTimestamps = formatTranscriptWithTimestamps(transcript);
 
+    const languageInstructions = targetLanguage !== 'en' ? `
+
+## Language Requirements
+IMPORTANT: Generate all titles and descriptions in ${targetLanguage === 'zh' ? 'Simplified Chinese (简体中文)' : targetLanguage === 'ja' ? 'Japanese (日本語)' : 'English'}. 
+- Translate the "title" field to the target language
+- Keep the "text" field in the original English (as it must match the transcript exactly)
+- Make titles culturally appropriate and natural-sounding in the target language` : '';
+
     const prompt = `## Role and Goal
-You are an expert content strategist. Your goal is to analyze the provided video transcript and description to create 5 distinct "highlight reels." Each reel will focus on a single, powerful theme, supported by direct quotes from the speaker. The final output should allow a busy, intelligent viewer to absorb the video's most valuable insights in minutes.
+You are an expert content strategist. Your goal is to analyze the provided video transcript and description to create 5 distinct "highlight reels." Each reel will focus on a single, powerful theme, supported by direct quotes from the speaker. The final output should allow a busy, intelligent viewer to absorb the video's most valuable insights in minutes.${languageInstructions}
 
 ## Target Audience
 Your audience is forward-thinking and curious. They have a short attention span and are looking for contrarian insights, actionable mental models, and bold predictions, not generic advice.

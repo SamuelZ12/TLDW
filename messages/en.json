@@ -1,0 +1,64 @@
+{
+  "app": {
+    "title": "TLDW",
+    "subtitle": "Too Long; Didn't Watch - Smart Video Navigation",
+    "urlPlaceholder": "Enter YouTube URL...",
+    "analyzeButton": "Analyze Video",
+    "model": "Model",
+    "error": {
+      "invalidUrl": "Invalid YouTube URL",
+      "failedTranscript": "Failed to fetch transcript",
+      "failedTopics": "Failed to generate topics",
+      "networkError": "Network error: Unable to connect to server. Please ensure the server is running.",
+      "timeout": "Request timed out. Please try again.",
+      "topicTimeout": "Topic generation timed out. The video might be too long. Please try a shorter video."
+    },
+    "loading": {
+      "analyzing": "Analyzing video and generating highlight reels",
+      "fetching": "Fetching transcript...",
+      "understanding": "Understanding content...",
+      "generating": "Creating highlight reels... ({seconds} seconds)",
+      "tips": {
+        "title": "While You Wait",
+        "tip1": "Highlight reels identify key themes across the entire video",
+        "tip2": "Each reel contains related segments from different timestamps",
+        "tip3": "You can chat with AI about any part of the transcript"
+      }
+    },
+    "empty": {
+      "title": "Enter a YouTube URL above to get started",
+      "subtitle": "We'll analyze the video and create smart topics for efficient navigation"
+    }
+  },
+  "transcript": {
+    "title": "Transcript",
+    "autoScroll": "Auto-scroll",
+    "scrollToCurrent": "Scroll to current",
+    "settings": "Transcript Settings",
+    "displayMode": {
+      "label": "Display Mode",
+      "original": "Original Only",
+      "sideBySide": "Side by Side",
+      "overlay": "Hover Translation"
+    }
+  },
+  "topics": {
+    "highlightReels": "Highlight Reels",
+    "playAll": "Play All",
+    "pause": "Pause",
+    "next": "Next",
+    "viewTranscript": "View Transcript"
+  },
+  "chat": {
+    "title": "AI Assistant",
+    "placeholder": "Ask a question about the video...",
+    "send": "Send",
+    "suggestedQuestions": "Suggested Questions",
+    "citation": "Citation"
+  },
+  "settings": {
+    "language": "Language",
+    "transcriptDisplay": "Transcript Display",
+    "autoTranslate": "Auto-translate content"
+  }
+}

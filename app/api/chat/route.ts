@@ -155,7 +155,7 @@ function extractCitations(response: string, transcript: TranscriptSegment[], max
 
 export async function POST(request: Request) {
   try {
-    const { message, transcript, topics, chatHistory, model } = await request.json();
+    const { message, transcript, topics, chatHistory, model, targetLanguage = 'en' } = await request.json();
 
     if (!message || !transcript) {
       return NextResponse.json(
@@ -173,7 +173,11 @@ export async function POST(request: Request) {
       `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
     ).join('\n\n') || '';
 
-    const prompt = `You are a concise AI assistant helping users understand a video transcript.
+    const languageInstructions = targetLanguage !== 'en' ? `
+
+IMPORTANT: Respond entirely in ${targetLanguage === 'zh' ? 'Simplified Chinese (简体中文)' : targetLanguage === 'ja' ? 'Japanese (日本語)' : 'English'}. Keep timestamp references in [MM:SS] format.` : '';
+
+    const prompt = `You are a concise AI assistant helping users understand a video transcript.${languageInstructions}
 
 ## Video Topics
 ${topicsContext}

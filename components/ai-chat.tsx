@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { ChatMessage, TranscriptSegment, Topic } from "@/lib/types";
 import { ChatMessageComponent } from "./chat-message";
 import { SuggestedQuestions } from "./suggested-questions";
@@ -20,6 +21,8 @@ interface AIChatProps {
 }
 
 export function AIChat({ transcript, topics, videoId, onTimestampClick }: AIChatProps) {
+  const t = useTranslations('chat');
+  const locale = useLocale();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -104,6 +107,7 @@ export function AIChat({ transcript, topics, videoId, onTimestampClick }: AIChat
           videoId,
           chatHistory: messages,
           model: selectedModel,
+          targetLanguage: locale,
         }),
         signal: controller.signal,
       });
@@ -245,7 +249,7 @@ export function AIChat({ transcript, topics, videoId, onTimestampClick }: AIChat
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask about the video..."
+              placeholder={t('placeholder')}
               className="resize-none"
               rows={2}
               disabled={isLoading}

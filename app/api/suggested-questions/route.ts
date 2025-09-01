@@ -15,7 +15,7 @@ function getTranscriptSample(segments: TranscriptSegment[], maxLength: number = 
 
 export async function POST(request: Request) {
   try {
-    const { transcript, topics, model } = await request.json();
+    const { transcript, topics, model, targetLanguage = 'en' } = await request.json();
 
     if (!transcript || !Array.isArray(transcript)) {
       return NextResponse.json(
@@ -29,7 +29,10 @@ export async function POST(request: Request) {
       `- ${t.title}: ${t.description}`
     ).join('\n') || 'No topics available';
 
-    const prompt = `Based on this video transcript and topics, generate 3 thought-provoking questions that viewers might want to ask about the content.
+    const languageInstructions = targetLanguage !== 'en' ? `
+IMPORTANT: Generate all questions in ${targetLanguage === 'zh' ? 'Simplified Chinese' : targetLanguage === 'ja' ? 'Japanese' : 'English'}.` : '';
+
+    const prompt = `Based on this video transcript and topics, generate 3 thought-provoking questions that viewers might want to ask about the content.${languageInstructions}
 
 ## Video Topics
 ${topicsContext}

@@ -1,0 +1,64 @@
+{
+  "app": {
+    "title": "TLDW",
+    "subtitle": "長すぎて見なかった - スマートビデオナビゲーション",
+    "urlPlaceholder": "YouTube URLを入力...",
+    "analyzeButton": "動画を分析",
+    "model": "モデル",
+    "error": {
+      "invalidUrl": "無効なYouTube URL",
+      "failedTranscript": "字幕の取得に失敗しました",
+      "failedTopics": "トピックの生成に失敗しました",
+      "networkError": "ネットワークエラー：サーバーに接続できません。サーバーが実行されていることを確認してください。",
+      "timeout": "リクエストがタイムアウトしました。もう一度お試しください。",
+      "topicTimeout": "トピック生成がタイムアウトしました。動画が長すぎる可能性があります。より短い動画をお試しください。"
+    },
+    "loading": {
+      "analyzing": "動画を分析してハイライトリールを生成中",
+      "fetching": "字幕を取得中...",
+      "understanding": "コンテンツを理解中...",
+      "generating": "ハイライトリールを作成中...（{seconds} 秒）",
+      "tips": {
+        "title": "お待ちください",
+        "tip1": "ハイライトリールは動画全体から重要なテーマを識別します",
+        "tip2": "各リールには異なるタイムスタンプからの関連セグメントが含まれます",
+        "tip3": "字幕のどの部分についてもAIとチャットできます"
+      }
+    },
+    "empty": {
+      "title": "上にYouTube URLを入力して開始",
+      "subtitle": "動画を分析し、効率的なナビゲーションのためのスマートトピックを作成します"
+    }
+  },
+  "transcript": {
+    "title": "字幕",
+    "autoScroll": "自動スクロール",
+    "scrollToCurrent": "現在位置へスクロール",
+    "settings": "字幕設定",
+    "displayMode": {
+      "label": "表示モード",
+      "original": "原文のみ",
+      "sideBySide": "並列表示",
+      "overlay": "ホバー翻訳"
+    }
+  },
+  "topics": {
+    "highlightReels": "ハイライトリール",
+    "playAll": "すべて再生",
+    "pause": "一時停止",
+    "next": "次へ",
+    "viewTranscript": "字幕を表示"
+  },
+  "chat": {
+    "title": "AIアシスタント",
+    "placeholder": "動画について質問してください...",
+    "send": "送信",
+    "suggestedQuestions": "おすすめの質問",
+    "citation": "引用"
+  },
+  "settings": {
+    "language": "言語",
+    "transcriptDisplay": "字幕表示",
+    "autoTranslate": "コンテンツを自動翻訳"
+  }
+}

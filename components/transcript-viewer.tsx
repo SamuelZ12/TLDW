@@ -6,9 +6,12 @@ import { getTopicHSLColor, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Play, Eye, EyeOff, ChevronDown } from "lucide-react";
+import { Play, Eye, EyeOff, ChevronDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { TranscriptSettings } from "@/components/transcript-settings";
+import { useSettings } from "@/contexts/settings-context";
+import { useLocale, useTranslations } from "next-intl";
 
 interface TranscriptViewerProps {
   transcript: TranscriptSegment[];
@@ -27,6 +30,11 @@ export function TranscriptViewer({
   topics = [],
   citationHighlight,
 }: TranscriptViewerProps) {
+  const t = useTranslations('transcript');
+  const locale = useLocale();
+  const { transcriptDisplayMode, getFromTranslationCache, addToTranslationCache } = useSettings();
+  const [translations, setTranslations] = useState<Map<number, string>>(new Map());
+  const [loadingTranslations, setLoadingTranslations] = useState<Set<number>>(new Set());
   const highlightedRefs = useRef<(HTMLDivElement | null)[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
@@ -36,6 +44,8 @@ export function TranscriptViewer({
   const [showScrollToCurrentButton, setShowScrollToCurrentButton] = useState(false);
   const lastUserScrollTime = useRef<number>(0);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const translationQueue = useRef<Set<number>>(new Set());
+  const translationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Clear refs when topic changes
   useEffect(() => {
@@ -183,6 +193,85 @@ export function TranscriptViewer({
       }
     }
   }, [currentTime, autoScroll, scrollToElement]);
+
+  // Translation functions
+  const fetchTranslation = useCallback(async (segmentIndex: number, text: string) => {
+    if (locale === 'en') return; // Don't translate if already in English
+    
+    const cacheKey = `${segmentIndex}-${locale}`;
+    const cached = getFromTranslationCache(cacheKey);
+    if (cached) {
+      setTranslations(prev => new Map(prev).set(segmentIndex, cached));
+      return;
+    }
+
+    setLoadingTranslations(prev => new Set(prev).add(segmentIndex));
+    
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, targetLanguage: locale }),
+      });
+      
+      if (response.ok) {
+        const { translation } = await response.json();
+        addToTranslationCache(cacheKey, translation);
+        setTranslations(prev => new Map(prev).set(segmentIndex, translation));
+      }
+    } catch (error) {
+      console.error('Translation error:', error);
+    } finally {
+      setLoadingTranslations(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(segmentIndex);
+        return newSet;
+      });
+    }
+  }, [locale, getFromTranslationCache, addToTranslationCache]);
+
+  // Batch translation loading
+  useEffect(() => {
+    if (transcriptDisplayMode === 'sideBySide' && locale !== 'en') {
+      // Clear previous timeout
+      if (translationTimeoutRef.current) {
+        clearTimeout(translationTimeoutRef.current);
+      }
+
+      // Debounce translation requests
+      translationTimeoutRef.current = setTimeout(() => {
+        // Get visible segments
+        const viewport = scrollViewportRef.current;
+        if (!viewport) return;
+
+        const viewportRect = viewport.getBoundingClientRect();
+        const visibleSegments: number[] = [];
+
+        transcript.forEach((segment, idx) => {
+          const element = document.getElementById(`segment-${idx}`);
+          if (element) {
+            const rect = element.getBoundingClientRect();
+            if (rect.bottom >= viewportRect.top && rect.top <= viewportRect.bottom) {
+              visibleSegments.push(idx);
+            }
+          }
+        });
+
+        // Load translations for visible segments
+        visibleSegments.forEach(idx => {
+          if (!translations.has(idx) && !loadingTranslations.has(idx)) {
+            fetchTranslation(idx, transcript[idx].text);
+          }
+        });
+      }, 300);
+    }
+
+    return () => {
+      if (translationTimeoutRef.current) {
+        clearTimeout(translationTimeoutRef.current);
+      }
+    };
+  }, [transcript, transcriptDisplayMode, locale, translations, loadingTranslations, fetchTranslation]);
 
   // Add scroll event listener
   useEffect(() => {
@@ -455,9 +544,10 @@ export function TranscriptViewer({
         <div className="p-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-sm">Transcript</h3>
+            <h3 className="font-semibold text-sm">{t('title')}</h3>
           </div>
           <div className="flex items-center gap-2">
+            <TranscriptSettings />
             <Button
               variant={autoScroll ? "default" : "outline"}
               size="sm"
@@ -567,6 +657,7 @@ export function TranscriptViewer({
               <Tooltip key={index} delayDuration={300}>
                 <TooltipTrigger asChild>
                   <div
+                    id={`segment-${index}`}
                     ref={(el) => {
                       // Store refs properly
                       if (el) {
@@ -584,7 +675,13 @@ export function TranscriptViewer({
                       isHovered && "bg-muted"
                     )}
                     onClick={() => handleSegmentClick(segment, hasTopicHighlight, hasCitationHighlight)}
-                    onMouseEnter={() => setHoveredSegment(index)}
+                    onMouseEnter={() => {
+                      setHoveredSegment(index);
+                      // Load translation on hover in overlay mode
+                      if (transcriptDisplayMode === 'overlay' && locale !== 'en' && !translations.has(index) && !loadingTranslations.has(index)) {
+                        fetchTranslation(index, segment.text);
+                      }
+                    }}
                     onMouseLeave={() => setHoveredSegment(null)}
                   >
                     {/* Play indicator on hover */}
@@ -595,48 +692,170 @@ export function TranscriptViewer({
                     )}
 
 
-                    {/* Transcript text with partial highlighting */}
-                    <p 
-                      className={cn(
-                        "text-sm leading-relaxed",
-                        isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
-                      )}
-                    >
-                      {finalHighlightedParts ? (
-                        finalHighlightedParts.map((part, partIndex) => {
-                          const isCitation = 'isCitation' in part && part.isCitation;
-                          
-                          return (
-                            <span
-                              key={partIndex}
-                              className={part.highlighted ? "text-foreground" : ""}
-                              style={
-                                part.highlighted
-                                  ? isCitation
-                                    ? {
-                                        backgroundColor: 'hsl(48, 100%, 85%)',
-                                        padding: '1px 3px',
-                                        borderRadius: '3px',
-                                        boxShadow: '0 0 0 1px hsl(48, 100%, 50%, 0.3)',
-                                      }
-                                    : selectedTopic
-                                    ? {
-                                        backgroundColor: `hsl(${getTopicHSLColor(topics.indexOf(selectedTopic))} / 0.2)`,
-                                        padding: '0 2px',
-                                        borderRadius: '2px',
-                                      }
-                                    : undefined
-                                  : undefined
-                              }
-                            >
-                              {part.text}
+                    {/* Bilingual text display */}
+                    {transcriptDisplayMode === 'sideBySide' && locale !== 'en' && (
+                      <div className="space-y-1 mb-1">
+                        {/* Translation */}
+                        <p className={cn(
+                          "text-sm leading-relaxed",
+                          isCurrent ? "text-foreground font-medium" : "text-foreground/90"
+                        )}>
+                          {loadingTranslations.has(index) ? (
+                            <span className="inline-flex items-center gap-1 text-muted-foreground">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Loading translation...
                             </span>
-                          );
-                        })
-                      ) : (
-                        segment.text
-                      )}
-                    </p>
+                          ) : (
+                            translations.get(index) || segment.text
+                          )}
+                        </p>
+                        {/* Original English with highlighting */}
+                        <p className={cn(
+                          "text-xs leading-relaxed italic",
+                          isCurrent ? "text-muted-foreground/80" : "text-muted-foreground/60"
+                        )}>
+                          {finalHighlightedParts ? (
+                            finalHighlightedParts.map((part, partIndex) => {
+                              const isCitation = 'isCitation' in part && part.isCitation;
+                              return (
+                                <span
+                                  key={partIndex}
+                                  className={part.highlighted ? "text-muted-foreground" : ""}
+                                  style={
+                                    part.highlighted
+                                      ? isCitation
+                                        ? {
+                                            backgroundColor: 'hsl(48, 100%, 85%, 0.5)',
+                                            padding: '1px 3px',
+                                            borderRadius: '3px',
+                                          }
+                                        : selectedTopic
+                                        ? {
+                                            backgroundColor: `hsl(${getTopicHSLColor(topics.indexOf(selectedTopic))} / 0.15)`,
+                                            padding: '0 2px',
+                                            borderRadius: '2px',
+                                          }
+                                        : undefined
+                                      : undefined
+                                  }
+                                >
+                                  {part.text}
+                                </span>
+                              );
+                            })
+                          ) : (
+                            segment.text
+                          )}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Original display mode or English locale */}
+                    {(transcriptDisplayMode === 'original' || locale === 'en') && (
+                      <p 
+                        className={cn(
+                          "text-sm leading-relaxed",
+                          isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
+                        )}
+                      >
+                        {finalHighlightedParts ? (
+                          finalHighlightedParts.map((part, partIndex) => {
+                            const isCitation = 'isCitation' in part && part.isCitation;
+                            
+                            return (
+                              <span
+                                key={partIndex}
+                                className={part.highlighted ? "text-foreground" : ""}
+                                style={
+                                  part.highlighted
+                                    ? isCitation
+                                      ? {
+                                          backgroundColor: 'hsl(48, 100%, 85%)',
+                                          padding: '1px 3px',
+                                          borderRadius: '3px',
+                                          boxShadow: '0 0 0 1px hsl(48, 100%, 50%, 0.3)',
+                                        }
+                                      : selectedTopic
+                                      ? {
+                                          backgroundColor: `hsl(${getTopicHSLColor(topics.indexOf(selectedTopic))} / 0.2)`,
+                                          padding: '0 2px',
+                                          borderRadius: '2px',
+                                        }
+                                      : undefined
+                                    : undefined
+                                }
+                              >
+                                {part.text}
+                              </span>
+                            );
+                          })
+                        ) : (
+                          segment.text
+                        )}
+                      </p>
+                    )}
+                    
+                    {/* Overlay mode */}
+                    {transcriptDisplayMode === 'overlay' && locale !== 'en' && (
+                      <div className="relative group/overlay">
+                        <p 
+                          className={cn(
+                            "text-sm leading-relaxed",
+                            isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
+                          )}
+                        >
+                          {finalHighlightedParts ? (
+                            finalHighlightedParts.map((part, partIndex) => {
+                              const isCitation = 'isCitation' in part && part.isCitation;
+                              
+                              return (
+                                <span
+                                  key={partIndex}
+                                  className={part.highlighted ? "text-foreground" : ""}
+                                  style={
+                                    part.highlighted
+                                      ? isCitation
+                                        ? {
+                                            backgroundColor: 'hsl(48, 100%, 85%)',
+                                            padding: '1px 3px',
+                                            borderRadius: '3px',
+                                            boxShadow: '0 0 0 1px hsl(48, 100%, 50%, 0.3)',
+                                          }
+                                      : selectedTopic
+                                      ? {
+                                          backgroundColor: `hsl(${getTopicHSLColor(topics.indexOf(selectedTopic))} / 0.2)`,
+                                          padding: '0 2px',
+                                          borderRadius: '2px',
+                                        }
+                                      : undefined
+                                    : undefined
+                                }
+                              >
+                                {part.text}
+                              </span>
+                            );
+                          })
+                        ) : (
+                          segment.text
+                        )}
+                      </p>
+                      {/* Hover translation tooltip */}
+                      <div className="absolute left-0 right-0 top-full mt-1 z-10 opacity-0 pointer-events-none group-hover/overlay:opacity-100 group-hover/overlay:pointer-events-auto transition-opacity">
+                        <div className="bg-popover border rounded-md p-2 shadow-lg">
+                          <p className="text-sm text-foreground">
+                            {loadingTranslations.has(index) ? (
+                              <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Loading translation...
+                              </span>
+                            ) : (
+                              translations.get(index) || 'Hover to load translation...'
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   </div>
                 </TooltipTrigger>

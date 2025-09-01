@@ -1,0 +1,64 @@
+{
+  "app": {
+    "title": "TLDW",
+    "subtitle": "太长不看 - 智能视频导航",
+    "urlPlaceholder": "输入 YouTube 链接...",
+    "analyzeButton": "分析视频",
+    "model": "模型",
+    "error": {
+      "invalidUrl": "无效的 YouTube 链接",
+      "failedTranscript": "获取字幕失败",
+      "failedTopics": "生成主题失败",
+      "networkError": "网络错误：无法连接到服务器。请确保服务器正在运行。",
+      "timeout": "请求超时，请重试。",
+      "topicTimeout": "主题生成超时。视频可能太长，请尝试较短的视频。"
+    },
+    "loading": {
+      "analyzing": "正在分析视频并生成精华片段",
+      "fetching": "获取字幕中...",
+      "understanding": "理解内容中...",
+      "generating": "创建精华片段中...（{seconds} 秒）",
+      "tips": {
+        "title": "请稍候",
+        "tip1": "精华片段会识别整个视频中的关键主题",
+        "tip2": "每个片段包含来自不同时间戳的相关内容",
+        "tip3": "您可以与 AI 聊天讨论字幕的任何部分"
+      }
+    },
+    "empty": {
+      "title": "在上方输入 YouTube 链接开始",
+      "subtitle": "我们将分析视频并创建智能主题以便高效导航"
+    }
+  },
+  "transcript": {
+    "title": "字幕",
+    "autoScroll": "自动滚动",
+    "scrollToCurrent": "滚动到当前位置",
+    "settings": "字幕设置",
+    "displayMode": {
+      "label": "显示模式",
+      "original": "仅原文",
+      "sideBySide": "双语对照",
+      "overlay": "悬停翻译"
+    }
+  },
+  "topics": {
+    "highlightReels": "精华片段",
+    "playAll": "全部播放",
+    "pause": "暂停",
+    "next": "下一个",
+    "viewTranscript": "查看字幕"
+  },
+  "chat": {
+    "title": "AI 助手",
+    "placeholder": "询问关于视频的问题...",
+    "send": "发送",
+    "suggestedQuestions": "推荐问题",
+    "citation": "引用"
+  },
+  "settings": {
+    "language": "语言",
+    "transcriptDisplay": "字幕显示",
+    "autoTranslate": "自动翻译内容"
+  }
+}

@@ -6,7 +6,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(request: Request) {
   try {
-    const { transcript, videoTitle } = await request.json();
+    const { transcript, videoTitle, targetLanguage = 'en' } = await request.json();
 
     if (!transcript || !Array.isArray(transcript)) {
       return NextResponse.json(
@@ -41,7 +41,10 @@ export async function POST(request: Request) {
       });
     }
 
-    const prompt = `Based on the beginning of this video transcript${videoTitle ? ` titled "${videoTitle}"` : ''}, write a brief 2-3 sentence overview of what this video appears to be about. Focus on the main topic and what viewers can expect to learn. Be concise and engaging.
+    const languageInstructions = targetLanguage !== 'en' ? `
+IMPORTANT: Write the overview in ${targetLanguage === 'zh' ? 'Simplified Chinese' : targetLanguage === 'ja' ? 'Japanese' : 'English'}.` : '';
+
+    const prompt = `Based on the beginning of this video transcript${videoTitle ? ` titled "${videoTitle}"` : ''}, write a brief 2-3 sentence overview of what this video appears to be about. Focus on the main topic and what viewers can expect to learn. Be concise and engaging.${languageInstructions}
 
 Transcript excerpt:
 ${previewText}
