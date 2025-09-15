@@ -536,19 +536,20 @@ export default function Home() {
                     summaryError={summaryError}
                     showSummaryTab={showSummaryTab}
                   />
-                  {/* AI Chat Popup */}
-                  <AIChatPopup
-                    transcript={transcript}
-                    topics={topics}
-                    videoId={videoId}
-                    videoTitle={videoInfo?.title}
-                    onCitationClick={handleCitationClick}
-                    onTimestampClick={handleTimestampClick}
-                    onPlayAllCitations={handlePlayAllCitations}
-                  />
                 </div>
               </div>
             </div>
+
+            {/* AI Chat Popup - Fixed to viewport */}
+            <AIChatPopup
+              transcript={transcript}
+              topics={topics}
+              videoId={videoId}
+              videoTitle={videoInfo?.title}
+              onCitationClick={handleCitationClick}
+              onTimestampClick={handleTimestampClick}
+              onPlayAllCitations={handlePlayAllCitations}
+            />
           </>
         )}
 

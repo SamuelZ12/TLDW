@@ -212,7 +212,7 @@ export function AIChatPopup({
     <TooltipProvider delayDuration={0} skipDelayDuration={0} disableHoverableContent={false}>
       {/* Floating Action Button */}
       {!isOpen && (
-        <div className="absolute bottom-4 right-4 z-50">
+        <div className="fixed bottom-4 right-4 z-50">
           <Button
             onClick={toggleChat}
             size="icon"
@@ -235,7 +235,7 @@ export function AIChatPopup({
       {/* Chat Window */}
       {isOpen && (
         <div className={cn(
-          "absolute bottom-4 right-4 z-50",
+          "fixed bottom-4 right-4 z-50",
           "w-[380px] bg-background border rounded-lg shadow-2xl",
           "transition-all duration-300 ease-in-out",
           isMinimized ? "h-14" : "h-[500px]",
