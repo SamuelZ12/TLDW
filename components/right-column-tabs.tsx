@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useImperativeHandle, forwardRef } from "react";
 import { TranscriptViewer } from "@/components/transcript-viewer";
-import { AIChat } from "@/components/ai-chat";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { FileText, MessageSquare, FileEdit, Loader2 } from "lucide-react";
+import { FileText, FileEdit, Loader2 } from "lucide-react";
 import { TranscriptSegment, Topic, Citation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { SummaryViewer } from "@/components/summary-viewer";
@@ -51,7 +50,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   summaryError,
   showSummaryTab,
 }, ref) => {
-  const [activeTab, setActiveTab] = useState<"transcript" | "chat" | "summary">("summary");
+  const [activeTab, setActiveTab] = useState<"transcript" | "summary">("summary");
 
   // Expose methods to parent to switch tabs
   useImperativeHandle(ref, () => ({
@@ -91,20 +90,6 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setActiveTab("chat")}
-          className={cn(
-            "flex-1 justify-center gap-2",
-            activeTab === "chat" 
-              ? "bg-accent text-accent-foreground" 
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <MessageSquare className="h-4 w-4" />
-          AI Chat
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
           onClick={() => setActiveTab("transcript")}
           className={cn(
             "flex-1 justify-center gap-2",
@@ -128,17 +113,6 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
             currentTime={currentTime}
             topics={topics}
             citationHighlight={citationHighlight}
-          />
-        </div>
-        <div className={cn("absolute inset-0", activeTab !== "chat" && "hidden")}>
-          <AIChat
-            transcript={transcript}
-            topics={topics || []}
-            videoId={videoId}
-            videoTitle={videoTitle}
-            onCitationClick={onCitationClick}
-            onTimestampClick={onTimestampClick}
-            onPlayAllCitations={onPlayAllCitations}
           />
         </div>
         <div className={cn("absolute inset-0", activeTab !== "summary" && "hidden")}>

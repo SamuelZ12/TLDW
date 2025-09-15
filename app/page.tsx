@@ -5,6 +5,7 @@ import { UrlInput } from "@/components/url-input";
 import { TopicCard } from "@/components/topic-card";
 import { RightColumnTabs, type RightColumnTabsHandle } from "@/components/right-column-tabs";
 import { YouTubePlayer } from "@/components/youtube-player";
+import { AIChatPopup } from "@/components/ai-chat-popup";
 import { LanguageSelector, type Language } from "@/components/language-selector";
 import { LoadingContext } from "@/components/loading-context";
 import { LoadingTips } from "@/components/loading-tips";
@@ -512,8 +513,8 @@ export default function Home() {
 
               {/* Right Column - Tabbed Interface (1/3 width) */}
               <div className="lg:col-span-1">
-                <div 
-                  className="sticky top-4" 
+                <div
+                  className="sticky top-4 relative"
                   id="right-column-container"
                   style={{ height: transcriptHeight, maxHeight: transcriptHeight }}
                 >
@@ -534,6 +535,16 @@ export default function Home() {
                     isGeneratingSummary={isGeneratingSummary}
                     summaryError={summaryError}
                     showSummaryTab={showSummaryTab}
+                  />
+                  {/* AI Chat Popup */}
+                  <AIChatPopup
+                    transcript={transcript}
+                    topics={topics}
+                    videoId={videoId}
+                    videoTitle={videoInfo?.title}
+                    onCitationClick={handleCitationClick}
+                    onTimestampClick={handleTimestampClick}
+                    onPlayAllCitations={handlePlayAllCitations}
                   />
                 </div>
               </div>
