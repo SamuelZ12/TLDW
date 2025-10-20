@@ -40,3 +40,14 @@ export const topQuoteSchema = z.object({
 });
 
 export const topQuotesSchema = z.array(topQuoteSchema).min(1).max(5);
+
+// Explanation schemas
+export const explanationTermSchema = z.object({
+  term: z.string().min(1),
+  explanation: z.string().min(1)
+});
+
+export const explainResponseSchema = z.object({
+  isSelfExplanatory: z.boolean(),
+  explanations: z.array(explanationTermSchema).optional()
+});

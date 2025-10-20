@@ -65,6 +65,8 @@ export interface ChatMessage {
   content: string;
   citations?: Citation[];
   timestamp: Date;
+  isExplanation?: boolean; // Flag for explanation messages (styled differently)
+  groundedWithSearch?: boolean; // Flag for Google Search grounded responses
 }
 
 export type NoteSource = 'chat' | 'takeaways' | 'transcript' | 'custom';

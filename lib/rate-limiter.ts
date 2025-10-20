@@ -213,6 +213,10 @@ export const RATE_LIMITS = {
     windowMs: 60 * 1000, // 1 minute
     maxRequests: 10 // 10 messages per minute
   },
+  ANON_EXPLAIN: {
+    windowMs: 30 * 60 * 1000, // 30 minutes
+    maxRequests: 5 // 5 explanations per 30 minutes (Google Search costs $35/1000 queries)
+  },
 
   // Authenticated users
   AUTH_GENERATION: {
@@ -226,6 +230,10 @@ export const RATE_LIMITS = {
   AUTH_CHAT: {
     windowMs: 60 * 1000, // 1 minute
     maxRequests: 30 // 30 messages per minute
+  },
+  AUTH_EXPLAIN: {
+    windowMs: 30 * 60 * 1000, // 30 minutes
+    maxRequests: 20 // 20 explanations per 30 minutes (Google Search costs $35/1000 queries)
   },
 
   // General API endpoints

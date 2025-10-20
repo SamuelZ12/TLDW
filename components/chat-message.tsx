@@ -314,7 +314,29 @@ const findMatchingCitation = useCallback((seconds: number): Citation | null => {
         </Card>
       ) : (
         <div className="w-full py-1">
-          <div className="prose dark:prose-invert max-w-none text-sm [&>*:last-child]:mb-0">
+          {/* Explanation badge */}
+          {message.isExplanation && (
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground px-2 py-1 rounded-md bg-accent/30 border border-accent/40">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="font-medium">Explanation</span>
+              </span>
+              {message.groundedWithSearch && (
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground px-2 py-1 rounded-md bg-blue-500/10 border border-blue-500/20">
+                  <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <span className="font-medium text-blue-500">Grounded with Google Search</span>
+                </span>
+              )}
+            </div>
+          )}
+          <div className={cn(
+            "prose dark:prose-invert max-w-none text-sm [&>*:last-child]:mb-0",
+            message.isExplanation && "p-4 rounded-lg bg-accent/10 border border-accent/20"
+          )}>
             <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{

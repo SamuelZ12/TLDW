@@ -816,23 +816,160 @@ export function AIChat({ transcript, topics, videoId, videoTitle, videoInfo, onC
   }, [executeTopQuotes]);
 
   useEffect(() => {
-    const handleExplain = (event: Event) => {
+    const handleExplain = async (event: Event) => {
       const custom = event as CustomEvent<SelectionActionPayload>;
       const detail = custom.detail;
       if (!detail?.text?.trim()) {
         return;
       }
 
-      const prompt = `Explain "${detail.text.trim()}"`;
+      const selectedText = detail.text.trim();
 
-      sendMessage(prompt);
+      // Add user message immediately
+      const userMessageId = crypto.randomUUID();
+      const userMessage: ChatMessage = {
+        id: userMessageId,
+        role: "user",
+        content: `Explain: "${selectedText}"`,
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, userMessage]);
+      setIsLoading(true);
+
+      try {
+        // Extract context from transcript
+        const linesBefore: string[] = [];
+        const linesAfter: string[] = [];
+
+        // Try to find the selected text in the transcript to get surrounding context
+        if (detail.metadata?.transcript?.segmentIndex !== undefined) {
+          const segmentIndex = detail.metadata.transcript.segmentIndex;
+
+          // Get 2 segments before
+          for (let i = Math.max(0, segmentIndex - 2); i < segmentIndex; i++) {
+            if (transcript[i]) {
+              linesBefore.push(transcript[i].text);
+            }
+          }
+
+          // Get 2 segments after
+          for (let i = segmentIndex + 1; i <= Math.min(transcript.length - 1, segmentIndex + 2); i++) {
+            if (transcript[i]) {
+              linesAfter.push(transcript[i].text);
+            }
+          }
+        } else {
+          // If we don't have segment index, try to find the text in transcript
+          const transcriptText = transcript.map(s => s.text).join(' ');
+          const textIndex = transcriptText.indexOf(selectedText);
+
+          if (textIndex !== -1) {
+            // Find which segment contains this text
+            let charCount = 0;
+            let segmentIndex = -1;
+
+            for (let i = 0; i < transcript.length; i++) {
+              const segmentEnd = charCount + transcript[i].text.length + 1; // +1 for space
+              if (textIndex >= charCount && textIndex < segmentEnd) {
+                segmentIndex = i;
+                break;
+              }
+              charCount = segmentEnd;
+            }
+
+            if (segmentIndex !== -1) {
+              // Get 2 segments before
+              for (let i = Math.max(0, segmentIndex - 2); i < segmentIndex; i++) {
+                if (transcript[i]) {
+                  linesBefore.push(transcript[i].text);
+                }
+              }
+
+              // Get 2 segments after
+              for (let i = segmentIndex + 1; i <= Math.min(transcript.length - 1, segmentIndex + 2); i++) {
+                if (transcript[i]) {
+                  linesAfter.push(transcript[i].text);
+                }
+              }
+            }
+          }
+        }
+
+        // Call explain API
+        const response = await fetch('/api/explain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            currentSentence: selectedText,
+            videoTitle: videoTitle || videoInfo?.title,
+            videoDescription: videoInfo?.description,
+            linesBefore,
+            linesAfter,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Format explanation response
+        let explanationContent: string;
+        if (data.isSelfExplanatory) {
+          explanationContent = "This is self-explanatory.";
+        } else if (data.explanations && data.explanations.length > 0) {
+          // Format explanations as a bulleted list
+          if (data.explanations.length === 1) {
+            const { term, explanation } = data.explanations[0];
+            explanationContent = `**${term}**: ${explanation}`;
+          } else {
+            explanationContent = data.explanations
+              .map((item: { term: string; explanation: string }) => `• **${item.term}**: ${item.explanation}`)
+              .join('\n\n');
+          }
+        } else {
+          explanationContent = "No explanation available.";
+        }
+
+        // Add assistant message with explanation
+        const assistantMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: explanationContent,
+          timestamp: new Date(),
+          isExplanation: true,
+          groundedWithSearch: true, // All explanations use Google Search grounding
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch (error) {
+        console.error('Explanation error:', error);
+
+        // Add error message
+        const errorMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: error instanceof Error && error.message.includes('Rate limit')
+            ? "You've reached the explanation limit. Please wait before requesting more explanations."
+            : "Sorry, I couldn't generate an explanation. Please try again.",
+          timestamp: new Date(),
+          isExplanation: true,
+        };
+
+        setMessages((prev) => [...prev, errorMessage]);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     window.addEventListener(EXPLAIN_SELECTION_EVENT, handleExplain as EventListener);
     return () => {
       window.removeEventListener(EXPLAIN_SELECTION_EVENT, handleExplain as EventListener);
     };
-  }, [sendMessage, videoTitle]);
+  }, [transcript, videoTitle, videoInfo]);
 
   const handleSuggestedQuestionClick = useCallback((question: string, index: number) => {
     if (isLoading) {
