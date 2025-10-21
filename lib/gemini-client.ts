@@ -1,7 +1,13 @@
 import { GoogleGenerativeAI, GenerationConfig, SchemaType } from '@google/generative-ai';
 import { z } from 'zod';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const geminiApiKey = process.env.GEMINI_API_KEY;
+
+if (!geminiApiKey) {
+  console.warn('GEMINI_API_KEY is not set; Gemini requests are disabled.');
+}
+
+const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
 
 const MODEL_CASCADE = [
   'gemini-2.5-flash-lite',
@@ -117,6 +123,10 @@ export async function generateWithFallback(
   prompt: string,
   config: GeminiModelConfig = {}
 ): Promise<string> {
+  if (!genAI) {
+    throw new Error('Gemini client unavailable: set GEMINI_API_KEY in the environment.');
+  }
+
   if (config.preferredModel && !isValidModel(config.preferredModel)) {
     console.warn(`Invalid preferredModel "${config.preferredModel}", using default cascade`);
   }
