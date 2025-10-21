@@ -16,27 +16,106 @@ interface RateLimitResult {
   retryAfter?: number; // Seconds until next request allowed
 }
 
+const loggedRateLimiterMessages = new Set<string>();
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+let rateLimiterEnabled = Boolean(supabaseUrl && supabaseAnonKey);
+
+function logRateLimiterMessage(message: string, error?: unknown) {
+  if (loggedRateLimiterMessages.has(message)) {
+    return;
+  }
+  loggedRateLimiterMessages.add(message);
+  if (error) {
+    console.warn(`[RateLimiter] ${message}`, error);
+  } else {
+    console.warn(`[RateLimiter] ${message}`);
+  }
+}
+
+function disableRateLimiter(reason: string, error?: unknown) {
+  if (!rateLimiterEnabled) {
+    return;
+  }
+  rateLimiterEnabled = false;
+  logRateLimiterMessage(`Disabled: ${reason}`, error);
+}
+
+function isConfigurationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const record = error as Record<string, unknown>;
+  const code = typeof record.code === 'string' ? record.code : '';
+  const message = typeof record.message === 'string' ? record.message : '';
+  const details = typeof record.details === 'string' ? record.details : '';
+  const combined = `${message} ${details}`.toLowerCase();
+
+  if (code === '42P01') {
+    // Undefined table error in Postgres
+    return true;
+  }
+
+  return combined.includes('rate_limits') && combined.includes('does not exist');
+}
+
+async function getAnonymousIdentifier(): Promise<string> {
+  const headersList = await headers();
+  const forwardedFor = headersList.get('x-forwarded-for');
+  const realIp = headersList.get('x-real-ip');
+  const ip = forwardedFor?.split(',')[0] || realIp || 'unknown';
+
+  const hash = crypto.createHash('sha256').update(ip).digest('hex');
+  return `anon:${hash.substring(0, 16)}`;
+}
+
+function buildFallbackResult(config: RateLimitConfig): RateLimitResult {
+  const now = Date.now();
+  return {
+    allowed: true,
+    remaining: config.maxRequests,
+    resetAt: new Date(now + config.windowMs)
+  };
+}
+
+if (!rateLimiterEnabled) {
+  logRateLimiterMessage('Disabled: Supabase configuration missing.');
+}
+
 export class RateLimiter {
   private static async getIdentifier(customId?: string): Promise<string> {
     if (customId) return customId;
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (user) {
-      return `user:${user.id}`;
+    if (!rateLimiterEnabled) {
+      return getAnonymousIdentifier();
     }
 
-    // For anonymous users, use IP address hash
-    const headersList = await headers();
-    const forwardedFor = headersList.get('x-forwarded-for');
-    const realIp = headersList.get('x-real-ip');
-    const ip = forwardedFor?.split(',')[0] || realIp || 'unknown';
+    try {
+      const supabase = await createClient();
+      const { data: { user }, error } = await supabase.auth.getUser();
 
+      if (error) {
+        throw error;
+      }
 
-    // Hash the IP for privacy
-    const hash = crypto.createHash('sha256').update(ip).digest('hex');
-    return `anon:${hash.substring(0, 16)}`;
+      if (user) {
+        return `user:${user.id}`;
+      }
+    } catch (error) {
+      if (isConfigurationError(error)) {
+        disableRateLimiter('Supabase authentication unavailable', error);
+      } else {
+        logRateLimiterMessage(
+          'Falling back to anonymous identifiers due to auth lookup failure.',
+          error
+        );
+      }
+      return getAnonymousIdentifier();
+    }
+
+    return getAnonymousIdentifier();
   }
 
   static async peek(
@@ -44,13 +123,18 @@ export class RateLimiter {
     config: RateLimitConfig
   ): Promise<RateLimitResult> {
     const identifier = await this.getIdentifier(config.identifier);
+    if (!rateLimiterEnabled) {
+      return buildFallbackResult(config);
+    }
+
     const rateLimitKey = `ratelimit:${key}:${identifier}`;
 
-    const supabase = await createClient();
     const now = Date.now();
     const windowStart = now - config.windowMs;
 
     try {
+      const supabase = await createClient();
+
       // Count recent requests without modifying
       const { data: recentRequests, error: countError } = await supabase
         .from('rate_limits')
@@ -94,13 +178,12 @@ export class RateLimiter {
         resetAt
       };
     } catch (error) {
-      console.error('Rate limiter peek error:', error);
-      // On error, allow the request but log it
-      return {
-        allowed: true,
-        remaining: config.maxRequests,
-        resetAt: new Date(now + config.windowMs)
-      };
+      if (isConfigurationError(error) || !rateLimiterEnabled) {
+        disableRateLimiter('Supabase rate_limits table unavailable', error);
+      } else {
+        logRateLimiterMessage('Falling back due to rate limiter peek error.', error);
+      }
+      return buildFallbackResult(config);
     }
   }
 
@@ -109,13 +192,18 @@ export class RateLimiter {
     config: RateLimitConfig
   ): Promise<RateLimitResult> {
     const identifier = await this.getIdentifier(config.identifier);
+    if (!rateLimiterEnabled) {
+      return buildFallbackResult(config);
+    }
+
     const rateLimitKey = `ratelimit:${key}:${identifier}`;
 
-    const supabase = await createClient();
     const now = Date.now();
     const windowStart = now - config.windowMs;
 
     try {
+      const supabase = await createClient();
+
       // First, clean up old entries
       await supabase
         .from('rate_limits')
@@ -169,9 +257,12 @@ export class RateLimiter {
         });
 
       if (insertError) {
-        console.error('Failed to insert rate limit record:', insertError);
-        console.error('Rate limit key:', rateLimitKey);
-        console.error('Identifier:', identifier);
+        if (isConfigurationError(insertError)) {
+          disableRateLimiter('Supabase rate_limits table unavailable', insertError);
+        } else {
+          logRateLimiterMessage('Failed to insert rate limit record; allowing request.', insertError);
+        }
+        return buildFallbackResult(config);
       }
 
       return {
@@ -180,25 +271,36 @@ export class RateLimiter {
         resetAt
       };
     } catch (error) {
-      console.error('Rate limiter error:', error);
-      // On error, allow the request but log it
-      return {
-        allowed: true,
-        remaining: config.maxRequests,
-        resetAt: new Date(now + config.windowMs)
-      };
+      if (isConfigurationError(error) || !rateLimiterEnabled) {
+        disableRateLimiter('Supabase rate_limits table unavailable', error);
+      } else {
+        logRateLimiterMessage('Falling back due to rate limiter error.', error);
+      }
+      return buildFallbackResult(config);
     }
   }
 
   static async reset(key: string, identifier?: string): Promise<void> {
     const id = await this.getIdentifier(identifier);
+    if (!rateLimiterEnabled) {
+      return;
+    }
+
     const rateLimitKey = `ratelimit:${key}:${id}`;
 
-    const supabase = await createClient();
-    await supabase
-      .from('rate_limits')
-      .delete()
-      .eq('key', rateLimitKey);
+    try {
+      const supabase = await createClient();
+      await supabase
+        .from('rate_limits')
+        .delete()
+        .eq('key', rateLimitKey);
+    } catch (error) {
+      if (isConfigurationError(error) || !rateLimiterEnabled) {
+        disableRateLimiter('Supabase rate_limits table unavailable', error);
+      } else {
+        logRateLimiterMessage('Failed to reset rate limit entry; ignoring.', error);
+      }
+    }
   }
 }
 
@@ -221,7 +323,7 @@ export const RATE_LIMITS = {
   },
   AUTH_VIDEO_GENERATION: {
     windowMs: 24 * 60 * 60 * 1000, // 24 hours
-    maxRequests: 5 // 5 generations per day
+    maxRequests: 10 // 10 generations per day
   },
   AUTH_CHAT: {
     windowMs: 60 * 1000, // 1 minute

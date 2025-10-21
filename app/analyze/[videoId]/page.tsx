@@ -32,7 +32,7 @@ import { toast } from "sonner";
 import { buildSuggestedQuestionFallbacks } from "@/lib/suggested-question-fallback";
 
 const GUEST_LIMIT_MESSAGE = "You've used today's free analysis. Sign in to keep going.";
-const AUTH_LIMIT_MESSAGE = "You get 5 videos per day. Come back tomorrow.";
+const AUTH_LIMIT_MESSAGE = "You get 10 videos per day. Come back tomorrow.";
 
 function buildApiErrorMessage(errorData: unknown, fallback: string): string {
   if (!errorData || typeof errorData !== "object") {
@@ -93,7 +93,7 @@ export default function AnalyzePage() {
   const [themes, setThemes] = useState<string[]>([]);
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null);
   const [themeTopicsMap, setThemeTopicsMap] = useState<Record<string, Topic[]>>({});
-  const [themeCandidateMap, setThemeCandidateMap] = useState<Record<string, TopicCandidate[]>>({});
+  const [, setThemeCandidateMap] = useState<Record<string, TopicCandidate[]>>({});
   const [usedTopicKeys, setUsedTopicKeys] = useState<Set<string>>(new Set());
   const [isLoadingThemeTopics, setIsLoadingThemeTopics] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
@@ -223,7 +223,7 @@ export default function AnalyzePage() {
   );
 
   // Check for pending video linking after auth
-  const checkPendingVideoLink = async (retryCount = 0) => {
+  const checkPendingVideoLink = useCallback(async (retryCount = 0) => {
     // Check both sessionStorage and current videoId state
     const pendingVideoId = sessionStorage.getItem('pendingVideoId');
     const currentVideoId = videoId;
@@ -289,7 +289,7 @@ export default function AnalyzePage() {
         console.error('Error linking video:', error);
       }
     }
-  };
+  }, [user, videoId]);
 
   const checkRateLimit = useCallback(async () => {
     try {
@@ -334,7 +334,7 @@ export default function AnalyzePage() {
         checkPendingVideoLink();
       }, 1500);
     }
-  }, [user, videoId]); // Properly track both dependencies
+  }, [user, videoId, checkPendingVideoLink]); // Properly track both dependencies
 
   // Cleanup AbortManager on component unmount
   useEffect(() => {
@@ -1372,7 +1372,6 @@ export default function AnalyzePage() {
   }, [videoId, topics]); // Re-run when video or topics change
 
   const [notes, setNotes] = useState<Note[]>([]);
-  const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [editingNote, setEditingNote] = useState<EditingNote | null>(null);
 
   useEffect(() => {
@@ -1381,13 +1380,11 @@ export default function AnalyzePage() {
       return;
     }
 
-    setIsLoadingNotes(true);
     fetchNotes({ youtubeId: videoId })
       .then(setNotes)
       .catch((error) => {
         console.error("Failed to load notes", error);
-      })
-      .finally(() => setIsLoadingNotes(false));
+      });
   }, [videoId, user]);
 
   // Auto-switch to Chat tab when Explain is triggered from transcript
