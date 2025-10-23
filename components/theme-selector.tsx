@@ -22,9 +22,39 @@ export function ThemeSelector({
   error = null,
 }: ThemeSelectorProps) {
   const [customThemes, setCustomThemes] = useState<string[]>([]);
-  const baseThemes = useMemo(() => themes.slice(0, 3), [themes]);
+  const uniqueThemes = useMemo(() => {
+    const seen = new Set<string>();
+    const sanitized: string[] = [];
+
+    themes.forEach((theme) => {
+      const normalized = theme.trim();
+      if (!normalized) {
+        return;
+      }
+
+      const lower = normalized.toLowerCase();
+      if (seen.has(lower)) {
+        return;
+      }
+
+      seen.add(lower);
+      sanitized.push(normalized);
+    });
+
+    return sanitized;
+  }, [themes]);
+
+  const baseThemes = useMemo(() => uniqueThemes.slice(0, 3), [uniqueThemes]);
+  const customThemesLookup = useMemo(() => {
+    const lookup = new Set<string>();
+    customThemes.forEach((theme) => lookup.add(theme.toLowerCase()));
+    return lookup;
+  }, [customThemes]);
   const displayThemes = useMemo(() => {
-    const additionalThemes = customThemes.filter((theme) => !baseThemes.includes(theme));
+    const baseLookup = new Set(baseThemes.map((theme) => theme.toLowerCase()));
+    const additionalThemes = customThemes.filter(
+      (theme) => !baseLookup.has(theme.toLowerCase())
+    );
     return [...baseThemes, ...additionalThemes];
   }, [baseThemes, customThemes]);
   const hasThemes = displayThemes.length > 0;
@@ -41,8 +71,11 @@ export function ThemeSelector({
   const isSubmitDisabled = trimmedValue.length === 0 || isLoading;
 
   const isCustomThemeSelected = useMemo(() => {
-    return selectedTheme !== null && customThemes.includes(selectedTheme);
-  }, [customThemes, selectedTheme]);
+    if (!selectedTheme) {
+      return false;
+    }
+    return customThemesLookup.has(selectedTheme.toLowerCase());
+  }, [customThemesLookup, selectedTheme]);
 
   useEffect(() => {
     if (selectedTheme && !baseThemes.includes(selectedTheme)) {
@@ -101,8 +134,14 @@ export function ThemeSelector({
       return;
     }
 
+    const normalizedValue = trimmedValue.toLowerCase();
+    const baseThemesLower = baseThemes.map((theme) => theme.toLowerCase());
+
     setCustomThemes((prev) => {
-      if (baseThemes.includes(trimmedValue) || prev.includes(trimmedValue)) {
+      if (baseThemesLower.includes(normalizedValue)) {
+        return prev;
+      }
+      if (prev.some((theme) => theme.toLowerCase() === normalizedValue)) {
         return prev;
       }
       return [...prev, trimmedValue];

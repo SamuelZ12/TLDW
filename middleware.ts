@@ -6,9 +6,6 @@ export async function middleware(request: NextRequest) {
   const response = await updateSession(request)
 
   // Add Content-Security-Policy and other security headers
-  const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
-
-  // Define CSP directives
   const cspHeader = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://s.ytimg.com https://*.googleapis.com",

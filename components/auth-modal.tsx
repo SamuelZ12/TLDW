@@ -110,7 +110,7 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
           title: 'Sign up to continue',
           description: 'You\'ve used today\'s free analysis! Create a free account to keep going.',
           benefits: [
-            '5 video generations per day',
+            '10 video generations per day',
             'Save analyzed videos, notes, and highlights',
           ],
           showBenefitsCard: true,

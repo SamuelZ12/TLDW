@@ -151,7 +151,7 @@ async function handler(req: NextRequest) {
         return NextResponse.json(
           {
             error: 'Daily limit reached',
-            message: 'You get 5 videos per day. Come back tomorrow.',
+            message: 'You get 10 videos per day. Come back tomorrow.',
             code: 'DAILY_VIDEO_LIMIT_REACHED',
             limit: rateLimitConfig.maxRequests,
             remaining: 0,
