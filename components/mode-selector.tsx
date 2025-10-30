@@ -32,7 +32,7 @@ const modes = [
 ];
 
 export function ModeSelector({ value, onChange, className }: ModeSelectorProps) {
-  const currentMode = modes.find(m => m.value === value) || modes[1];
+  const currentMode = modes.find(m => m.value === value) || modes[0];
   const Icon = currentMode.icon;
 
   return (

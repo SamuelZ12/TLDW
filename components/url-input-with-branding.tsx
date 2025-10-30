@@ -24,7 +24,7 @@ export function UrlInputWithBranding({ onSubmit, isLoading = false, initialUrl, 
   const [error, setError] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const showModeSelector = typeof onModeChange === "function";
-  const modeValue: TopicGenerationMode = mode ?? "smart";
+  const modeValue: TopicGenerationMode = mode ?? "fast";
 
   useEffect(() => {
     if (initialUrl === undefined) return;

@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 
 const STORAGE_KEY = "tldw-mode-preference";
-const DEFAULT_MODE: TopicGenerationMode = "smart";
+const DEFAULT_MODE: TopicGenerationMode = "fast";
 
 /**
  * Custom hook for managing topic generation mode preference

@@ -21,7 +21,7 @@ export function UrlInput({ onSubmit, isLoading = false, mode, onModeChange }: Ur
   const [error, setError] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const showModeSelector = typeof onModeChange === "function";
-  const modeValue: TopicGenerationMode = mode ?? "smart";
+  const modeValue: TopicGenerationMode = mode ?? "fast";
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
