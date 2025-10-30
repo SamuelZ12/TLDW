@@ -53,12 +53,12 @@ export default function RootLayout({
                     className="h-7 w-7"
                     priority
                   />
-                  
+
                 </Link>
                 <UserMenu />
               </div>
             </header>
-            <main className="flex-1">
+            <main className="flex-1 mt-8 px-2">
               {children}
             </main>
             <Footer />
