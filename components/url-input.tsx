@@ -22,6 +22,7 @@ export function UrlInput({ onSubmit, isLoading = false, mode, onModeChange }: Ur
   const [isFocused, setIsFocused] = useState(false);
   const showModeSelector = typeof onModeChange === "function";
   const modeValue: TopicGenerationMode = mode ?? "fast";
+  const hasInput = url.trim().length > 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,9 +81,14 @@ export function UrlInput({ onSubmit, isLoading = false, mode, onModeChange }: Ur
             )}
             <Button
               type="submit"
-              disabled={isLoading || !url.trim()}
+              disabled={isLoading || !hasInput}
               size="icon"
-              className="h-7 w-7 shrink-0 rounded-full bg-[#B3B4B4] text-white hover:bg-[#9d9e9e] disabled:bg-[#B3B4B4] disabled:text-white disabled:opacity-100"
+              className={cn(
+                "h-7 w-7 shrink-0 rounded-full text-white transition-colors disabled:text-white disabled:opacity-100",
+                hasInput
+                  ? "bg-black hover:bg-black disabled:bg-black"
+                  : "bg-[#B3B4B4] hover:bg-[#9d9e9e] disabled:bg-[#B3B4B4]"
+              )}
             >
               {isLoading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
