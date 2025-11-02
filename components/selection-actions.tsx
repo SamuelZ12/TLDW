@@ -31,6 +31,7 @@ interface SelectionActionsProps {
   getMetadata?: (range: Range) => NoteMetadata | undefined | null;
   disabled?: boolean;
   source?: SelectionActionPayload["source"];
+  onSelectionChange?: (hasSelection: boolean) => void;
 }
 
 interface SelectionState {
@@ -46,36 +47,51 @@ export function SelectionActions({
   getMetadata,
   disabled,
   source,
+  onSelectionChange,
 }: SelectionActionsProps) {
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const latestSelectionRef = useRef<SelectionState | null>(null);
-  const container = containerRef.current;
+  const hasSelectionRef = useRef(false);
+
+  const notifySelectionChange = useCallback(
+    (hasSelection: boolean) => {
+      if (hasSelectionRef.current !== hasSelection) {
+        hasSelectionRef.current = hasSelection;
+        onSelectionChange?.(hasSelection);
+      }
+    },
+    [onSelectionChange],
+  );
 
   const clearSelection = useCallback(() => {
     setSelection(null);
     latestSelectionRef.current = null;
+    notifySelectionChange(false);
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) {
       sel.removeAllRanges();
     }
-  }, []);
+  }, [notifySelectionChange]);
 
   const handleSelectionChange = useCallback(() => {
     if (disabled) {
       setSelection(null);
+      notifySelectionChange(false);
       return;
     }
 
     const container = containerRef.current;
     if (!container) {
       setSelection(null);
+      notifySelectionChange(false);
       return;
     }
 
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
       setSelection(null);
+      notifySelectionChange(false);
       return;
     }
 
@@ -86,18 +102,21 @@ export function SelectionActions({
 
     if (!commonAncestor || (!container.contains(commonAncestor) && commonAncestor !== container)) {
       setSelection(null);
+      notifySelectionChange(false);
       return;
     }
 
     const text = sel.toString().trim();
     if (!text) {
       setSelection(null);
+      notifySelectionChange(false);
       return;
     }
 
     const rect = range.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) {
       setSelection(null);
+      notifySelectionChange(false);
       return;
     }
 
@@ -111,10 +130,12 @@ export function SelectionActions({
 
     latestSelectionRef.current = nextState;
     setSelection(nextState);
-  }, [containerRef, getMetadata, disabled]);
+    notifySelectionChange(true);
+  }, [containerRef, getMetadata, disabled, notifySelectionChange]);
 
   useEffect(() => {
     if (disabled) {
+      notifySelectionChange(false);
       return;
     }
 
@@ -146,7 +167,7 @@ export function SelectionActions({
       document.removeEventListener("scroll", handleScroll, true);
       document.removeEventListener("mousedown", clearSelection);
     };
-  }, [handleSelectionChange, selection, clearSelection, disabled]);
+  }, [handleSelectionChange, selection, clearSelection, disabled, notifySelectionChange]);
 
   useEffect(() => {
     if (disabled) {
@@ -230,4 +251,3 @@ export function SelectionActions({
     document.body
   );
 }
-
