@@ -192,7 +192,7 @@ Chunk window: ${chunkWindow}
 <goal>Identify up to ${maxCandidates} compelling highlight reel ideas that originate entirely within this transcript slice.</goal>
 <instructions>
   <item>Only use content from this chunk. If nothing stands out, return an empty list.</item>
-  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote of roughly 45-75 seconds.</item>
+  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote of roughly 30-300 seconds.</item>
   <item>Quote text must match the transcript exactly—no paraphrasing, ellipses, or stitching from multiple places.</item>
   <item>Use absolute timestamps in [MM:SS-MM:SS] format that match the transcript lines.</item>
   <item>Focus on contrarian insights, vivid stories, or data-backed arguments that could stand alone.</item>
