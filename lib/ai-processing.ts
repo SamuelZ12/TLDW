@@ -192,7 +192,7 @@ Chunk window: ${chunkWindow}
 <goal>Identify up to ${maxCandidates} compelling highlight reel ideas that originate entirely within this transcript slice.</goal>
 <instructions>
   <item>Only use content from this chunk. If nothing stands out, return an empty list.</item>
-  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote of roughly 30-300 seconds.</item>
+  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote lasting between 30 and 300 seconds.</item>
   <item>Quote text must match the transcript exactly—no paraphrasing, ellipses, or stitching from multiple places.</item>
   <item>Use absolute timestamps in [MM:SS-MM:SS] format that match the transcript lines.</item>
   <item>Focus on contrarian insights, vivid stories, or data-backed arguments that could stand alone.</item>
@@ -430,7 +430,7 @@ async function runSinglePassTopicGeneration(
       <criterion name="SelfContained">Ensure the passage stands alone. If earlier context is required, expand the selection to include it.</criterion>
       <criterion name="HighSignal">Prefer memorable stories, bold predictions, data points, specific examples, or contrarian thinking.</criterion>
       <criterion name="NoFluff">Exclude unrelated tangents or filler.</criterion>
-      <criterion name="Duration" targetSeconds="60">Choose a contiguous passage around 60 seconds long (aim for 45-75 seconds) so the highlight provides full context.</criterion>
+      <criterion name="Duration" targetSeconds="60">Choose a contiguous passage that falls between 30 and 300 seconds so the highlight provides full context.</criterion>
       <criterion name="MostImpactful">Select the single quote that best encapsulates the entire theme by itself.</criterion>
     </passageCriteria>
   </step>
