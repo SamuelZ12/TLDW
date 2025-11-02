@@ -40,7 +40,7 @@ export default function RootLayout({
         <AuthProvider>
           <div className="min-h-screen flex flex-col">
             <header className="pointer-events-none fixed top-0 left-0 right-0 z-50 px-6 py-5">
-              <div className="pointer-events-auto flex w-full items-center justify-between">
+              <div className="pointer-events-auto flex w-full items-center justify-between gap-6">
                 <Link
                   href="/"
                   className="flex items-center gap-2 text-[15px] font-semibold text-[#3f3f3f] transition hover:opacity-80"
@@ -55,6 +55,11 @@ export default function RootLayout({
                   />
                   
                 </Link>
+                <nav className="flex items-center gap-5 text-sm font-medium text-[#3f3f3f]">
+                  <Link href="/pricing" className="transition hover:text-black">
+                    Pricing
+                  </Link>
+                </nav>
                 <UserMenu />
               </div>
             </header>

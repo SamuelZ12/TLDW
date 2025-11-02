@@ -1,17 +1,28 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { openBillingPortal as openPortalAction, startCheckout } from '@/lib/stripe-actions'
+import { UsageIndicator } from '@/components/usage-indicator'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle
+} from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { User } from '@supabase/supabase-js'
-import { Loader2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Loader2, AlertCircle, CreditCard, Clock, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
+import type { User } from '@supabase/supabase-js'
 
 interface Profile {
   id: string
@@ -20,29 +31,88 @@ interface Profile {
   avatar_url: string | null
   created_at: string
   updated_at: string
-  free_generations_used: number
+}
+
+type SubscriptionTier = 'free' | 'pro'
+type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'incomplete' | 'trialing' | null
+
+interface SubscriptionSummary {
+  tier: SubscriptionTier
+  status: SubscriptionStatus
+  stripeCustomerId: string | null
+  cancelAtPeriodEnd: boolean
+  isPastDue: boolean
+  canPurchaseTopup: boolean
+  nextBillingDate: string | null
+  periodStart: string
+  periodEnd: string
+  usage: {
+    counted: number
+    cached: number
+    baseLimit: number
+    baseRemaining: number
+    topupCredits: number
+    topupRemaining: number
+    totalRemaining: number
+    resetAt: string
+  }
+  willConsumeTopup: boolean
 }
 
 interface SettingsFormProps {
   user: User
   profile: Profile | null
   videoCount: number
+  subscription: SubscriptionSummary | null
 }
 
-export default function SettingsForm({ user, profile, videoCount }: SettingsFormProps) {
+function formatStatus(status: SubscriptionStatus): string {
+  if (!status) return 'No subscription'
+  switch (status) {
+    case 'active':
+      return 'Active'
+    case 'past_due':
+      return 'Past due'
+    case 'canceled':
+      return 'Canceled'
+    case 'incomplete':
+      return 'Incomplete'
+    case 'trialing':
+      return 'Trialing'
+    default:
+      return status
+  }
+}
+
+function formatDate(iso: string | null, fallback = 'Not scheduled'): string {
+  if (!iso) return fallback
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return fallback
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })
+}
+
+export default function SettingsForm({ user, profile, videoCount, subscription }: SettingsFormProps) {
   const router = useRouter()
   const supabase = createClient()
 
   const [fullName, setFullName] = useState(profile?.full_name || '')
-  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
 
   const [loading, setLoading] = useState(false)
+  const [billingAction, setBillingAction] = useState<'subscription' | 'topup' | 'portal' | null>(null)
 
   const hasProfileChanges = useMemo(() => {
     return fullName !== (profile?.full_name || '')
   }, [fullName, profile?.full_name])
+
+  const planLabel = subscription?.tier === 'pro' ? 'Pro Plan' : 'Free Plan'
+  const planStatus = formatStatus(subscription?.status ?? null)
+  const nextBillingDate = formatDate(subscription?.nextBillingDate ?? null, 'No upcoming charge')
 
   const handleUpdateProfile = async () => {
     if (!hasProfileChanges) {
@@ -90,7 +160,6 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
       toast.error(error.message)
     } else {
       toast.success('Password updated successfully!')
-      setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
     }
@@ -98,12 +167,204 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
     setLoading(false)
   }
 
+  const handleCheckout = async (priceType: 'subscription' | 'topup') => {
+    try {
+      setBillingAction(priceType)
+      await startCheckout(priceType)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected error starting checkout'
+      toast.error(message)
+    } finally {
+      setBillingAction(null)
+    }
+  }
+
+  const openBillingPortal = async () => {
+    try {
+      setBillingAction('portal')
+      await openPortalAction()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected error opening billing portal'
+      toast.error(message)
+    } finally {
+      setBillingAction(null)
+    }
+  }
+
+  const subscriptionWarnings = useMemo(() => {
+    if (!subscription) return []
+    const warnings: Array<{ title: string; message: string; variant?: 'default' | 'destructive' }> = []
+
+    if (subscription.isPastDue) {
+      warnings.push({
+        title: 'Payment required',
+        message: 'Your payment method failed. Update billing details to restore full access.',
+        variant: 'destructive',
+      })
+    }
+
+    if (subscription.cancelAtPeriodEnd) {
+      warnings.push({
+        title: 'Scheduled to cancel',
+        message: 'Your plan will revert to Free at the end of the current billing period.',
+      })
+    }
+
+    if (subscription.willConsumeTopup) {
+      warnings.push({
+        title: 'Top-Up credits in use',
+        message: 'The next video generation will consume Top-Up credits.',
+      })
+    }
+
+    return warnings
+  }, [subscription])
+
+  const statsRows = useMemo(() => {
+    const createdAt = new Date(profile?.created_at || user.created_at)
+    const stats = [
+      {
+        label: 'Account created',
+        value: createdAt.toLocaleDateString(),
+      },
+      {
+        label: 'Videos saved',
+        value: `${videoCount} ${videoCount === 1 ? 'video' : 'videos'}`,
+      },
+    ]
+
+    if (subscription) {
+      stats.push(
+        {
+          label: 'Videos this period',
+          value: `${subscription.usage.counted}`,
+        },
+        {
+          label: 'Top-Up credits',
+          value: `${subscription.usage.topupCredits}`,
+        }
+      )
+    }
+
+    return stats
+  }, [profile?.created_at, subscription, user.created_at, videoCount])
+
   return (
     <div className="space-y-6">
       <Card className="overflow-hidden">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-xl">Subscription</CardTitle>
+          <CardDescription className="text-sm">
+            View your plan, usage, and manage billing preferences.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Badge variant={subscription?.tier === 'pro' ? 'default' : 'secondary'}>
+                {planLabel}
+              </Badge>
+              <span className="text-sm text-muted-foreground flex items-center gap-1">
+                <Sparkles className="h-4 w-4" />
+                {planStatus}
+              </span>
+            </div>
+            <div className="text-sm text-muted-foreground flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              {nextBillingDate}
+            </div>
+          </div>
+
+          {subscription ? (
+            <UsageIndicator
+              counted={subscription.usage.counted}
+              baseLimit={subscription.usage.baseLimit}
+              baseRemaining={subscription.usage.baseRemaining}
+              topupRemaining={subscription.usage.topupRemaining}
+              resetAt={subscription.usage.resetAt}
+              warning={subscription.isPastDue ? 'PAST_DUE' : null}
+            />
+          ) : (
+            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+              Link a payment method to unlock Pro features and detailed usage tracking.
+            </div>
+          )}
+
+          {subscriptionWarnings.length > 0 && (
+            <div className="space-y-3">
+              {subscriptionWarnings.map((warning, index) => (
+                <Alert key={index} variant={warning.variant ?? 'default'}>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>{warning.title}</AlertTitle>
+                  <AlertDescription>{warning.message}</AlertDescription>
+                </Alert>
+              ))}
+            </div>
+          )}
+        </CardContent>
+        <CardFooter className="flex flex-wrap gap-3">
+          {subscription?.tier === 'pro' ? (
+            <>
+              <Button
+                onClick={openBillingPortal}
+                disabled={billingAction !== null}
+              >
+                {billingAction === 'portal' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Opening portal...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Manage billing
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleCheckout('topup')}
+                disabled={billingAction !== null || !subscription.canPurchaseTopup}
+              >
+                {billingAction === 'topup' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Redirecting...
+                  </>
+                ) : (
+                  'Buy Top-Up (+20 credits)'
+                )}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                onClick={() => handleCheckout('subscription')}
+                disabled={billingAction !== null}
+              >
+                {billingAction === 'subscription' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Redirecting...
+                  </>
+                ) : (
+                  'Upgrade to Pro'
+                )}
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/pricing">View pricing</Link>
+              </Button>
+            </>
+          )}
+        </CardFooter>
+      </Card>
+
+      <Card className="overflow-hidden">
         <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Profile Information</CardTitle>
-          <CardDescription className="text-sm">Update your personal information and preferences</CardDescription>
+          <CardTitle className="text-xl">Profile information</CardTitle>
+          <CardDescription className="text-sm">
+            Update your personal information and preferences.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
@@ -119,7 +380,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="fullName">Full Name</Label>
+            <Label htmlFor="fullName">Full name</Label>
             <Input
               id="fullName"
               type="text"
@@ -134,7 +395,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
             onClick={handleUpdateProfile} 
             disabled={loading || !hasProfileChanges}
             size="default"
-            className="min-w-[120px]"
+            className="min-w-[140px]"
           >
             {loading ? (
               <>
@@ -142,7 +403,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
                 Saving...
               </>
             ) : (
-              'Save Changes'
+              'Save changes'
             )}
           </Button>
         </CardFooter>
@@ -150,12 +411,14 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
 
       <Card className="overflow-hidden">
         <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Change Password</CardTitle>
-          <CardDescription className="text-sm">Update your password to keep your account secure</CardDescription>
+          <CardTitle className="text-xl">Change password</CardTitle>
+          <CardDescription className="text-sm">
+            Update your password to keep your account secure.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="newPassword">New Password</Label>
+            <Label htmlFor="newPassword">New password</Label>
             <Input
               id="newPassword"
               type="password"
@@ -166,7 +429,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm New Password</Label>
+            <Label htmlFor="confirmPassword">Confirm new password</Label>
             <Input
               id="confirmPassword"
               type="password"
@@ -181,7 +444,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
             onClick={handleUpdatePassword}
             disabled={loading || !newPassword || !confirmPassword}
             size="default"
-            className="min-w-[120px]"
+            className="min-w-[160px]"
           >
             {loading ? (
               <>
@@ -189,7 +452,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
                 Updating...
               </>
             ) : (
-              'Update Password'
+              'Update password'
             )}
           </Button>
         </CardFooter>
@@ -197,28 +460,27 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
 
       <Card className="overflow-hidden">
         <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Account Statistics</CardTitle>
-          <CardDescription className="text-sm">Your usage information</CardDescription>
+          <CardTitle className="text-xl">Account statistics</CardTitle>
+          <CardDescription className="text-sm">
+            Key usage metrics and account milestones.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-muted-foreground">Account Created</span>
-              <span className="text-sm font-semibold">
-                {new Date(profile?.created_at || user.created_at).toLocaleDateString()}
-              </span>
-            </div>
-            <Separator className="bg-border/50" />
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-muted-foreground">Videos Analyzed</span>
-              <span className="text-sm font-semibold">
-                {videoCount} {videoCount === 1 ? 'video' : 'videos'}
-              </span>
-            </div>
+            {statsRows.map((row, index) => (
+              <div key={row.label}>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-muted-foreground">{row.label}</span>
+                  <span className="text-sm font-semibold">{row.value}</span>
+                </div>
+                {index < statsRows.length - 1 && (
+                  <Separator className="bg-border/50" />
+                )}
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
     </div>
   )
 }
-

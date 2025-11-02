@@ -1,0 +1,153 @@
+#!/usr/bin/env ts-node
+/**
+ * Environment Variable Validation Script
+ *
+ * Run this script before starting the application to ensure all required
+ * environment variables are configured correctly.
+ *
+ * Usage:
+ *   npm run validate-env
+ *   or
+ *   ts-node scripts/validate-env.ts
+ */
+
+// Note: We don't import stripe-client here to avoid initialization errors
+// when env vars are missing. Instead, we validate the raw environment.
+
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+function validateRequiredEnvVars(): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Required environment variables
+  const required = {
+    // Supabase
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+
+    // Gemini AI
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+
+    // Supadata (transcript fetching)
+    SUPADATA_API_KEY: process.env.SUPADATA_API_KEY,
+
+    // Stripe (validated separately)
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    STRIPE_PRO_PRICE_ID: process.env.STRIPE_PRO_PRICE_ID,
+    STRIPE_TOPUP_PRICE_ID: process.env.STRIPE_TOPUP_PRICE_ID,
+  };
+
+  // Check each required variable
+  for (const [key, value] of Object.entries(required)) {
+    if (!value || value.trim() === '') {
+      errors.push(`Missing required environment variable: ${key}`);
+    }
+  }
+
+  // Optional but recommended variables
+  const recommended = {
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+  };
+
+  for (const [key, value] of Object.entries(recommended)) {
+    if (!value || value.trim() === '') {
+      warnings.push(`Missing recommended environment variable: ${key}`);
+    }
+  }
+
+  // Validate Stripe key formats
+  if (process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_SECRET_KEY.startsWith('sk_')) {
+    errors.push('STRIPE_SECRET_KEY must start with "sk_"');
+  }
+
+  if (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY &&
+      !process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY.startsWith('pk_')) {
+    errors.push('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must start with "pk_"');
+  }
+
+  if (process.env.STRIPE_WEBHOOK_SECRET &&
+      !process.env.STRIPE_WEBHOOK_SECRET.startsWith('whsec_')) {
+    errors.push('STRIPE_WEBHOOK_SECRET must start with "whsec_"');
+  }
+
+  if (process.env.STRIPE_PRO_PRICE_ID &&
+      !process.env.STRIPE_PRO_PRICE_ID.startsWith('price_')) {
+    errors.push('STRIPE_PRO_PRICE_ID must start with "price_"');
+  }
+
+  if (process.env.STRIPE_TOPUP_PRICE_ID &&
+      !process.env.STRIPE_TOPUP_PRICE_ID.startsWith('price_')) {
+    errors.push('STRIPE_TOPUP_PRICE_ID must start with "price_"');
+  }
+
+  // Check for test vs production key consistency
+  const isTestMode = process.env.STRIPE_SECRET_KEY?.includes('_test_');
+  const pubKeyIsTest = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.includes('_test_');
+
+  if (isTestMode !== pubKeyIsTest) {
+    warnings.push(
+      'Stripe key mismatch: Secret key and publishable key are from different modes (test/live)'
+    );
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+async function main() {
+  console.log('🔍 Validating environment configuration...\n');
+
+  // Validate general environment variables
+  const result = validateRequiredEnvVars();
+
+  // Display results
+  if (result.errors.length > 0) {
+    console.log('\n❌ Validation Failed:\n');
+    result.errors.forEach((error) => {
+      console.log(`  • ${error}`);
+    });
+  } else {
+    console.log('\n✅ All required environment variables are configured correctly');
+  }
+
+  if (result.warnings.length > 0) {
+    console.log('\n⚠️  Warnings:\n');
+    result.warnings.forEach((warning) => {
+      console.log(`  • ${warning}`);
+    });
+  }
+
+  // Environment info (only if validation passed)
+  if (result.valid) {
+    console.log('\n📊 Environment Summary:');
+    console.log(`  • Node Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`  • Stripe Mode: ${process.env.STRIPE_SECRET_KEY?.includes('_test_') ? 'TEST' : 'LIVE'}`);
+    console.log(`  • Supabase Project: ${process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/https:\/\/([^.]+)/)?.[1] || 'unknown'}`);
+  }
+
+  // Exit with appropriate code
+  if (!result.valid) {
+    console.log('\n💡 Tip: Copy .env.example to .env.local and fill in the required values');
+    console.log('   See docs/STRIPE_PRICE_SETUP.md for Stripe configuration instructions\n');
+    process.exit(1);
+  }
+
+  console.log('\n✨ Environment validation passed!\n');
+  process.exit(0);
+}
+
+main().catch((error) => {
+  console.error('Unexpected error during validation:', error);
+  process.exit(1);
+});

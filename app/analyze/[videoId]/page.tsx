@@ -312,21 +312,22 @@ export default function AnalyzePage() {
       const response = await fetch('/api/check-limit');
       const data = await response.json();
 
-      setAuthLimitReached(Boolean(data?.isAuthenticated && data?.canGenerate === false));
+      setAuthLimitReached(Boolean(data?.isAuthenticated && data?.canGenerate === false && data?.reason === 'LIMIT_REACHED'));
 
-      if (Object.prototype.hasOwnProperty.call(data ?? {}, 'remaining')) {
-        const remainingValue =
-          typeof data.remaining === 'number'
-            ? data.remaining
-            : data.remaining === null
-              ? null
-              : -1;
+      const usage = data?.usage;
+      const remainingValue =
+        typeof usage?.totalRemaining === 'number'
+          ? usage.totalRemaining
+          : usage?.totalRemaining === null
+            ? null
+            : -1;
 
-        setRateLimitInfo({
-          remaining: remainingValue,
-          resetAt: data.resetAt ? new Date(data.resetAt) : null
-        });
-      }
+      const resetTimestamp = data?.resetAt ?? usage?.resetAt ?? null;
+
+      setRateLimitInfo({
+        remaining: remainingValue,
+        resetAt: resetTimestamp ? new Date(resetTimestamp) : null,
+      });
 
       return data;
     } catch (error) {

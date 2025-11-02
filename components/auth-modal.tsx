@@ -108,10 +108,11 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
       case 'generation-limit':
         return {
           title: 'Sign up to continue',
-          description: 'You\'ve used today\'s free analysis! Create a free account to keep going.',
+          description: 'You\'ve used your anonymous allowance. Create a free account to unlock monthly credits.',
           benefits: [
-            '5 video generations per day',
-            'Save analyzed videos, notes, and highlights',
+            '3 video analyses every 30 days',
+            'Save videos, notes, and highlights across devices',
+            'Upgrade anytime for 40 videos/month + Top-Up credits',
           ],
           showBenefitsCard: true,
         }
