@@ -5,7 +5,7 @@ import {
   findTextInTranscript,
   TranscriptIndex
 } from '@/lib/quote-matcher';
-import { generateWithFallback } from '@/lib/gemini-client';
+import { generateWithFallback, GeminiGenerationError } from '@/lib/gemini-client';
 import { topicGenerationSchema } from '@/lib/schemas';
 import { parseTimestampRange } from '@/lib/timestamp-utils';
 import { z } from 'zod';
@@ -303,6 +303,9 @@ async function reduceCandidateSubset(
       }
     }
   } catch (error) {
+    if (error instanceof GeminiGenerationError) {
+      throw error;
+    }
     console.error(`Error reducing candidate topics (${options.segmentLabel || 'segment'}):`, error);
   }
 
@@ -481,6 +484,9 @@ ${transcriptWithTimestamps}
 
     return parsedResponse;
   } catch (error) {
+    if (error instanceof GeminiGenerationError) {
+      throw error;
+    }
     console.error('Single-pass topic generation failed:', error);
     return [];
   }
@@ -752,6 +758,9 @@ export async function generateTopicsFromTranscript(
                 chunkEnd: chunk.end
               })) as CandidateTopic[];
           } catch (error) {
+            if (error instanceof GeminiGenerationError) {
+              throw error;
+            }
             console.error(`Chunk topic generation failed (${chunk.id}):`, error);
             return [] as CandidateTopic[];
           }
@@ -760,6 +769,9 @@ export async function generateTopicsFromTranscript(
 
       candidateTopics = chunkResults.flat();
     } catch (error) {
+      if (error instanceof GeminiGenerationError) {
+        throw error;
+      }
       console.error('Error preparing chunked topic generation:', error);
     }
   }

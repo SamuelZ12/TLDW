@@ -814,76 +814,85 @@ export default function AnalyzePage() {
       setShowChatTab(true);
       setIsGeneratingTakeaways(true);
 
-      // Wait for both to complete using Promise.allSettled
-      const [topicsResult, takeawaysResult] = await Promise.allSettled([
-        topicsPromise,
-        takeawaysPromise
-      ]);
+      const toSettled = <T,>(promise: Promise<T>) =>
+        promise.then(
+          (value) => ({ status: 'fulfilled', value } as const),
+          (reason) => ({ status: 'rejected', reason } as const)
+        );
+
+      const topicsSettledPromise = toSettled(topicsPromise);
+      const takeawaysSettledPromise = toSettled(takeawaysPromise);
+
+      const topicsResult = await topicsSettledPromise;
+      if (topicsResult.status === 'rejected') {
+        takeawaysController.abort();
+        await takeawaysSettledPromise;
+        throw topicsResult.reason;
+      }
+
+      const topicsRes = topicsResult.value;
+      if (!topicsRes.ok) {
+        const errorData = await topicsRes.json().catch(() => ({ error: "Unknown error" }));
+        const requiresAuth = Boolean((errorData as any)?.requiresAuth);
+
+        if (topicsRes.status === 429 && requiresAuth) {
+          takeawaysController.abort();
+          await takeawaysSettledPromise;
+          redirectToAuthForLimit(
+            typeof (errorData as any)?.message === "string" ? (errorData as any).message : undefined,
+            extractedVideoId
+          );
+          return;
+        }
+
+        if (topicsRes.status === 429) {
+          setIsRateLimitError(true);
+          checkRateLimit();
+          takeawaysController.abort();
+          await takeawaysSettledPromise;
+
+          const limitMessageRaw =
+            typeof (errorData as any)?.message === "string"
+              ? (errorData as any).message.trim()
+              : "";
+
+          const limitErrorRaw =
+            typeof (errorData as any)?.error === "string"
+              ? (errorData as any).error.trim()
+              : "";
+
+          const limitMessage =
+            limitMessageRaw.length > 0
+              ? limitMessageRaw
+              : limitErrorRaw.length > 0
+                ? limitErrorRaw
+                : AUTH_LIMIT_MESSAGE;
+
+          throw new Error(limitMessage);
+        }
+
+        takeawaysController.abort();
+        await takeawaysSettledPromise;
+        const message = buildApiErrorMessage(errorData, "Failed to generate topics");
+        throw new Error(message);
+      }
+
+      const topicsData = await topicsRes.json();
+      const rawTopics = Array.isArray(topicsData.topics) ? topicsData.topics : [];
+      const generatedTopics: Topic[] = hydrateTopicsWithTranscript(rawTopics, normalizedTranscriptData);
+      const generatedThemes: string[] = Array.isArray(topicsData.themes) ? topicsData.themes : [];
+      const rawCandidates: TopicCandidate[] = Array.isArray(topicsData.topicCandidates) ? topicsData.topicCandidates : [];
+      const generatedCandidates: TopicCandidate[] = rawCandidates.map(candidate => ({
+        ...candidate,
+        key: `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`
+      }));
+
+      const takeawaysResult = await takeawaysSettledPromise;
 
       // Move to processing stage
       setLoadingStage('processing');
       setGenerationStartTime(null);
       setProcessingStartTime(Date.now());
-
-      // Process topics result
-      let generatedTopics: Topic[] = [];
-      let generatedThemes: string[] = [];
-      let generatedCandidates: TopicCandidate[] = [];
-      if (topicsResult.status === 'fulfilled') {
-        const topicsRes = topicsResult.value;
-
-        if (!topicsRes.ok) {
-          const errorData = await topicsRes.json().catch(() => ({ error: "Unknown error" }));
-          const requiresAuth = Boolean((errorData as any)?.requiresAuth);
-
-          if (topicsRes.status === 429 && requiresAuth) {
-            redirectToAuthForLimit(
-              typeof (errorData as any)?.message === "string" ? (errorData as any).message : undefined,
-              extractedVideoId
-            );
-            return;
-          }
-
-          if (topicsRes.status === 429) {
-            setIsRateLimitError(true);
-            checkRateLimit();
-
-            const limitMessageRaw =
-              typeof (errorData as any)?.message === "string"
-                ? (errorData as any).message.trim()
-                : "";
-
-            const limitErrorRaw =
-              typeof (errorData as any)?.error === "string"
-                ? (errorData as any).error.trim()
-                : "";
-
-            const limitMessage =
-              limitMessageRaw.length > 0
-                ? limitMessageRaw
-                : limitErrorRaw.length > 0
-                  ? limitErrorRaw
-                  : AUTH_LIMIT_MESSAGE;
-
-            throw new Error(limitMessage);
-          }
-
-          const message = buildApiErrorMessage(errorData, "Failed to generate topics");
-          throw new Error(message);
-        }
-
-        const topicsData = await topicsRes.json();
-        const rawTopics = Array.isArray(topicsData.topics) ? topicsData.topics : [];
-        generatedTopics = hydrateTopicsWithTranscript(rawTopics, normalizedTranscriptData);
-        generatedThemes = Array.isArray(topicsData.themes) ? topicsData.themes : [];
-        generatedCandidates = Array.isArray(topicsData.topicCandidates) ? topicsData.topicCandidates : [];
-        generatedCandidates = generatedCandidates.map(candidate => ({
-          ...candidate,
-          key: `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`
-        }));
-      } else {
-        throw topicsResult.reason;
-      }
 
       // Process takeaways result from parallel execution
       let generatedTakeaways = null;
@@ -1060,6 +1069,7 @@ export default function AnalyzePage() {
       setLoadingStage(null);
       setGenerationStartTime(null);
       setProcessingStartTime(null);
+      setIsGeneratingTakeaways(false);
     }
   }, [
     rateLimitInfo.remaining,
