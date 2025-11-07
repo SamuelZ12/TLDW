@@ -1,11 +1,40 @@
 'use client'
 
-import { getStripe } from '@/lib/stripe-browser'
+import { csrfFetch } from '@/lib/csrf-client'
 
 type PriceType = 'subscription' | 'topup'
 
-async function fetchJson(input: RequestInfo, init?: RequestInit) {
-  const response = await fetch(input, init)
+/**
+ * Initiates a Stripe Checkout session for subscription or top-up purchase.
+ * Creates a checkout session and redirects to the Stripe-hosted checkout page.
+ *
+ * @param priceType - Type of purchase: 'subscription' or 'topup'
+ * @throws {Error} If checkout session creation fails
+ */
+export async function startCheckout(priceType: PriceType): Promise<void> {
+  const response = await csrfFetch.post('/api/stripe/create-checkout-session', { priceType })
+
+  if (!response.ok) {
+    let message = 'Failed to create checkout session'
+    try {
+      const data = await response.json()
+      if (data?.error) {
+        message = data.error
+      }
+    } catch {
+      // ignore JSON parse error and use fallback message
+    }
+    throw new Error(message)
+  }
+
+  const { url } = await response.json()
+
+  // Redirect to Stripe Checkout
+  window.location.href = url
+}
+
+export async function openBillingPortal(): Promise<void> {
+  const response = await csrfFetch.post('/api/stripe/create-portal-session', {})
 
   if (!response.ok) {
     let message = 'Request failed'
@@ -20,33 +49,7 @@ async function fetchJson(input: RequestInfo, init?: RequestInit) {
     throw new Error(message)
   }
 
-  return response.json()
-}
-
-export async function startCheckout(priceType: PriceType): Promise<void> {
-  const { sessionId } = await fetchJson('/api/stripe/create-checkout-session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ priceType }),
-  })
-
-  const stripeClient = await getStripe()
-
-  if (!stripeClient) {
-    throw new Error('Stripe.js failed to load')
-  }
-
-  const { error } = await (stripeClient as any).redirectToCheckout({ sessionId })
-
-  if (error) {
-    throw new Error(error.message)
-  }
-}
-
-export async function openBillingPortal(): Promise<void> {
-  const { url } = await fetchJson('/api/stripe/create-portal-session', {
-    method: 'POST',
-  })
+  const { url } = await response.json()
 
   window.location.href = url
 }

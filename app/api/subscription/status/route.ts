@@ -90,6 +90,11 @@ async function handler(req: NextRequest) {
         resetAt: stats.resetAt,
       },
       willConsumeTopup,
+    }, {
+      headers: {
+        // Allow caching for 30 seconds to reduce database load during polling
+        'Cache-Control': 'private, max-age=30, must-revalidate',
+      },
     });
   } catch (error) {
     console.error('Error in subscription status API:', error);

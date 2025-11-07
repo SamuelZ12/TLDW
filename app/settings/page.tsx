@@ -3,6 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 import { getUsageStats, getUserSubscriptionStatus } from '@/lib/subscription-manager'
 import SettingsForm from './settings-form'
 
+// Force dynamic rendering to prevent caching of subscription status
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function SettingsPage() {
   const supabase = await createClient()
 

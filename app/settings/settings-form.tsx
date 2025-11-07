@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { openBillingPortal as openPortalAction, startCheckout } from '@/lib/stripe-actions'
 import { UsageIndicator } from '@/components/usage-indicator'
@@ -23,6 +23,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Loader2, AlertCircle, CreditCard, Clock, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import type { User } from '@supabase/supabase-js'
+import { csrfFetch } from '@/lib/csrf-client'
 
 interface Profile {
   id: string
@@ -97,6 +98,7 @@ function formatDate(iso: string | null, fallback = 'Not scheduled'): string {
 
 export default function SettingsForm({ user, profile, videoCount, subscription }: SettingsFormProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   const [fullName, setFullName] = useState(profile?.full_name || '')
@@ -105,6 +107,111 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
 
   const [loading, setLoading] = useState(false)
   const [billingAction, setBillingAction] = useState<'subscription' | 'topup' | 'portal' | null>(null)
+
+  // Poll for subscription updates after Stripe checkout
+  useEffect(() => {
+    const sessionId = searchParams.get('session_id')
+
+    if (!sessionId) return
+
+    // If already on Pro, no need to poll
+    if (subscription?.tier === 'pro') {
+      window.history.replaceState({}, '', '/settings')
+      return
+    }
+
+    let pollInterval: NodeJS.Timeout | undefined
+    let timeoutId: NodeJS.Timeout | undefined
+    let processingToastShown = false
+    let hasWelcomed = false
+
+    const showProcessingToast = () => {
+      if (!processingToastShown) {
+        toast.loading('Processing your payment...', { id: 'stripe-processing' })
+        processingToastShown = true
+      }
+    }
+
+    const cleanupProcessing = () => {
+      if (processingToastShown) {
+        toast.dismiss('stripe-processing')
+      }
+      if (pollInterval) clearInterval(pollInterval)
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+
+    const handleActivation = () => {
+      cleanupProcessing()
+      if (!hasWelcomed) {
+        toast.success('Welcome to Pro! Your subscription is now active.')
+        hasWelcomed = true
+      }
+      router.refresh()
+      window.history.replaceState({}, '', '/settings')
+    }
+
+    const confirmCheckout = async () => {
+      showProcessingToast()
+      try {
+        const response = await csrfFetch.post('/api/stripe/confirm-checkout', { sessionId })
+
+        if (!response.ok) {
+          return false
+        }
+
+        const data = await response.json()
+
+        if (data.updated && data.tier === 'pro') {
+          handleActivation()
+          return true
+        }
+      } catch (error) {
+        console.error('Error confirming Stripe checkout:', error)
+      }
+
+      return false
+    }
+
+    const pollForSubscription = async () => {
+      try {
+        const response = await fetch('/api/subscription/status')
+        if (!response.ok) return
+
+        const data = await response.json()
+
+        if (data.tier === 'pro') {
+          handleActivation()
+        }
+      } catch (error) {
+        console.error('Error polling subscription status:', error)
+      }
+    }
+
+    const startPolling = () => {
+      showProcessingToast()
+      pollForSubscription()
+      pollInterval = setInterval(pollForSubscription, 2000)
+
+      timeoutId = setTimeout(() => {
+        cleanupProcessing()
+
+        if (subscription?.tier !== 'pro') {
+          toast.error('Payment processing is taking longer than expected. Please refresh the page in a moment.')
+        }
+      }, 30000)
+    }
+
+    ;(async () => {
+      const confirmed = await confirmCheckout()
+      if (!confirmed) {
+        startPolling()
+      }
+    })()
+
+    return () => {
+      cleanupProcessing()
+    }
+  }, [searchParams, subscription?.tier, router])
 
   const hasProfileChanges = useMemo(() => {
     return fullName !== (profile?.full_name || '')

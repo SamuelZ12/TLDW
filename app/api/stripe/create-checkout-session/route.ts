@@ -28,7 +28,7 @@ const createCheckoutSessionSchema = z.object({
  *
  * Response:
  * {
- *   sessionId: string  // Stripe Checkout Session ID
+ *   url: string  // Stripe Checkout hosted page URL
  * }
  */
 async function handler(req: NextRequest) {
@@ -133,7 +133,7 @@ async function handler(req: NextRequest) {
     });
 
     return NextResponse.json({
-      sessionId: session.id,
+      url: session.url,
     });
   } catch (error) {
     // Handle validation errors

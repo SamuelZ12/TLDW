@@ -43,6 +43,7 @@ async function handler(req: NextRequest) {
     console.log(`Received Stripe webhook: ${event.type} (${event.id})`);
     await dispatchStripeEvent(event, supabase);
 
+    console.log(`✅ Successfully processed Stripe webhook: ${event.type} (${event.id})`);
     return NextResponse.json({ received: true });
   } catch (error) {
     console.error('Error processing webhook:', error);
@@ -51,7 +52,13 @@ async function handler(req: NextRequest) {
       await releaseStripeEvent(eventId, supabase);
     }
 
-    return NextResponse.json({ received: true });
+    // If it's a signature validation error, return 400 (don't retry)
+    if (error instanceof Error && error.message.includes('signature')) {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
+    }
+
+    // For other errors, return 500 so Stripe retries the webhook
+    return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
   }
 }
 
@@ -145,15 +152,21 @@ async function handleCheckoutCompleted(
 
     if (error) {
       console.error('Failed to update subscription after checkout:', error);
-    } else {
-      await AuditLogger.log({
-        userId,
-        action: AuditAction.SUBSCRIPTION_CREATED,
-        resourceType: 'subscription',
-        resourceId: subscriptionId,
-        details: { tier: 'pro', status: subscription.status },
-      });
+      throw new Error(`Database update failed for subscription ${subscriptionId}: ${error.message}`);
     }
+
+    console.log(`✅ Successfully activated Pro subscription for user ${userId}`);
+    console.log(`   - Subscription ID: ${subscriptionId}`);
+    console.log(`   - Status: ${subscription.status}`);
+    console.log(`   - Period: ${new Date(subscription.current_period_start * 1000).toISOString()} to ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+
+    await AuditLogger.log({
+      userId,
+      action: AuditAction.SUBSCRIPTION_CREATED,
+      resourceType: 'subscription',
+      resourceId: subscriptionId,
+      details: { tier: 'pro', status: subscription.status },
+    });
   }
 
   if (session.mode === 'payment' && session.payment_intent) {
@@ -168,28 +181,31 @@ async function handleCheckoutCompleted(
 
       const result = await addTopupCredits(userId, credits, { client: supabase });
 
-      if (result.success) {
-        const { error } = await supabase.from('topup_purchases').insert({
-          user_id: userId,
-          stripe_payment_intent_id: paymentIntentId,
-          credits_purchased: credits,
-          amount_paid: amountCents,
-        });
-
-        if (error) {
-          console.error('Failed to store top-up purchase:', error);
-        } else {
-          await AuditLogger.log({
-            userId,
-            action: AuditAction.TOPUP_PURCHASED,
-            resourceType: 'topup',
-            resourceId: paymentIntentId,
-            details: { credits, amount: amountCents },
-          });
-        }
-      } else {
+      if (!result.success) {
         console.error('Failed to add top-up credits:', result.error);
+        throw new Error(`Failed to add top-up credits: ${result.error}`);
       }
+
+      const { error } = await supabase.from('topup_purchases').insert({
+        user_id: userId,
+        stripe_payment_intent_id: paymentIntentId,
+        credits_purchased: credits,
+        amount_paid: amountCents,
+      });
+
+      if (error) {
+        console.error('Failed to store top-up purchase:', error);
+        throw new Error(`Failed to store top-up purchase: ${error.message}`);
+      }
+
+      console.log(`✅ Successfully added ${credits} top-up credits for user ${userId}`);
+      await AuditLogger.log({
+        userId,
+        action: AuditAction.TOPUP_PURCHASED,
+        resourceType: 'topup',
+        resourceId: paymentIntentId,
+        details: { credits, amount: amountCents },
+      });
     }
   }
 }
@@ -214,18 +230,20 @@ async function handleSubscriptionUpdated(
 
   if (error) {
     console.error('Failed to sync subscription update:', error);
-  } else {
-    await AuditLogger.log({
-      userId,
-      action: AuditAction.SUBSCRIPTION_UPDATED,
-      resourceType: 'subscription',
-      resourceId: subscription.id,
-      details: {
-        status: subscription.status,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      },
-    });
+    throw new Error(`Failed to sync subscription update: ${error.message}`);
   }
+
+  console.log(`✅ Successfully updated subscription ${subscription.id} for user ${userId}`);
+  await AuditLogger.log({
+    userId,
+    action: AuditAction.SUBSCRIPTION_UPDATED,
+    resourceType: 'subscription',
+    resourceId: subscription.id,
+    details: {
+      status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    },
+  });
 }
 
 async function handleSubscriptionDeleted(
@@ -253,15 +271,17 @@ async function handleSubscriptionDeleted(
 
   if (error) {
     console.error('Failed to downgrade user after cancellation:', error);
-  } else {
-    await AuditLogger.log({
-      userId,
-      action: AuditAction.SUBSCRIPTION_CANCELED,
-      resourceType: 'subscription',
-      resourceId: subscription.id,
-      details: { downgradedToFree: true },
-    });
+    throw new Error(`Failed to downgrade user after cancellation: ${error.message}`);
   }
+
+  console.log(`✅ Successfully downgraded user ${userId} to free tier after subscription ${subscription.id} cancellation`);
+  await AuditLogger.log({
+    userId,
+    action: AuditAction.SUBSCRIPTION_CANCELED,
+    resourceType: 'subscription',
+    resourceId: subscription.id,
+    details: { downgradedToFree: true },
+  });
 }
 
 async function handleInvoicePaymentSucceeded(
@@ -291,7 +311,10 @@ async function handleInvoicePaymentSucceeded(
 
   if (error) {
     console.error('Failed to mark subscription as active:', error);
+    throw new Error(`Failed to mark subscription as active: ${error.message}`);
   }
+
+  console.log(`✅ Successfully marked subscription as active for user ${userId} after invoice ${invoice.id} payment`);
 }
 
 async function handleInvoicePaymentFailed(
@@ -321,15 +344,17 @@ async function handleInvoicePaymentFailed(
 
   if (error) {
     console.error('Failed to mark subscription as past_due:', error);
-  } else {
-    await AuditLogger.log({
-      userId,
-      action: AuditAction.PAYMENT_FAILED,
-      resourceType: 'invoice',
-      resourceId: invoice.id,
-      details: { subscriptionId },
-    });
+    throw new Error(`Failed to mark subscription as past_due: ${error.message}`);
   }
+
+  console.log(`✅ Successfully marked subscription as past_due for user ${userId} after invoice ${invoice.id} payment failed`);
+  await AuditLogger.log({
+    userId,
+    action: AuditAction.PAYMENT_FAILED,
+    resourceType: 'invoice',
+    resourceId: invoice.id,
+    details: { subscriptionId },
+  });
 }
 
 async function getUserIdBySubscription(

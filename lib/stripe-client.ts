@@ -17,12 +17,12 @@ if (!process.env.STRIPE_SECRET_KEY) {
  * Singleton Stripe instance for server-side operations
  *
  * Configuration:
- * - API version: Latest (automatically uses newest API version)
+ * - API version: 2024-10-28.acacia (pinned to match stripe-node v19.2.0)
  * - TypeScript: Enabled for type-safe operations
  * - App info: Identifies requests as coming from TLDW
  */
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2024-11-20',
+  apiVersion: '2024-10-28.acacia',
   typescript: true,
   appInfo: {
     name: 'TLDW',

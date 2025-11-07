@@ -11,6 +11,29 @@
  *   ts-node scripts/validate-env.ts
  */
 
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+// Load .env.local file manually
+try {
+  const envPath = resolve(process.cwd(), '.env.local');
+  const envFile = readFileSync(envPath, 'utf-8');
+  envFile.split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const [key, ...valueParts] = trimmed.split('=');
+      if (key && valueParts.length > 0) {
+        const value = valueParts.join('=');
+        if (!process.env[key]) {
+          process.env[key] = value;
+        }
+      }
+    }
+  });
+} catch (error) {
+  // .env.local doesn't exist, which is okay - might be using system env vars
+}
+
 // Note: We don't import stripe-client here to avoid initialization errors
 // when env vars are missing. Instead, we validate the raw environment.
 

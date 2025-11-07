@@ -11,11 +11,11 @@ export async function middleware(request: NextRequest) {
   // Define CSP directives
   const cspHeader = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://s.ytimg.com https://*.googleapis.com",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://s.ytimg.com https://*.googleapis.com https://js.stripe.com",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.ytimg.com",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.supadata.ai https://*.supabase.co https://*.googleapis.com wss://*.supabase.co https://www.youtube.com",
+    "connect-src 'self' https://api.supadata.ai https://*.supabase.co https://*.googleapis.com wss://*.supabase.co https://www.youtube.com https://api.stripe.com",
     "media-src 'self' blob: https://www.youtube.com",
     "object-src 'none'",
     "frame-src https://www.youtube.com https://youtube.com",
