@@ -35,6 +35,35 @@ const GUEST_LIMIT_MESSAGE = "You've used today's free analysis. Sign in to keep 
 const AUTH_LIMIT_MESSAGE = "You've used all 3 free videos this month. Upgrade to Pro for 40 videos/month.";
 const DEFAULT_CLIENT_ERROR = "Something went wrong. Please try again.";
 
+type LimitCheckResponse = {
+  canGenerate: boolean;
+  isAuthenticated: boolean;
+  tier?: 'free' | 'pro' | 'anonymous';
+  reason?: string | null;
+  requiresTopup?: boolean;
+  usage?: {
+    totalRemaining?: number | null;
+  } | null;
+};
+
+function buildLimitExceededMessage(limitData?: LimitCheckResponse | null): string {
+  if (!limitData) {
+    return AUTH_LIMIT_MESSAGE;
+  }
+
+  if (limitData.reason === 'SUBSCRIPTION_INACTIVE') {
+    return 'Your subscription is not active. Visit the billing portal to reactivate and continue generating videos.';
+  }
+
+  if (limitData.tier === 'pro') {
+    return limitData.requiresTopup
+      ? 'You have used all Pro videos this period. Purchase a Top-Up (+20 videos for $3) or wait for your next billing cycle.'
+      : 'You have used your Pro allowance. Wait for your next billing cycle to reset.';
+  }
+
+  return AUTH_LIMIT_MESSAGE;
+}
+
 function normalizeErrorMessage(message: string | undefined, fallback: string = DEFAULT_CLIENT_ERROR): string {
   const trimmed = typeof message === "string" ? message.trim() : "";
   const baseMessage = trimmed.length > 0 ? trimmed : fallback;
@@ -307,10 +336,10 @@ export default function AnalyzePage() {
     }
   };
 
-  const checkRateLimit = useCallback(async () => {
+  const checkRateLimit = useCallback(async (): Promise<LimitCheckResponse | null> => {
     try {
       const response = await fetch('/api/check-limit');
-      const data = await response.json();
+      const data: LimitCheckResponse = await response.json();
 
       setAuthLimitReached(Boolean(data?.isAuthenticated && data?.canGenerate === false && data?.reason === 'LIMIT_REACHED'));
 
@@ -385,22 +414,36 @@ export default function AnalyzePage() {
   // Check if user can generate based on server-side rate limits
   const checkGenerationLimit = useCallback((
     pendingVideoId?: string,
-    remainingOverride?: number | null
+    remainingOverride?: number | null,
+    latestLimitData?: LimitCheckResponse | null
   ): boolean => {
     if (user) {
-      if (authLimitReached) {
+      const limitReached =
+        latestLimitData?.isAuthenticated
+          ? latestLimitData.canGenerate === false
+          : authLimitReached;
+
+      if (limitReached) {
+        const limitMessage = buildLimitExceededMessage(latestLimitData);
         setIsRateLimitError(true);
-        setError(AUTH_LIMIT_MESSAGE);
-        toast.error(AUTH_LIMIT_MESSAGE);
+        setError(limitMessage);
+        toast.error(limitMessage);
         return false;
       }
       return true;
     }
 
-    const effectiveRemaining =
+    let effectiveRemaining =
       typeof remainingOverride === 'number' || remainingOverride === null
         ? remainingOverride
         : rateLimitInfo.remaining;
+
+    if (!latestLimitData?.isAuthenticated) {
+      const totalRemaining = latestLimitData?.usage?.totalRemaining;
+      if (typeof totalRemaining === 'number' || totalRemaining === null) {
+        effectiveRemaining = totalRemaining;
+      }
+    }
 
     if (
       typeof effectiveRemaining === 'number' &&
@@ -635,20 +678,16 @@ export default function AnalyzePage() {
       }
 
       let effectiveRemaining = currentRemaining;
+      const latestLimitData = await checkRateLimit();
 
-      if (!user) {
-        const latestLimitData = await checkRateLimit();
-        if (latestLimitData && Object.prototype.hasOwnProperty.call(latestLimitData, 'remaining')) {
-          effectiveRemaining =
-            typeof latestLimitData.remaining === 'number'
-              ? latestLimitData.remaining
-              : latestLimitData.remaining === null
-                ? null
-                : effectiveRemaining;
+      if (!user && latestLimitData) {
+        const totalRemaining = latestLimitData.usage?.totalRemaining;
+        if (typeof totalRemaining === 'number' || totalRemaining === null) {
+          effectiveRemaining = totalRemaining;
         }
       }
 
-      if (!checkGenerationLimit(extractedVideoId, effectiveRemaining)) {
+      if (!checkGenerationLimit(extractedVideoId, effectiveRemaining, latestLimitData)) {
         return;
       }
 
