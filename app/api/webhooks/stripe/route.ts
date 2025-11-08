@@ -3,8 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe-client';
 import { createServiceRoleClient } from '@/lib/supabase/admin';
-import { addTopupCredits, mapStripeSubscriptionToProfileUpdate } from '@/lib/subscription-manager';
+import { mapStripeSubscriptionToProfileUpdate } from '@/lib/subscription-manager';
+import { processTopupCheckout } from '@/lib/stripe-topup';
 import { AuditLogger, AuditAction } from '@/lib/audit-logger';
+import type { ProfilesUpdate } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
 
@@ -85,45 +87,6 @@ async function dispatchStripeEvent(event: Stripe.Event, supabase: SupabaseClient
   }
 }
 
-/**
- * Extracts top-up credit and amount values from Stripe price metadata
- * Falls back to default values (20 credits, $3) if metadata is missing
- */
-async function extractTopupValuesFromSession(
-  session: Stripe.Checkout.Session
-): Promise<{ credits: number; amountCents: number }> {
-  const DEFAULT_CREDITS = 20;
-  const DEFAULT_AMOUNT_CENTS = 300;
-
-  try {
-    // Expand line items to get price details
-    const sessionWithItems = await stripe.checkout.sessions.retrieve(session.id, {
-      expand: ['line_items', 'line_items.data.price'],
-    });
-
-    const lineItem = sessionWithItems.line_items?.data[0];
-    if (!lineItem || !lineItem.price) {
-      console.warn('No line items found in checkout session, using defaults');
-      return { credits: DEFAULT_CREDITS, amountCents: DEFAULT_AMOUNT_CENTS };
-    }
-
-    const price = lineItem.price as Stripe.Price;
-
-    // Extract from price metadata
-    const creditsFromMetadata = price.metadata?.credits;
-    const credits = creditsFromMetadata ? parseInt(creditsFromMetadata, 10) : DEFAULT_CREDITS;
-
-    // Amount is already in cents in Stripe
-    const amountCents = typeof price.unit_amount === 'number' ? price.unit_amount : DEFAULT_AMOUNT_CENTS;
-
-    console.log(`Top-up values extracted: ${credits} credits for ${amountCents} cents`);
-    return { credits, amountCents };
-  } catch (error) {
-    console.error('Failed to extract top-up values from Stripe, using defaults:', error);
-    return { credits: DEFAULT_CREDITS, amountCents: DEFAULT_AMOUNT_CENTS };
-  }
-}
-
 async function handleCheckoutCompleted(
   session: Stripe.Checkout.Session,
   supabase: SupabaseClient<any, string, any>
@@ -143,10 +106,9 @@ async function handleCheckoutCompleted(
     const updatePayload = {
       ...mapStripeSubscriptionToProfileUpdate(subscription),
       stripe_customer_id: session.customer as string,
-    };
+    } satisfies ProfilesUpdate;
 
-    const { error } = await supabase
-      .from('profiles')
+    const { error } = await (supabase.from('profiles') as any)
       .update(updatePayload)
       .eq('id', userId);
 
@@ -155,10 +117,25 @@ async function handleCheckoutCompleted(
       throw new Error(`Database update failed for subscription ${subscriptionId}: ${error.message}`);
     }
 
+    const subscriptionPeriods = subscription as {
+      current_period_start?: number | null;
+      current_period_end?: number | null;
+    };
+
     console.log(`✅ Successfully activated Pro subscription for user ${userId}`);
     console.log(`   - Subscription ID: ${subscriptionId}`);
     console.log(`   - Status: ${subscription.status}`);
-    console.log(`   - Period: ${new Date(subscription.current_period_start * 1000).toISOString()} to ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+    console.log(
+      `   - Period: ${
+        subscriptionPeriods.current_period_start
+          ? new Date(subscriptionPeriods.current_period_start * 1000).toISOString()
+          : 'unknown'
+      } to ${
+        subscriptionPeriods.current_period_end
+          ? new Date(subscriptionPeriods.current_period_end * 1000).toISOString()
+          : 'unknown'
+      }`
+    );
 
     await AuditLogger.log({
       userId,
@@ -169,43 +146,27 @@ async function handleCheckoutCompleted(
     });
   }
 
-  if (session.mode === 'payment' && session.payment_intent) {
-    const paymentIntentId =
-      typeof session.payment_intent === 'string'
-        ? session.payment_intent
-        : session.payment_intent.id;
+  if (session.mode === 'payment') {
+    const topupResult = await processTopupCheckout(session, supabase);
 
-    if (session.metadata?.priceType === 'topup') {
-      // Extract credit and amount values from Stripe price metadata
-      const { credits, amountCents } = await extractTopupValuesFromSession(session);
-
-      const result = await addTopupCredits(userId, credits, { client: supabase });
-
-      if (!result.success) {
-        console.error('Failed to add top-up credits:', result.error);
-        throw new Error(`Failed to add top-up credits: ${result.error}`);
+    if (topupResult) {
+      if (topupResult.alreadyApplied) {
+        console.log('ℹ️ Top-up credits already applied for this payment intent, skipping duplicate log.');
+      } else {
+        console.log(
+          `✅ Successfully added ${topupResult.creditsAdded} top-up credits for user ${userId}`
+        );
+        await AuditLogger.log({
+          userId,
+          action: AuditAction.TOPUP_PURCHASED,
+          resourceType: 'topup',
+          resourceId:
+            typeof session.payment_intent === 'string'
+              ? session.payment_intent
+              : session.payment_intent?.id ?? 'unknown',
+          details: { credits: topupResult.creditsAdded, totalCredits: topupResult.totalCredits },
+        });
       }
-
-      const { error } = await supabase.from('topup_purchases').insert({
-        user_id: userId,
-        stripe_payment_intent_id: paymentIntentId,
-        credits_purchased: credits,
-        amount_paid: amountCents,
-      });
-
-      if (error) {
-        console.error('Failed to store top-up purchase:', error);
-        throw new Error(`Failed to store top-up purchase: ${error.message}`);
-      }
-
-      console.log(`✅ Successfully added ${credits} top-up credits for user ${userId}`);
-      await AuditLogger.log({
-        userId,
-        action: AuditAction.TOPUP_PURCHASED,
-        resourceType: 'topup',
-        resourceId: paymentIntentId,
-        details: { credits, amount: amountCents },
-      });
     }
   }
 }
@@ -221,10 +182,9 @@ async function handleSubscriptionUpdated(
     return;
   }
 
-  const updatePayload = mapStripeSubscriptionToProfileUpdate(subscription);
+  const updatePayload = mapStripeSubscriptionToProfileUpdate(subscription) as ProfilesUpdate;
 
-  const { error } = await supabase
-    .from('profiles')
+  const { error } = await (supabase.from('profiles') as any)
     .update(updatePayload)
     .eq('id', userId);
 
@@ -257,16 +217,17 @@ async function handleSubscriptionDeleted(
     return;
   }
 
-  const { error } = await supabase
-    .from('profiles')
-    .update({
-      subscription_tier: 'free',
-      subscription_status: null,
-      stripe_subscription_id: null,
-      subscription_current_period_start: null,
-      subscription_current_period_end: null,
-      cancel_at_period_end: false,
-    })
+  const downgradePayload = {
+    subscription_tier: 'free',
+    subscription_status: null,
+    stripe_subscription_id: null,
+    subscription_current_period_start: null,
+    subscription_current_period_end: null,
+    cancel_at_period_end: false,
+  } satisfies ProfilesUpdate;
+
+  const { error } = await (supabase.from('profiles') as any)
+    .update(downgradePayload)
     .eq('id', userId);
 
   if (error) {
@@ -304,9 +265,10 @@ async function handleInvoicePaymentSucceeded(
     return;
   }
 
-  const { error } = await supabase
-    .from('profiles')
-    .update({ subscription_status: 'active' })
+  const activatePayload = { subscription_status: 'active' } satisfies ProfilesUpdate;
+
+  const { error } = await (supabase.from('profiles') as any)
+    .update(activatePayload)
     .eq('id', userId);
 
   if (error) {
@@ -337,9 +299,10 @@ async function handleInvoicePaymentFailed(
     return;
   }
 
-  const { error } = await supabase
-    .from('profiles')
-    .update({ subscription_status: 'past_due' })
+  const pastDuePayload = { subscription_status: 'past_due' } satisfies ProfilesUpdate;
+
+  const { error } = await (supabase.from('profiles') as any)
+    .update(pastDuePayload)
     .eq('id', userId);
 
   if (error) {

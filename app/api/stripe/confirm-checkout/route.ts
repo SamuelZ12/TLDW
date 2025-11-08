@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/admin';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 import { mapStripeSubscriptionToProfileUpdate } from '@/lib/subscription-manager';
+import { processTopupCheckout } from '@/lib/stripe-topup';
+import type { ProfilesUpdate } from '@/lib/supabase/types';
 
 const requestSchema = z.object({
   sessionId: z.string().min(1, 'Missing checkout session'),
@@ -38,8 +40,29 @@ async function handler(req: NextRequest) {
       return NextResponse.json({ error: 'Session does not belong to this user' }, { status: 403 });
     }
 
+    const serviceClient = createServiceRoleClient();
+
+    if (session.mode === 'payment' && session.metadata?.priceType === 'topup') {
+      const topupResult = await processTopupCheckout(session, serviceClient);
+
+      if (!topupResult) {
+        return NextResponse.json(
+          { error: 'Unable to process top-up purchase' },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json({
+        updated: !topupResult.alreadyApplied,
+        type: 'topup',
+        creditsAdded: topupResult.creditsAdded,
+        totalCredits: topupResult.totalCredits,
+        alreadyApplied: topupResult.alreadyApplied,
+      });
+    }
+
     if (session.mode !== 'subscription' || !session.subscription) {
-      return NextResponse.json({ status: 'noop', updated: false });
+      return NextResponse.json({ status: 'noop', updated: false, type: 'unknown' });
     }
 
     const subscription =
@@ -51,18 +74,15 @@ async function handler(req: NextRequest) {
       return NextResponse.json({ error: 'Subscription details unavailable' }, { status: 404 });
     }
 
-    const serviceClient = createServiceRoleClient();
-
     const updatePayload = {
       ...mapStripeSubscriptionToProfileUpdate(subscription),
       stripe_customer_id:
         typeof session.customer === 'string'
           ? session.customer
           : session.customer?.id ?? null,
-    };
+    } satisfies ProfilesUpdate;
 
-    const { error } = await serviceClient
-      .from('profiles')
+    const { error } = await (serviceClient.from('profiles') as any)
       .update(updatePayload)
       .eq('id', user.id);
 
@@ -71,25 +91,31 @@ async function handler(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to update subscription' }, { status: 500 });
     }
 
+    const subscriptionPeriods = subscription as {
+      current_period_start?: number | null;
+      current_period_end?: number | null;
+    };
+
     return NextResponse.json({
       updated: true,
+      type: 'subscription',
       tier: 'pro',
       status: subscription.status,
       cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-      currentPeriodStart: subscription.current_period_start
-        ? new Date(subscription.current_period_start * 1000).toISOString()
+      currentPeriodStart: subscriptionPeriods.current_period_start
+        ? new Date(subscriptionPeriods.current_period_start * 1000).toISOString()
         : null,
-      currentPeriodEnd: subscription.current_period_end
-        ? new Date(subscription.current_period_end * 1000).toISOString()
+      currentPeriodEnd: subscriptionPeriods.current_period_end
+        ? new Date(subscriptionPeriods.current_period_end * 1000).toISOString()
         : null,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors[0]?.message ?? 'Invalid request' }, { status: 400 });
+      return NextResponse.json({ error: error.issues[0]?.message ?? 'Invalid request' }, { status: 400 });
     }
 
     console.error('Error confirming checkout session:', error);
-    return NextResponse.json({ error: 'Failed to confirm subscription' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to confirm checkout' }, { status: 500 });
   }
 }
 

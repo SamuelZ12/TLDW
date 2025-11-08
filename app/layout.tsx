@@ -55,11 +55,6 @@ export default function RootLayout({
                   />
                   
                 </Link>
-                <nav className="flex items-center gap-5 text-sm font-medium text-[#3f3f3f]">
-                  <Link href="/pricing" className="transition hover:text-black">
-                    Pricing
-                  </Link>
-                </nav>
                 <UserMenu />
               </div>
             </header>

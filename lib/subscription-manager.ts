@@ -8,16 +8,9 @@ import {
   getRemainingCredits as computeRemainingCredits,
   type UsageBreakdown,
 } from '@/lib/usage-tracker';
+import type { ProfilesUpdate, SubscriptionStatus, SubscriptionTier } from '@/lib/supabase/types';
 
-export type SubscriptionTier = 'free' | 'pro';
-
-export type SubscriptionStatus =
-  | 'active'
-  | 'past_due'
-  | 'canceled'
-  | 'incomplete'
-  | 'trialing'
-  | null;
+export type { SubscriptionStatus, SubscriptionTier };
 
 type DatabaseClient = SupabaseClient<any, string, any>;
 
@@ -107,8 +100,8 @@ export async function getUserSubscriptionStatus(
 
   return {
     userId: profile.id,
-    tier: (profile.subscription_tier as SubscriptionTier) || 'free',
-    status: profile.subscription_status as SubscriptionStatus,
+    tier: profile.subscription_tier ?? 'free',
+    status: profile.subscription_status,
     stripeCustomerId: profile.stripe_customer_id,
     stripeSubscriptionId: profile.stripe_subscription_id,
     currentPeriodStart: profile.subscription_current_period_start
@@ -541,7 +534,7 @@ export async function hasProSubscription(userId: string): Promise<boolean> {
 
 export function mapStripeSubscriptionToProfileUpdate(
   subscription: Stripe.Subscription
-): Partial<Record<string, unknown>> {
+): ProfilesUpdate {
   const currentPeriodStart = (subscription as Stripe.Subscription & {
     current_period_start?: number | null;
   }).current_period_start;
@@ -560,7 +553,7 @@ export function mapStripeSubscriptionToProfileUpdate(
   return {
     stripe_subscription_id: subscription.id,
     subscription_tier: 'pro',
-    subscription_status: subscription.status,
+    subscription_status: (subscription.status as SubscriptionStatus) ?? null,
     subscription_current_period_start: periodStart,
     subscription_current_period_end: periodEnd,
     cancel_at_period_end: subscription.cancel_at_period_end ?? false,

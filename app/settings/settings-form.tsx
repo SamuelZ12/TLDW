@@ -114,12 +114,6 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
 
     if (!sessionId) return
 
-    // If already on Pro, no need to poll
-    if (subscription?.tier === 'pro') {
-      window.history.replaceState({}, '', '/settings')
-      return
-    }
-
     let pollInterval: NodeJS.Timeout | undefined
     let timeoutId: NodeJS.Timeout | undefined
     let processingToastShown = false
@@ -150,26 +144,62 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
       window.history.replaceState({}, '', '/settings')
     }
 
-    const confirmCheckout = async () => {
+    const handleTopupSuccess = (data: {
+      creditsAdded?: number
+      totalCredits?: number | null
+      alreadyApplied?: boolean
+      updated?: boolean
+    }) => {
+      cleanupProcessing()
+
+      if (data.alreadyApplied) {
+        toast.success('Top-Up credits already applied to your account.')
+      } else if (data.updated && (data.creditsAdded ?? 0) > 0) {
+        const totalCopy =
+          typeof data.totalCredits === 'number'
+            ? `You now have ${data.totalCredits} top-up credits available.`
+            : 'Your credits are ready to use.'
+
+        toast.success(
+          `Added ${data.creditsAdded} Top-Up credits! ${totalCopy}`.trim()
+        )
+      } else {
+        toast.success('Top-Up purchase recorded. Your credits will reflect shortly.')
+      }
+
+      router.refresh()
+      window.history.replaceState({}, '', '/settings')
+    }
+
+    const confirmCheckout = async (): Promise<'handled' | 'subscription_pending'> => {
       showProcessingToast()
       try {
         const response = await csrfFetch.post('/api/stripe/confirm-checkout', { sessionId })
 
         if (!response.ok) {
-          return false
+          return 'subscription_pending'
         }
 
         const data = await response.json()
 
-        if (data.updated && data.tier === 'pro') {
-          handleActivation()
-          return true
+        if (data.type === 'topup') {
+          handleTopupSuccess(data)
+          return 'handled'
+        }
+
+        if (data.type === 'subscription' || !data.type) {
+          if (data.updated && data.tier === 'pro') {
+            handleActivation()
+            return 'handled'
+          }
+
+          return 'subscription_pending'
         }
       } catch (error) {
         console.error('Error confirming Stripe checkout:', error)
       }
 
-      return false
+      return 'subscription_pending'
     }
 
     const pollForSubscription = async () => {
@@ -202,9 +232,15 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
     }
 
     ;(async () => {
-      const confirmed = await confirmCheckout()
-      if (!confirmed) {
-        startPolling()
+      const result = await confirmCheckout()
+
+      if (result === 'subscription_pending') {
+        if (subscription?.tier === 'pro') {
+          cleanupProcessing()
+          window.history.replaceState({}, '', '/settings')
+        } else {
+          startPolling()
+        }
       }
     })()
 
