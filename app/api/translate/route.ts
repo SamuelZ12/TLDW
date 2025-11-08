@@ -15,8 +15,17 @@ const translateBatchRequestSchema = z.object({
 });
 
 async function handler(request: NextRequest) {
+  let requestBody: unknown;
+
   try {
-    const body = await request.json();
+    requestBody = await request.json();
+    const body = requestBody;
+
+    console.log('[TRANSLATE] Translation request:', {
+      isBatch: Array.isArray(body.texts),
+      textCount: Array.isArray(body.texts) ? body.texts.length : 1,
+      targetLanguage: body.targetLanguage
+    });
 
     // Determine if this is a batch or single translation request
     const isBatch = Array.isArray(body.texts);
@@ -66,8 +75,14 @@ async function handler(request: NextRequest) {
       return NextResponse.json({ translation });
     }
   } catch (error) {
-    console.error('Translation error:', error);
-    
+    // Log full error details server-side for debugging
+    console.error('[TRANSLATE] Translation error:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      requestBody: requestBody || 'Unable to parse request body',
+      timestamp: new Date().toISOString(),
+    });
+
     // Provide more specific error messages based on error type
     if (error instanceof Error) {
       if (error.message.includes('API key')) {
@@ -91,9 +106,9 @@ async function handler(request: NextRequest) {
   }
 }
 
-// Apply security with standard rate limits
+// Apply security with translation-specific rate limits
 export const POST = withSecurity(handler, {
-  rateLimit: RATE_LIMITS.AUTH_GENERATION, // Use authenticated rate limit since translation uses resources
+  rateLimit: RATE_LIMITS.TRANSLATION, // Higher limit since client caches translations
   maxBodySize: 1024 * 1024, // 1MB should be sufficient for text translation
   allowedMethods: ['POST']
 });

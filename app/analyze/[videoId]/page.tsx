@@ -791,38 +791,18 @@ export default function AnalyzePage() {
       const takeawaysController = abortManager.current.createController('takeaways', 60000);
 
       // Start topics generation using cached video-analysis endpoint
-      const requestPayload = {
-        videoId: extractedVideoId,
-        videoInfo: fetchedVideoInfo,
-        transcript: normalizedTranscriptData,
-        model: 'gemini-2.5-flash',
-        mode: selectedMode
-      };
-
-      // Debug logging - log request payload structure
-      console.log('[VIDEO-ANALYSIS] Request payload structure:', {
-        videoId: requestPayload.videoId,
-        videoIdType: typeof requestPayload.videoId,
-        videoIdLength: requestPayload.videoId?.length,
-        videoInfo: {
-          title: requestPayload.videoInfo?.title,
-          author: requestPayload.videoInfo?.author,
-          duration: requestPayload.videoInfo?.duration,
-          thumbnail: requestPayload.videoInfo?.thumbnail,
-        },
-        transcriptSegments: requestPayload.transcript?.length,
-        firstSegment: requestPayload.transcript?.[0],
-        model: requestPayload.model,
-        mode: requestPayload.mode
-      });
-
       const topicsPromise = fetch("/api/video-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestPayload),
+        body: JSON.stringify({
+          videoId: extractedVideoId,
+          videoInfo: fetchedVideoInfo,
+          transcript: normalizedTranscriptData,
+          model: 'gemini-2.5-flash',
+          mode: selectedMode
+        }),
         signal: topicsController.signal,
       }).catch(err => {
-        console.error('[VIDEO-ANALYSIS] Fetch error:', err);
         if (err.name === 'AbortError') {
           throw new Error("Topic generation was canceled or interrupted. Please try again.");
         }
@@ -864,11 +844,6 @@ export default function AnalyzePage() {
       const topicsRes = topicsResult.value;
       if (!topicsRes.ok) {
         const errorData = await topicsRes.json().catch(() => ({ error: "Unknown error" }));
-        console.error('[VIDEO-ANALYSIS] Error response:', {
-          status: topicsRes.status,
-          statusText: topicsRes.statusText,
-          errorData: errorData
-        });
         const requiresAuth = Boolean((errorData as any)?.requiresAuth);
 
         if (topicsRes.status === 429 && requiresAuth) {
@@ -1556,12 +1531,23 @@ export default function AnalyzePage() {
     const translation = await translationBatcherRef.current.translate(text, cacheKey);
 
     // Sync cache state (the batcher updates the Map, but we need to trigger re-render)
-    // This is a no-op if the cache hasn't changed, but ensures React knows about updates
+    // Implements LRU-like eviction to prevent unbounded memory growth
     setTranslationCache(prev => {
       if (prev.has(cacheKey) && prev.get(cacheKey) === translation) {
         return prev; // No change, don't trigger re-render
       }
-      return new Map(prev);
+
+      const next = new Map(prev);
+
+      // Evict oldest entry if cache exceeds limit (500 entries ~= 50KB)
+      const MAX_CACHE_SIZE = 500;
+      if (next.size >= MAX_CACHE_SIZE) {
+        const firstKey = next.keys().next().value;
+        next.delete(firstKey);
+      }
+
+      next.set(cacheKey, translation);
+      return next;
     });
 
     return translation;
@@ -1569,9 +1555,12 @@ export default function AnalyzePage() {
 
   const handleLanguageChange = useCallback((languageCode: string | null) => {
     setSelectedLanguage(languageCode);
-    // Clear cache and batcher when changing language to avoid stale translations
+    // Clear cache and update batcher language to avoid stale translations
     setTranslationCache(new Map());
-    if (translationBatcherRef.current) {
+    if (translationBatcherRef.current && languageCode) {
+      translationBatcherRef.current.updateLanguage(languageCode);
+    } else if (translationBatcherRef.current) {
+      // If switching back to English (null), clear the batcher entirely
       translationBatcherRef.current.clear();
       translationBatcherRef.current = null;
     }

@@ -46,6 +46,7 @@ export function TranscriptViewer({
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [translationsCache, setTranslationsCache] = useState<Map<number, string>>(new Map());
   const [loadingTranslations, setLoadingTranslations] = useState<Set<number>>(new Set());
+  const [translationErrors, setTranslationErrors] = useState<Set<number>>(new Set());
   const selectedTopicIndex = selectedTopic
     ? topics.findIndex((topic) => topic.id === selectedTopic.id)
     : -1;
@@ -64,12 +65,20 @@ export function TranscriptViewer({
     }
 
     setLoadingTranslations(prev => new Set(prev).add(segmentIndex));
+    // Clear any previous error state
+    setTranslationErrors(prev => {
+      const next = new Set(prev);
+      next.delete(segmentIndex);
+      return next;
+    });
 
     try {
       const translation = await onRequestTranslation(segment.text, segmentIndex);
       setTranslationsCache(prev => new Map(prev).set(segmentIndex, translation));
     } catch (error) {
       console.error('Translation failed for segment', segmentIndex, error);
+      // Mark segment as failed so UI can show retry option
+      setTranslationErrors(prev => new Set(prev).add(segmentIndex));
     } finally {
       setLoadingTranslations(prev => {
         const newSet = new Set(prev);
@@ -83,6 +92,7 @@ export function TranscriptViewer({
   useEffect(() => {
     setTranslationsCache(new Map());
     setLoadingTranslations(new Set());
+    setTranslationErrors(new Set());
   }, [selectedLanguage]);
 
   // Clear refs when topic changes
@@ -579,10 +589,11 @@ export function TranscriptViewer({
                 const hasHighlight = highlightedText !== null;
                 const translation = translationsCache.get(index);
                 const isLoadingTranslation = loadingTranslations.has(index);
+                const hasTranslationError = translationErrors.has(index);
                 const translationEnabled = selectedLanguage !== null;
 
-                // Request translation if enabled and not already cached/loading
-                if (translationEnabled && !translation && !isLoadingTranslation) {
+                // Request translation if enabled and not already cached/loading/errored
+                if (translationEnabled && !translation && !isLoadingTranslation && !hasTranslationError) {
                   requestTranslation(index);
                 }
 
@@ -652,20 +663,35 @@ export function TranscriptViewer({
 
                     {/* Translated text */}
                     {translationEnabled && (
-                      <p 
-                        className={cn(
-                          "text-sm leading-relaxed",
-                          isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
+                      <div className="flex items-start gap-2">
+                        <p
+                          className={cn(
+                            "text-sm leading-relaxed flex-1",
+                            isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
+                          )}
+                        >
+                          {isLoadingTranslation ? (
+                            <span className="text-muted-foreground italic">Translating...</span>
+                          ) : hasTranslationError ? (
+                            <span className="text-red-500/70 italic text-xs">Translation failed</span>
+                          ) : translation ? (
+                            translation
+                          ) : (
+                            <span className="text-muted-foreground/50 italic">Translation pending...</span>
+                          )}
+                        </p>
+                        {hasTranslationError && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              requestTranslation(index);
+                            }}
+                            className="text-xs text-blue-500 hover:text-blue-600 underline shrink-0"
+                          >
+                            Retry
+                          </button>
                         )}
-                      >
-                        {isLoadingTranslation ? (
-                          <span className="text-muted-foreground italic">Translating...</span>
-                        ) : translation ? (
-                          translation
-                        ) : (
-                          <span className="text-muted-foreground/50 italic">Translation pending...</span>
-                        )}
-                      </p>
+                      </div>
                     )}
 
                   </div>

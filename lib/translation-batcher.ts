@@ -13,10 +13,11 @@ interface TranslationRequest {
 export class TranslationBatcher {
   private queue: TranslationRequest[] = [];
   private batchTimeout: NodeJS.Timeout | null = null;
+  private flushInProgress: boolean = false;
   private readonly batchDelay: number;
   private readonly maxBatchSize: number;
   private cache: Map<string, string>;
-  private readonly targetLanguage: string;
+  private targetLanguage: string;
 
   constructor(
     batchDelay: number = 50, // Wait 50ms to collect requests
@@ -24,6 +25,11 @@ export class TranslationBatcher {
     cache: Map<string, string>,
     targetLanguage: string = 'zh-CN'
   ) {
+    // Validate batch size to prevent API failures
+    if (maxBatchSize > 100 || maxBatchSize < 1) {
+      throw new Error('maxBatchSize must be between 1 and 100');
+    }
+
     this.batchDelay = batchDelay;
     this.maxBatchSize = maxBatchSize;
     this.cache = cache;
@@ -62,71 +68,90 @@ export class TranslationBatcher {
    * Process all queued translation requests as a batch
    */
   private async processBatch() {
-    // Clear timeout if exists
-    if (this.batchTimeout) {
-      clearTimeout(this.batchTimeout);
-      this.batchTimeout = null;
-    }
-
-    // Take all pending requests
-    const batch = this.queue.splice(0, this.maxBatchSize);
-    if (batch.length === 0) return;
-
-    console.log(`[TRANSLATION-BATCHER] Processing batch of ${batch.length} translations`);
+    // Prevent concurrent flush operations
+    if (this.flushInProgress) return;
+    this.flushInProgress = true;
 
     try {
-      // Extract unique texts to translate (avoid duplicates in same batch)
-      const uniqueTexts = Array.from(new Set(batch.map(req => req.text)));
-
-      // Make batched API call
-      const response = await fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          texts: uniqueTexts,
-          targetLanguage: this.targetLanguage
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Translation API error: ${response.status}`);
+      // Clear timeout if exists
+      if (this.batchTimeout) {
+        clearTimeout(this.batchTimeout);
+        this.batchTimeout = null;
       }
 
-      const data = await response.json();
-      const translations: string[] = data.translations;
+      // Take all pending requests
+      const batch = this.queue.splice(0, this.maxBatchSize);
+      if (batch.length === 0) {
+        this.flushInProgress = false;
+        return;
+      }
 
-      // Create a map of text -> translation
-      const translationMap = new Map<string, string>();
-      uniqueTexts.forEach((text, index) => {
-        const translation = translations[index] || text;
-        translationMap.set(text, translation);
-      });
+      // Capture current language to detect mid-flight changes
+      const currentLanguage = this.targetLanguage;
 
-      // Update cache and resolve all requests
-      batch.forEach(req => {
-        const translation = translationMap.get(req.text) || req.text;
+      console.log(`[TRANSLATION-BATCHER] Processing batch of ${batch.length} translations`);
 
-        // Cache the result
-        this.cache.set(req.cacheKey, translation);
+      try {
+        // Extract unique texts to translate (avoid duplicates in same batch)
+        const uniqueTexts = Array.from(new Set(batch.map(req => req.text)));
 
-        // Resolve the promise
-        req.resolve(translation);
-      });
+        // Make batched API call
+        const response = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            texts: uniqueTexts,
+            targetLanguage: currentLanguage
+          }),
+        });
 
-      console.log(`[TRANSLATION-BATCHER] Batch completed successfully`);
-    } catch (error) {
-      console.error('[TRANSLATION-BATCHER] Batch failed:', error);
+        if (!response.ok) {
+          throw new Error(`Translation API error: ${response.status}`);
+        }
 
-      // Reject all requests in the batch
-      batch.forEach(req => {
-        // On error, return original text
-        req.resolve(req.text);
-      });
-    }
+        const data = await response.json();
+        const translations: string[] = data.translations;
 
-    // If there are still items in queue, process next batch
-    if (this.queue.length > 0) {
-      setTimeout(() => this.processBatch(), 0);
+        // Verify language hasn't changed mid-flight
+        if (currentLanguage !== this.targetLanguage) {
+          throw new Error('Language changed during translation - discarding results');
+        }
+
+        // Create a map of text -> translation
+        const translationMap = new Map<string, string>();
+        uniqueTexts.forEach((text, index) => {
+          const translation = translations[index] || text;
+          translationMap.set(text, translation);
+        });
+
+        // Update cache and resolve all requests
+        batch.forEach(req => {
+          const translation = translationMap.get(req.text) || req.text;
+
+          // Cache the result
+          this.cache.set(req.cacheKey, translation);
+
+          // Resolve the promise
+          req.resolve(translation);
+        });
+
+        console.log(`[TRANSLATION-BATCHER] Batch completed successfully`);
+      } catch (error) {
+        console.error('[TRANSLATION-BATCHER] Batch failed:', error);
+
+        // Reject all requests in the batch
+        batch.forEach(req => {
+          // On error, return original text
+          req.resolve(req.text);
+        });
+      }
+    } finally {
+      this.flushInProgress = false;
+
+      // If there are still items in queue, process next batch
+      if (this.queue.length > 0) {
+        setTimeout(() => this.processBatch(), 0);
+      }
     }
   }
 
@@ -139,6 +164,14 @@ export class TranslationBatcher {
       this.batchTimeout = null;
     }
     this.queue = [];
+  }
+
+  /**
+   * Update target language and clear pending requests
+   */
+  updateLanguage(newLanguage: string): void {
+    this.clear();
+    this.targetLanguage = newLanguage;
   }
 
   /**
