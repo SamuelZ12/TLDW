@@ -17,6 +17,8 @@ interface VideoProgressBarProps {
   transcript?: TranscriptSegment[];
   isLoadingThemeTopics?: boolean;
   videoId?: string;
+  selectedLanguage?: string | null;
+  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
 }
 
 export function VideoProgressBar({
@@ -30,6 +32,8 @@ export function VideoProgressBar({
   transcript,
   isLoadingThemeTopics = false,
   videoId,
+  selectedLanguage = null,
+  onRequestTranslation,
 }: VideoProgressBarProps) {
   const progressBarRef = useRef<HTMLDivElement>(null);
   const hasDuration = videoDuration > 0;
@@ -177,6 +181,8 @@ export function VideoProgressBar({
                 topicIndex={index}
                 onPlayTopic={() => onPlayTopic?.(topic)}
                 videoId={videoId}
+                selectedLanguage={selectedLanguage}
+                onRequestTranslation={onRequestTranslation}
               />
             );
           })}

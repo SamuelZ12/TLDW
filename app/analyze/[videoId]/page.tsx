@@ -17,6 +17,7 @@ import { SelectionActionPayload, EXPLAIN_SELECTION_EVENT } from "@/components/se
 import { fetchNotes, saveNote } from "@/lib/notes-client";
 import { EditingNote } from "@/components/notes-panel";
 import { useModePreference } from "@/lib/hooks/use-mode-preference";
+import { TranslationBatcher } from "@/lib/translation-batcher";
 
 // Page state for better UX
 type PageState = 'IDLE' | 'ANALYZING_NEW' | 'LOADING_CACHED';
@@ -129,6 +130,7 @@ export default function AnalyzePage() {
   const nextThemeRequestIdRef = useRef(0);
   const activeThemeRequestIdRef = useRef<number | null>(null);
   const pendingThemeRequestsRef = useRef(new Map<string, number>());
+  const translationBatcherRef = useRef<TranslationBatcher | null>(null);
 
   // Play All state (lifted from YouTubePlayer)
   const [isPlayingAll, setIsPlayingAll] = useState(false);
@@ -151,6 +153,10 @@ export default function AnalyzePage() {
 
   // Cached suggested questions
   const [cachedSuggestedQuestions, setCachedSuggestedQuestions] = useState<string[] | null>(null);
+
+  // Translation state - null means English (no translation), otherwise language code
+  const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
+  const [translationCache, setTranslationCache] = useState<Map<string, string>>(new Map());
 
   // Use custom hook for timer logic
   const elapsedTime = useElapsedTimer(generationStartTime);
@@ -355,9 +361,14 @@ export default function AnalyzePage() {
   // Cleanup AbortManager on component unmount
   useEffect(() => {
     const currentAbortManager = abortManager.current;
+    const currentBatcher = translationBatcherRef.current;
     return () => {
       // Abort all pending requests when component unmounts
       currentAbortManager.cleanup();
+      // Clear any pending translation batches
+      if (currentBatcher) {
+        currentBatcher.clear();
+      }
     };
   }, []);
 
@@ -780,18 +791,38 @@ export default function AnalyzePage() {
       const takeawaysController = abortManager.current.createController('takeaways', 60000);
 
       // Start topics generation using cached video-analysis endpoint
+      const requestPayload = {
+        videoId: extractedVideoId,
+        videoInfo: fetchedVideoInfo,
+        transcript: normalizedTranscriptData,
+        model: 'gemini-2.5-flash',
+        mode: selectedMode
+      };
+
+      // Debug logging - log request payload structure
+      console.log('[VIDEO-ANALYSIS] Request payload structure:', {
+        videoId: requestPayload.videoId,
+        videoIdType: typeof requestPayload.videoId,
+        videoIdLength: requestPayload.videoId?.length,
+        videoInfo: {
+          title: requestPayload.videoInfo?.title,
+          author: requestPayload.videoInfo?.author,
+          duration: requestPayload.videoInfo?.duration,
+          thumbnail: requestPayload.videoInfo?.thumbnail,
+        },
+        transcriptSegments: requestPayload.transcript?.length,
+        firstSegment: requestPayload.transcript?.[0],
+        model: requestPayload.model,
+        mode: requestPayload.mode
+      });
+
       const topicsPromise = fetch("/api/video-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          videoId: extractedVideoId,
-          videoInfo: fetchedVideoInfo,
-          transcript: normalizedTranscriptData,
-          model: 'gemini-2.5-flash',
-          mode: selectedMode
-        }),
+        body: JSON.stringify(requestPayload),
         signal: topicsController.signal,
       }).catch(err => {
+        console.error('[VIDEO-ANALYSIS] Fetch error:', err);
         if (err.name === 'AbortError') {
           throw new Error("Topic generation was canceled or interrupted. Please try again.");
         }
@@ -833,6 +864,11 @@ export default function AnalyzePage() {
       const topicsRes = topicsResult.value;
       if (!topicsRes.ok) {
         const errorData = await topicsRes.json().catch(() => ({ error: "Unknown error" }));
+        console.error('[VIDEO-ANALYSIS] Error response:', {
+          status: topicsRes.status,
+          statusText: topicsRes.statusText,
+          errorData: errorData
+        });
         const requiresAuth = Boolean((errorData as any)?.requiresAuth);
 
         if (topicsRes.status === 429 && requiresAuth) {
@@ -1502,6 +1538,45 @@ export default function AnalyzePage() {
     setEditingNote(null);
   }, []);
 
+  // Translation handler with batching
+  const handleRequestTranslation = useCallback(async (text: string, cacheKey: string): Promise<string> => {
+    if (!selectedLanguage) return text;
+
+    // Initialize batcher lazily on first use
+    if (!translationBatcherRef.current) {
+      translationBatcherRef.current = new TranslationBatcher(
+        50, // Wait 50ms to collect translation requests
+        100, // Max 100 translations per batch
+        translationCache,
+        selectedLanguage // Pass the target language
+      );
+    }
+
+    // Use the batcher - it will automatically batch requests and cache results
+    const translation = await translationBatcherRef.current.translate(text, cacheKey);
+
+    // Sync cache state (the batcher updates the Map, but we need to trigger re-render)
+    // This is a no-op if the cache hasn't changed, but ensures React knows about updates
+    setTranslationCache(prev => {
+      if (prev.has(cacheKey) && prev.get(cacheKey) === translation) {
+        return prev; // No change, don't trigger re-render
+      }
+      return new Map(prev);
+    });
+
+    return translation;
+  }, [translationCache, selectedLanguage]);
+
+  const handleLanguageChange = useCallback((languageCode: string | null) => {
+    setSelectedLanguage(languageCode);
+    // Clear cache and batcher when changing language to avoid stale translations
+    setTranslationCache(new Map());
+    if (translationBatcherRef.current) {
+      translationBatcherRef.current.clear();
+      translationBatcherRef.current = null;
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-white pt-12 pb-2">
       {pageState === 'IDLE' && !videoId && !routeVideoId && !urlParam && (
@@ -1661,6 +1736,8 @@ export default function AnalyzePage() {
                   transcript={transcript}
                   isLoadingThemeTopics={isLoadingThemeTopics}
                   videoId={videoId ?? undefined}
+                  selectedLanguage={selectedLanguage}
+                  onRequestTranslation={handleRequestTranslation}
                 />
               </div>
             </div>
@@ -1694,6 +1771,9 @@ export default function AnalyzePage() {
                   onCancelEditing={handleCancelEditing}
                   isAuthenticated={!!user}
                   onRequestSignIn={promptSignInForNotes}
+                  selectedLanguage={selectedLanguage}
+                  onRequestTranslation={handleRequestTranslation}
+                  onLanguageChange={handleLanguageChange}
                 />
               </div>
             </div>

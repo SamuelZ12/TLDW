@@ -12,17 +12,18 @@ interface TopicCardProps {
   topicIndex: number;
   onPlayTopic?: () => void;
   videoId?: string;
-  translationEnabled?: boolean;
+  selectedLanguage?: string | null;
   onRequestTranslation?: (text: string, topicId: string) => Promise<string>;
 }
 
-export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic, videoId, translationEnabled = false, onRequestTranslation }: TopicCardProps) {
+export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic, videoId, selectedLanguage = null, onRequestTranslation }: TopicCardProps) {
   const topicColor = getTopicHSLColor(topicIndex, videoId);
   const [translatedTitle, setTranslatedTitle] = useState<string | null>(topic.translatedTitle || null);
   const [isLoadingTranslation, setIsLoadingTranslation] = useState(false);
 
-  // Request translation when translation is enabled and not already available
+  // Request translation when language is selected and not already available
   useEffect(() => {
+    const translationEnabled = selectedLanguage !== null;
     if (translationEnabled && !translatedTitle && !isLoadingTranslation && onRequestTranslation) {
       setIsLoadingTranslation(true);
       onRequestTranslation(topic.title, topic.id)
@@ -36,15 +37,13 @@ export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic,
           setIsLoadingTranslation(false);
         });
     }
-  }, [translationEnabled, translatedTitle, isLoadingTranslation, onRequestTranslation, topic.title, topic.id]);
+  }, [selectedLanguage, translatedTitle, isLoadingTranslation, onRequestTranslation, topic.title, topic.id]);
 
-  // Clear translation when translation is disabled
+  // Clear translation when language changes
   useEffect(() => {
-    if (!translationEnabled) {
-      setTranslatedTitle(topic.translatedTitle || null);
-      setIsLoadingTranslation(false);
-    }
-  }, [translationEnabled, topic.translatedTitle]);
+    setTranslatedTitle(topic.translatedTitle || null);
+    setIsLoadingTranslation(false);
+  }, [selectedLanguage, topic.translatedTitle]);
   
   const handleClick = () => {
     onClick();
@@ -80,7 +79,7 @@ export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic,
           style={{ backgroundColor: `hsl(${topicColor})` }}
         />
         <div className="flex-1 min-w-0">
-          {translationEnabled ? (
+          {selectedLanguage !== null ? (
             <div className="space-y-0.5">
               <span className="font-medium text-sm truncate block">
                 {isLoadingTranslation ? "Translating..." : translatedTitle || topic.title}

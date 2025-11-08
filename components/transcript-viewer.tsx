@@ -20,7 +20,7 @@ interface TranscriptViewerProps {
   citationHighlight?: Citation | null;
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
   videoId?: string;
-  translationEnabled?: boolean;
+  selectedLanguage?: string | null;
   onRequestTranslation?: (text: string, segmentIndex: number) => Promise<string>;
 }
 
@@ -33,7 +33,7 @@ export function TranscriptViewer({
   citationHighlight,
   onTakeNoteFromSelection,
   videoId,
-  translationEnabled = false,
+  selectedLanguage = null,
   onRequestTranslation
 }: TranscriptViewerProps) {
   const highlightedRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -53,6 +53,7 @@ export function TranscriptViewer({
     selectedTopicIndex >= 0 ? getTopicHSLColor(selectedTopicIndex, videoId) : null;
 
   const requestTranslation = useCallback(async (segmentIndex: number) => {
+    const translationEnabled = selectedLanguage !== null;
     if (!onRequestTranslation || !translationEnabled || loadingTranslations.has(segmentIndex) || translationsCache.has(segmentIndex)) {
       return;
     }
@@ -76,15 +77,13 @@ export function TranscriptViewer({
         return newSet;
       });
     }
-  }, [onRequestTranslation, translationEnabled, loadingTranslations, translationsCache, transcript]);
+  }, [onRequestTranslation, selectedLanguage, loadingTranslations, translationsCache, transcript]);
 
-  // Clear translations cache when translation is disabled
+  // Clear translations cache when language changes
   useEffect(() => {
-    if (!translationEnabled) {
-      setTranslationsCache(new Map());
-      setLoadingTranslations(new Set());
-    }
-  }, [translationEnabled]);
+    setTranslationsCache(new Map());
+    setLoadingTranslations(new Set());
+  }, [selectedLanguage]);
 
   // Clear refs when topic changes
   useEffect(() => {
@@ -576,10 +575,11 @@ export function TranscriptViewer({
                 const highlightedText = getHighlightedText(segment, index);
                 const isCurrent = index === currentSegmentIndex;
                 getSegmentTopic(segment);
-                
+
                 const hasHighlight = highlightedText !== null;
                 const translation = translationsCache.get(index);
                 const isLoadingTranslation = loadingTranslations.has(index);
+                const translationEnabled = selectedLanguage !== null;
 
                 // Request translation if enabled and not already cached/loading
                 if (translationEnabled && !translation && !isLoadingTranslation) {
