@@ -56,9 +56,39 @@ async function handler(req: NextRequest) {
   } catch (error) {
     // Handle Stripe errors
     if (error && typeof error === 'object' && 'type' in error) {
-      console.error('Stripe error:', error);
+      const stripeError = error as any;
+      console.error('Stripe error:', stripeError);
+
+      // Check if it's a portal configuration error
+      if (
+        stripeError.type === 'StripeInvalidRequestError' &&
+        stripeError.message?.includes('No configuration')
+      ) {
+        // Determine if we're in test mode
+        const isTestMode = process.env.STRIPE_SECRET_KEY?.includes('_test_');
+        const dashboardUrl = isTestMode
+          ? 'https://dashboard.stripe.com/test/settings/billing/portal'
+          : 'https://dashboard.stripe.com/settings/billing/portal';
+
+        return NextResponse.json(
+          {
+            error: 'Customer Portal not configured',
+            message:
+              'The Stripe Customer Portal needs to be set up before you can manage your billing. ' +
+              'Please contact support or run the setup script: npm run stripe:setup-portal',
+            setupUrl: dashboardUrl,
+            isConfigError: true,
+          },
+          { status: 500 }
+        );
+      }
+
+      // Generic Stripe error
       return NextResponse.json(
-        { error: 'Unable to access billing portal. Please try again.' },
+        {
+          error: 'Unable to access billing portal',
+          message: 'There was an error accessing the billing portal. Please try again.',
+        },
         { status: 500 }
       );
     }

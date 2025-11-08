@@ -40,7 +40,10 @@ export async function openBillingPortal(): Promise<void> {
     let message = 'Request failed'
     try {
       const data = await response.json()
-      if (data?.error) {
+      // Use the detailed message if available, otherwise fall back to error field
+      if (data?.message) {
+        message = data.message
+      } else if (data?.error) {
         message = data.error
       }
     } catch {

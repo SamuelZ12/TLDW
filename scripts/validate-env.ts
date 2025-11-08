@@ -1,4 +1,4 @@
-#!/usr/bin/env ts-node
+#!/usr/bin/env tsx
 /**
  * Environment Variable Validation Script
  *
@@ -8,11 +8,12 @@
  * Usage:
  *   npm run validate-env
  *   or
- *   ts-node scripts/validate-env.ts
+ *   tsx scripts/validate-env.ts
  */
 
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import Stripe from 'stripe';
 
 // Load .env.local file manually
 try {
@@ -128,6 +129,42 @@ function validateRequiredEnvVars(): ValidationResult {
   };
 }
 
+async function validateStripePortalConfiguration(): Promise<{
+  configured: boolean;
+  warning?: string;
+}> {
+  // Skip if Stripe is not configured
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return { configured: false };
+  }
+
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2024-10-28.acacia' as any,
+      typescript: true,
+    });
+
+    // Try to list portal configurations
+    const configurations = await stripe.billingPortal.configurations.list({ limit: 1 });
+
+    if (configurations.data.length === 0) {
+      return {
+        configured: false,
+        warning: 'Stripe Customer Portal is not configured. Run: npm run stripe:setup-portal',
+      };
+    }
+
+    // Portal is configured
+    return { configured: true };
+  } catch (error) {
+    // If we get an error, treat as not configured but don't fail validation
+    return {
+      configured: false,
+      warning: 'Could not verify Stripe Customer Portal configuration',
+    };
+  }
+}
+
 async function main() {
   console.log('🔍 Validating environment configuration...\n');
 
@@ -149,6 +186,18 @@ async function main() {
     result.warnings.forEach((warning) => {
       console.log(`  • ${warning}`);
     });
+  }
+
+  // Validate Stripe portal configuration (only if basic env vars are valid)
+  if (result.valid && process.env.STRIPE_SECRET_KEY) {
+    console.log('\n🔍 Validating Stripe Customer Portal...');
+    const portalResult = await validateStripePortalConfiguration();
+
+    if (portalResult.configured) {
+      console.log('✅ Stripe Customer Portal is configured');
+    } else if (portalResult.warning) {
+      console.log(`⚠️  ${portalResult.warning}`);
+    }
   }
 
   // Environment info (only if validation passed)

@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "validate-env": "tsx scripts/validate-env.ts",
-    "stripe:smoke": "node scripts/stripe-smoke.mjs"
+    "stripe:smoke": "node scripts/stripe-smoke.mjs",
+    "stripe:setup-portal": "tsx scripts/setup-stripe-portal.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
