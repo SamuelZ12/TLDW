@@ -2,7 +2,7 @@
 
 import { csrfFetch } from '@/lib/csrf-client'
 
-type PriceType = 'subscription' | 'topup'
+type PriceType = 'subscription' | 'subscription_annual' | 'topup'
 
 /**
  * Initiates a Stripe Checkout session for subscription or top-up purchase.

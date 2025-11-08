@@ -91,11 +91,33 @@ export async function getUserSubscriptionStatus(
 
   if (error) {
     console.error('Error fetching subscription from profiles:', error);
-    return null;
+    // Return default free-tier subscription instead of null
+    return {
+      userId,
+      tier: 'free',
+      status: null,
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      topupCredits: 0,
+    };
   }
 
   if (!profile) {
-    return null;
+    // Return default free-tier subscription for users without profiles
+    return {
+      userId,
+      tier: 'free',
+      status: null,
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      topupCredits: 0,
+    };
   }
 
   return {

@@ -30,11 +30,12 @@ export default async function SettingsPage() {
     .select('*', { count: 'exact', head: true })
     .eq('user_id', user.id)
 
+  // Always fetch subscription and usage for authenticated users
+  // getUserSubscriptionStatus returns a default free-tier object if no profile exists
   const subscription = await getUserSubscriptionStatus(user.id, { client: supabase })
-  const usage = subscription
-    ? await getUsageStats(user.id, { client: supabase })
-    : null
+  const usage = await getUsageStats(user.id, { client: supabase })
 
+  // Create subscription summary for all users (free and pro)
   const subscriptionSummary = subscription && usage
     ? {
         tier: subscription.tier,

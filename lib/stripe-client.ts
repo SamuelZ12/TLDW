@@ -44,6 +44,9 @@ export const STRIPE_PRICE_IDS = {
   /** Pro subscription: $5/month recurring */
   PRO_SUBSCRIPTION: process.env.STRIPE_PRO_PRICE_ID!,
 
+  /** Pro subscription: discounted annual option */
+  PRO_SUBSCRIPTION_ANNUAL: process.env.STRIPE_PRO_ANNUAL_PRICE_ID!,
+
   /** Top-Up credits: $3 one-time for +20 video credits */
   TOPUP_CREDITS: process.env.STRIPE_TOPUP_PRICE_ID!,
 } as const;
@@ -71,6 +74,10 @@ export function validateStripeConfig(): void {
 
   if (!process.env.STRIPE_PRO_PRICE_ID) {
     missing.push('STRIPE_PRO_PRICE_ID');
+  }
+
+  if (!process.env.STRIPE_PRO_ANNUAL_PRICE_ID) {
+    missing.push('STRIPE_PRO_ANNUAL_PRICE_ID');
   }
 
   if (!process.env.STRIPE_TOPUP_PRICE_ID) {

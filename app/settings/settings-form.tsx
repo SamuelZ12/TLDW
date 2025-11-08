@@ -429,7 +429,7 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
             />
           ) : (
             <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              Link a payment method to unlock Pro features and detailed usage tracking.
+              Usage tracking will appear here once your account is fully set up.
             </div>
           )}
 

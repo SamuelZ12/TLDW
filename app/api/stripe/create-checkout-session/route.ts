@@ -13,7 +13,7 @@ import { formatValidationError } from '@/lib/validation';
  * Request schema for creating a checkout session
  */
 const createCheckoutSessionSchema = z.object({
-  priceType: z.enum(['subscription', 'topup']),
+  priceType: z.enum(['subscription', 'subscription_annual', 'topup']),
 });
 
 /**
@@ -96,12 +96,20 @@ async function handler(req: NextRequest) {
     }
 
     // Determine the price ID and mode based on priceType
-    const priceId =
-      validatedData.priceType === 'subscription'
-        ? STRIPE_PRICE_IDS.PRO_SUBSCRIPTION
-        : STRIPE_PRICE_IDS.TOPUP_CREDITS;
+    const isSubscription =
+      validatedData.priceType === 'subscription' || validatedData.priceType === 'subscription_annual';
+    const priceId = (() => {
+      switch (validatedData.priceType) {
+        case 'subscription':
+          return STRIPE_PRICE_IDS.PRO_SUBSCRIPTION;
+        case 'subscription_annual':
+          return STRIPE_PRICE_IDS.PRO_SUBSCRIPTION_ANNUAL;
+        default:
+          return STRIPE_PRICE_IDS.TOPUP_CREDITS;
+      }
+    })();
 
-    const mode = validatedData.priceType === 'subscription' ? 'subscription' : 'payment';
+    const mode = isSubscription ? 'subscription' : 'payment';
 
     // Create Stripe Checkout session
     const stripe = getStripeClient();
@@ -128,6 +136,7 @@ async function handler(req: NextRequest) {
         subscription_data: {
           metadata: {
             userId: user.id,
+            billingPeriod: validatedData.priceType === 'subscription_annual' ? 'annual' : 'monthly',
           },
         },
       }),
