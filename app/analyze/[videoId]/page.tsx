@@ -594,6 +594,9 @@ export default function AnalyzePage() {
           setLoadingStage(null);
           setProcessingStartTime(null);
 
+          // Show success notification for cached analysis
+          toast.success("Fast analysis! This video was cached - no credits used.");
+
           backgroundOperation(
             'load-cached-themes',
             async () => {
