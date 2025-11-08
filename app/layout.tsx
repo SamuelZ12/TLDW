@@ -58,7 +58,7 @@ export default function RootLayout({
                 <UserMenu />
               </div>
             </header>
-            <main className="flex-1">
+            <main className="flex-1 mt-8 px-2">
               {children}
             </main>
             <Footer />
