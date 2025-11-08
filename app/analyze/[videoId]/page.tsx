@@ -41,8 +41,19 @@ type LimitCheckResponse = {
   tier?: 'free' | 'pro' | 'anonymous';
   reason?: string | null;
   requiresTopup?: boolean;
+  requiresAuth?: boolean;
+  status?: string | null;
+  warning?: string | null;
+  unlimited?: boolean;
+  willConsumeTopup?: boolean;
+  resetAt?: string | null;
   usage?: {
     totalRemaining?: number | null;
+    counted?: number | null;
+    cached?: number | null;
+    baseLimit?: number | null;
+    baseRemaining?: number | null;
+    topupRemaining?: number | null;
   } | null;
 };
 
@@ -351,7 +362,7 @@ export default function AnalyzePage() {
             ? null
             : -1;
 
-      const resetTimestamp = data?.resetAt ?? usage?.resetAt ?? null;
+      const resetTimestamp = data?.resetAt ?? null;
 
       setRateLimitInfo({
         remaining: remainingValue,
