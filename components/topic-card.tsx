@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Topic } from "@/lib/types";
 import { formatDuration, getTopicHSLColor } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -11,10 +12,39 @@ interface TopicCardProps {
   topicIndex: number;
   onPlayTopic?: () => void;
   videoId?: string;
+  translationEnabled?: boolean;
+  onRequestTranslation?: (text: string, topicId: string) => Promise<string>;
 }
 
-export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic, videoId }: TopicCardProps) {
+export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic, videoId, translationEnabled = false, onRequestTranslation }: TopicCardProps) {
   const topicColor = getTopicHSLColor(topicIndex, videoId);
+  const [translatedTitle, setTranslatedTitle] = useState<string | null>(topic.translatedTitle || null);
+  const [isLoadingTranslation, setIsLoadingTranslation] = useState(false);
+
+  // Request translation when translation is enabled and not already available
+  useEffect(() => {
+    if (translationEnabled && !translatedTitle && !isLoadingTranslation && onRequestTranslation) {
+      setIsLoadingTranslation(true);
+      onRequestTranslation(topic.title, topic.id)
+        .then(translation => {
+          setTranslatedTitle(translation);
+        })
+        .catch(error => {
+          console.error('Translation failed for topic:', topic.id, error);
+        })
+        .finally(() => {
+          setIsLoadingTranslation(false);
+        });
+    }
+  }, [translationEnabled, translatedTitle, isLoadingTranslation, onRequestTranslation, topic.title, topic.id]);
+
+  // Clear translation when translation is disabled
+  useEffect(() => {
+    if (!translationEnabled) {
+      setTranslatedTitle(topic.translatedTitle || null);
+      setIsLoadingTranslation(false);
+    }
+  }, [translationEnabled, topic.translatedTitle]);
   
   const handleClick = () => {
     onClick();
@@ -41,17 +71,30 @@ export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic,
       }}
       onClick={handleClick}
     >
-      <div className="flex items-center gap-2 flex-1 min-w-0">
+      <div className="flex items-start gap-2 flex-1 min-w-0">
         <div
           className={cn(
-            "rounded-full shrink-0 transition-all",
+            "rounded-full shrink-0 transition-all mt-0.5",
             isSelected ? "w-3.5 h-3.5" : "w-3 h-3"
           )}
           style={{ backgroundColor: `hsl(${topicColor})` }}
         />
-        <span className="font-medium text-sm truncate">
-          {topic.title}
-        </span>
+        <div className="flex-1 min-w-0">
+          {translationEnabled ? (
+            <div className="space-y-0.5">
+              <span className="font-medium text-sm truncate block">
+                {isLoadingTranslation ? "Translating..." : translatedTitle || topic.title}
+              </span>
+              <span className="text-xs text-muted-foreground truncate block opacity-70">
+                {topic.title}
+              </span>
+            </div>
+          ) : (
+            <span className="font-medium text-sm truncate">
+              {topic.title}
+            </span>
+          )}
+        </div>
       </div>
 
       <span className="font-mono text-xs text-muted-foreground shrink-0">

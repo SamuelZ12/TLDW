@@ -5,7 +5,7 @@ import { VideoInfo } from "@/lib/types";
 import { formatDuration } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Star, Clock, User, Loader2 } from "lucide-react";
+import { Star, Clock, User, Loader2, Languages } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 
@@ -14,17 +14,25 @@ interface VideoHeaderProps {
   videoId: string;
   isFavorite?: boolean;
   onFavoriteToggle?: (newStatus: boolean) => void;
+  translationEnabled?: boolean;
+  onTranslationToggle?: (enabled: boolean) => void;
 }
 
 export function VideoHeader({
   videoInfo,
   videoId,
   isFavorite = false,
-  onFavoriteToggle
+  onFavoriteToggle,
+  translationEnabled = false,
+  onTranslationToggle
 }: VideoHeaderProps) {
   const { user } = useAuth();
   const [isUpdating, setIsUpdating] = useState(false);
   const [favoriteStatus, setFavoriteStatus] = useState(isFavorite);
+
+  const handleToggleTranslation = () => {
+    onTranslationToggle?.(!translationEnabled);
+  };
 
   const handleToggleFavorite = async () => {
     if (!user) {
@@ -83,26 +91,39 @@ export function VideoHeader({
           </div>
         </div>
 
-        {user && (
+        <div className="flex items-center gap-2 flex-shrink-0">
           <Button
-            variant={favoriteStatus ? "default" : "outline"}
+            variant={translationEnabled ? "default" : "outline"}
             size="sm"
-            onClick={handleToggleFavorite}
-            disabled={isUpdating}
-            className="flex-shrink-0"
+            onClick={handleToggleTranslation}
+            className="flex items-center"
           >
-            {isUpdating ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Star
-                className={`h-3.5 w-3.5 ${favoriteStatus ? 'fill-current' : ''}`}
-              />
-            )}
+            <Languages className="h-3.5 w-3.5" />
             <span className="ml-1.5">
-              {favoriteStatus ? 'Favorited' : 'Favorite'}
+              {translationEnabled ? '中文' : 'EN'}
             </span>
           </Button>
-        )}
+
+          {user && (
+            <Button
+              variant={favoriteStatus ? "default" : "outline"}
+              size="sm"
+              onClick={handleToggleFavorite}
+              disabled={isUpdating}
+            >
+              {isUpdating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Star
+                  className={`h-3.5 w-3.5 ${favoriteStatus ? 'fill-current' : ''}`}
+                />
+              )}
+              <span className="ml-1.5">
+                {favoriteStatus ? 'Favorited' : 'Favorite'}
+              </span>
+            </Button>
+          )}
+        </div>
       </div>
     </Card>
   );

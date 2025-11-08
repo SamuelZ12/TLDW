@@ -20,6 +20,8 @@ interface TranscriptViewerProps {
   citationHighlight?: Citation | null;
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
   videoId?: string;
+  translationEnabled?: boolean;
+  onRequestTranslation?: (text: string, segmentIndex: number) => Promise<string>;
 }
 
 export function TranscriptViewer({
@@ -30,7 +32,9 @@ export function TranscriptViewer({
   topics = [],
   citationHighlight,
   onTakeNoteFromSelection,
-  videoId
+  videoId,
+  translationEnabled = false,
+  onRequestTranslation
 }: TranscriptViewerProps) {
   const highlightedRefs = useRef<(HTMLDivElement | null)[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -40,11 +44,47 @@ export function TranscriptViewer({
   const [showScrollToCurrentButton, setShowScrollToCurrentButton] = useState(false);
   const lastUserScrollTime = useRef<number>(0);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [translationsCache, setTranslationsCache] = useState<Map<number, string>>(new Map());
+  const [loadingTranslations, setLoadingTranslations] = useState<Set<number>>(new Set());
   const selectedTopicIndex = selectedTopic
     ? topics.findIndex((topic) => topic.id === selectedTopic.id)
     : -1;
   const selectedTopicColor =
     selectedTopicIndex >= 0 ? getTopicHSLColor(selectedTopicIndex, videoId) : null;
+
+  const requestTranslation = useCallback(async (segmentIndex: number) => {
+    if (!onRequestTranslation || !translationEnabled || loadingTranslations.has(segmentIndex) || translationsCache.has(segmentIndex)) {
+      return;
+    }
+
+    const segment = transcript[segmentIndex];
+    if (!segment || !segment.text?.trim()) {
+      return;
+    }
+
+    setLoadingTranslations(prev => new Set(prev).add(segmentIndex));
+
+    try {
+      const translation = await onRequestTranslation(segment.text, segmentIndex);
+      setTranslationsCache(prev => new Map(prev).set(segmentIndex, translation));
+    } catch (error) {
+      console.error('Translation failed for segment', segmentIndex, error);
+    } finally {
+      setLoadingTranslations(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(segmentIndex);
+        return newSet;
+      });
+    }
+  }, [onRequestTranslation, translationEnabled, loadingTranslations, translationsCache, transcript]);
+
+  // Clear translations cache when translation is disabled
+  useEffect(() => {
+    if (!translationEnabled) {
+      setTranslationsCache(new Map());
+      setLoadingTranslations(new Set());
+    }
+  }, [translationEnabled]);
 
   // Clear refs when topic changes
   useEffect(() => {
@@ -538,8 +578,15 @@ export function TranscriptViewer({
                 getSegmentTopic(segment);
                 
                 const hasHighlight = highlightedText !== null;
+                const translation = translationsCache.get(index);
+                const isLoadingTranslation = loadingTranslations.has(index);
 
-            return (
+                // Request translation if enabled and not already cached/loading
+                if (translationEnabled && !translation && !isLoadingTranslation) {
+                  requestTranslation(index);
+                }
+
+                return (
                   <div
                     key={index}
                     data-segment-index={index}
@@ -555,14 +602,16 @@ export function TranscriptViewer({
                       }
                     }}
                     className={cn(
-                      "group relative px-2.5 py-1.5 rounded-xl transition-all duration-200"
+                      "group relative px-2.5 py-1.5 rounded-xl transition-all duration-200",
+                      translationEnabled && "space-y-1"
                     )}
                   >
-                    {/* Transcript text with partial highlighting */}
+                    {/* Original text */}
                     <p 
                       className={cn(
                         "text-sm leading-relaxed",
-                        isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
+                        isCurrent ? "text-foreground font-medium" : "text-muted-foreground",
+                        translationEnabled && "text-xs opacity-80"
                       )}
                     >
                       {highlightedText ? (
@@ -601,9 +650,27 @@ export function TranscriptViewer({
                       )}
                     </p>
 
+                    {/* Translated text */}
+                    {translationEnabled && (
+                      <p 
+                        className={cn(
+                          "text-sm leading-relaxed",
+                          isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
+                        )}
+                      >
+                        {isLoadingTranslation ? (
+                          <span className="text-muted-foreground italic">Translating...</span>
+                        ) : translation ? (
+                          translation
+                        ) : (
+                          <span className="text-muted-foreground/50 italic">Translation pending...</span>
+                        )}
+                      </p>
+                    )}
+
                   </div>
-            );
-          });
+                );
+              });
             })()
           )}
         </div>
