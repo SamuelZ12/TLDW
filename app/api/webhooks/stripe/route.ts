@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { stripe } from '@/lib/stripe-client';
+import { getStripeClient } from '@/lib/stripe-client';
 import { createServiceRoleClient } from '@/lib/supabase/admin';
 import { mapStripeSubscriptionToProfileUpdate } from '@/lib/subscription-manager';
 import { processTopupCheckout } from '@/lib/stripe-topup';
@@ -21,6 +21,7 @@ async function handler(req: NextRequest) {
   }
 
   const supabase = createServiceRoleClient();
+  const stripe = getStripeClient();
   let eventId: string | null = null;
   let eventLocked = false;
 
@@ -43,7 +44,7 @@ async function handler(req: NextRequest) {
     }
 
     console.log(`Received Stripe webhook: ${event.type} (${event.id})`);
-    await dispatchStripeEvent(event, supabase);
+    await dispatchStripeEvent(event, supabase, stripe);
 
     console.log(`✅ Successfully processed Stripe webhook: ${event.type} (${event.id})`);
     return NextResponse.json({ received: true });
@@ -64,10 +65,14 @@ async function handler(req: NextRequest) {
   }
 }
 
-async function dispatchStripeEvent(event: Stripe.Event, supabase: SupabaseClient<any, string, any>) {
+async function dispatchStripeEvent(
+  event: Stripe.Event,
+  supabase: SupabaseClient<any, string, any>,
+  stripe: Stripe
+) {
   switch (event.type) {
     case 'checkout.session.completed':
-      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session, supabase);
+      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session, supabase, stripe);
       break;
     case 'customer.subscription.created':
     case 'customer.subscription.updated':
@@ -89,7 +94,8 @@ async function dispatchStripeEvent(event: Stripe.Event, supabase: SupabaseClient
 
 async function handleCheckoutCompleted(
   session: Stripe.Checkout.Session,
-  supabase: SupabaseClient<any, string, any>
+  supabase: SupabaseClient<any, string, any>,
+  stripe: Stripe
 ) {
   const userId = session.metadata?.userId;
 

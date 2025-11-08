@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 
-import { stripe } from '@/lib/stripe-client';
+import { getStripeClient } from '@/lib/stripe-client';
 import { addTopupCredits } from '@/lib/subscription-manager';
 
 export interface TopupValues {
@@ -36,6 +36,8 @@ function normalizePaymentIntentId(
 export async function extractTopupValuesFromSession(
   session: Stripe.Checkout.Session
 ): Promise<TopupValues> {
+  const stripe = getStripeClient();
+
   try {
     const sessionWithItems =
       session.line_items?.data?.length && session.line_items.data[0]?.price
@@ -159,4 +161,3 @@ export async function processTopupCheckout(
     alreadyApplied: false,
   };
 }
-

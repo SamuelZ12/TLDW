@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
-import { stripe } from '@/lib/stripe-client';
+import { getStripeClient } from '@/lib/stripe-client';
 import { createClient } from '@/lib/supabase/server';
 import {
   fetchUsageBreakdown,
@@ -504,6 +504,7 @@ export async function createOrRetrieveStripeCustomer(
   }
 
   try {
+    const stripe = getStripeClient();
     const customer = await stripe.customers.create({
       email: email || profile?.email,
       metadata: {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
-import { stripe, STRIPE_PRICE_IDS } from '@/lib/stripe-client';
+import { getStripeClient, STRIPE_PRICE_IDS } from '@/lib/stripe-client';
 import {
   createOrRetrieveStripeCustomer,
   hasProSubscription,
@@ -104,6 +104,7 @@ async function handler(req: NextRequest) {
     const mode = validatedData.priceType === 'subscription' ? 'subscription' : 'payment';
 
     // Create Stripe Checkout session
+    const stripe = getStripeClient();
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: mode,

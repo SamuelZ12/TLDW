@@ -1,35 +1,40 @@
 import Stripe from 'stripe';
 
 /**
- * Server-side Stripe client for API operations
- * This should only be used in API routes or server components
- *
- * @throws Error if STRIPE_SECRET_KEY is not configured
+ * Lazily instantiated Stripe client for server-side operations
+ * This avoids hard failures during build/deploy when secrets are missing
+ * yet still surfaces a descriptive error the moment Stripe is actually used.
  */
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error(
-    'STRIPE_SECRET_KEY is not set. Please add it to your .env.local file.\n' +
-    'Get your test key from: https://dashboard.stripe.com/test/apikeys'
-  );
+let stripeClient: Stripe | null = null;
+
+function createStripeClient(): Stripe {
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+
+  if (!secretKey) {
+    throw new Error(
+      'STRIPE_SECRET_KEY is not set. Please add it to your .env.local file.\n' +
+        'Get your test key from: https://dashboard.stripe.com/test/apikeys'
+    );
+  }
+
+  return new Stripe(secretKey, {
+    apiVersion: '2024-10-28.acacia' as any,
+    typescript: true,
+    appInfo: {
+      name: 'TLDW',
+      version: '1.0.0',
+      url: 'https://github.com/yourusername/tldw',
+    },
+  });
 }
 
-/**
- * Singleton Stripe instance for server-side operations
- *
- * Configuration:
- * - API version: 2024-10-28.acacia (pinned to match stripe-node v19.2.0)
- * - TypeScript: Enabled for type-safe operations
- * - App info: Identifies requests as coming from TLDW
- */
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2024-10-28.acacia' as any,
-  typescript: true,
-  appInfo: {
-    name: 'TLDW',
-    version: '1.0.0',
-    url: 'https://github.com/yourusername/tldw',
-  },
-});
+export function getStripeClient(): Stripe {
+  if (!stripeClient) {
+    stripeClient = createStripeClient();
+  }
+
+  return stripeClient;
+}
 
 /**
  * Stripe Price IDs from environment variables

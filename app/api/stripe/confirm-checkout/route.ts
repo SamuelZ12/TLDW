@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { stripe } from '@/lib/stripe-client';
+import { getStripeClient } from '@/lib/stripe-client';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceRoleClient } from '@/lib/supabase/admin';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
@@ -27,6 +27,7 @@ async function handler(req: NextRequest) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
+    const stripe = getStripeClient();
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
       expand: ['subscription'],
     });
@@ -120,4 +121,3 @@ async function handler(req: NextRequest) {
 }
 
 export const POST = withSecurity(handler, SECURITY_PRESETS.AUTHENTICATED);
-

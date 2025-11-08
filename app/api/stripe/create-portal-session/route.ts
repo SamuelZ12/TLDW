@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
-import { stripe } from '@/lib/stripe-client';
+import { getStripeClient } from '@/lib/stripe-client';
 import { getUserSubscriptionStatus } from '@/lib/subscription-manager';
 
 /**
@@ -44,6 +44,7 @@ async function handler(req: NextRequest) {
     }
 
     // Create Stripe billing portal session
+    const stripe = getStripeClient();
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: subscription.stripeCustomerId,
       return_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings`,
