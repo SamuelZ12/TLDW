@@ -32,7 +32,7 @@ import { toast } from "sonner";
 import { buildSuggestedQuestionFallbacks } from "@/lib/suggested-question-fallback";
 
 const GUEST_LIMIT_MESSAGE = "You've used today's free analysis. Sign in to keep going.";
-const AUTH_LIMIT_MESSAGE = "You get 5 videos per day. Come back tomorrow.";
+const AUTH_LIMIT_MESSAGE = "You've used all 3 free videos this month. Upgrade to Pro for 40 videos/month.";
 const DEFAULT_CLIENT_ERROR = "Something went wrong. Please try again.";
 
 function normalizeErrorMessage(message: string | undefined, fallback: string = DEFAULT_CLIENT_ERROR): string {
@@ -1568,7 +1568,7 @@ export default function AnalyzePage() {
             <div className="space-y-4">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900">
-                  {isRateLimitError ? 'Daily limit reached' : 'We couldn\'t finish analyzing this video'}
+                  {isRateLimitError ? 'Monthly limit reached' : 'We couldn\'t finish analyzing this video'}
                 </h2>
                 <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
                   {isRateLimitError
@@ -1583,6 +1583,14 @@ export default function AnalyzePage() {
                 >
                   Go to home
                 </Link>
+                {isRateLimitError && (
+                  <Link
+                    href="/pricing"
+                    className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
+                  >
+                    Upgrade to Pro
+                  </Link>
+                )}
                 {!isRateLimitError && (
                   <button
                     type="button"
