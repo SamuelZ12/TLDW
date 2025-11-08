@@ -42,7 +42,6 @@ const freePlan: PlanCard = {
   features: [
     'Analyze 3 videos per rolling 30 days',
     'Save notes, highlights, and transcripts',
-    'Access trending summaries and recommendations',
   ],
   actionLabel: 'Create free account',
 }
@@ -52,11 +51,9 @@ const proPlan: PlanCard = {
   price: '$5',
   cadence: 'per month',
   badge: 'Most popular',
-  description: 'Unlock higher limits, faster processing, and professional reporting tools.',
+  description: 'Unlock higher limits',
   features: [
     '40 video analyses every 30 days',
-    'Priority queues and faster processing',
-    'Export-ready notes & timeline markers',
     'Eligible for Top-Up credits (+20 videos)',
   ],
   actionLabel: 'Upgrade to Pro',
@@ -69,7 +66,6 @@ const topupPlan: PlanCard = {
   features: [
     '+20 additional videos instantly',
     'Credits roll over forever',
-    'Ideal for research sprints or launch weeks',
   ],
   actionLabel: 'Buy Top-Up',
 }
