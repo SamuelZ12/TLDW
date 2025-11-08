@@ -25,6 +25,12 @@
 *.pem
 .mcp.json
 
+# supabase
+supabase/.temp/
+
+# documentation (local only)
+docs/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -40,3 +46,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+CLAUDE.md
