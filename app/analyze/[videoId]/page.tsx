@@ -1555,8 +1555,8 @@ export default function AnalyzePage() {
 
   const handleLanguageChange = useCallback((languageCode: string | null) => {
     setSelectedLanguage(languageCode);
-    // Clear cache and update batcher language to avoid stale translations
-    setTranslationCache(new Map());
+    // Keep cache since keys are now language-aware (e.g., "topic-1:es", "topic-1:fr")
+    // No need to clear - different languages use different cache keys
     if (translationBatcherRef.current && languageCode) {
       translationBatcherRef.current.updateLanguage(languageCode);
     } else if (translationBatcherRef.current) {

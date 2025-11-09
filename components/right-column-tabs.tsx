@@ -230,7 +230,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
           Notes
         </Button>
       </div>
-      
+
       <div className="flex-1 overflow-hidden relative">
         {/* Keep both components mounted but toggle visibility */}
         <div className={cn("absolute inset-0", activeTab !== "transcript" && "hidden")}>

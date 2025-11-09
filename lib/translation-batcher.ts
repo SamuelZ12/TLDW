@@ -89,11 +89,13 @@ export class TranslationBatcher {
       // Capture current language to detect mid-flight changes
       const currentLanguage = this.targetLanguage;
 
-      console.log(`[TRANSLATION-BATCHER] Processing batch of ${batch.length} translations`);
+      console.log(
+        `[TRANSLATION-BATCHER] Processing batch of ${batch.length} translations`
+      );
 
       try {
         // Extract unique texts to translate (avoid duplicates in same batch)
-        const uniqueTexts = Array.from(new Set(batch.map(req => req.text)));
+        const uniqueTexts = Array.from(new Set(batch.map((req) => req.text)));
 
         // Make batched API call
         const response = await fetch('/api/translate', {
@@ -102,7 +104,7 @@ export class TranslationBatcher {
           body: JSON.stringify({
             texts: uniqueTexts,
             targetLanguage: currentLanguage
-          }),
+          })
         });
 
         if (!response.ok) {
@@ -114,7 +116,9 @@ export class TranslationBatcher {
 
         // Verify language hasn't changed mid-flight
         if (currentLanguage !== this.targetLanguage) {
-          throw new Error('Language changed during translation - discarding results');
+          throw new Error(
+            'Language changed during translation - discarding results'
+          );
         }
 
         // Create a map of text -> translation
@@ -125,7 +129,7 @@ export class TranslationBatcher {
         });
 
         // Update cache and resolve all requests
-        batch.forEach(req => {
+        batch.forEach((req) => {
           const translation = translationMap.get(req.text) || req.text;
 
           // Cache the result
@@ -140,7 +144,7 @@ export class TranslationBatcher {
         console.error('[TRANSLATION-BATCHER] Batch failed:', error);
 
         // Reject all requests in the batch
-        batch.forEach(req => {
+        batch.forEach((req) => {
           // On error, return original text
           req.resolve(req.text);
         });
@@ -168,9 +172,10 @@ export class TranslationBatcher {
 
   /**
    * Update target language and clear pending requests
+   * Note: Cache is preserved since keys are language-aware (e.g., "topic-1:es")
    */
   updateLanguage(newLanguage: string): void {
-    this.clear();
+    this.clear(); // Only clears pending queue, not cache
     this.targetLanguage = newLanguage;
   }
 

@@ -58,6 +58,17 @@ export function withSecurity(
         );
 
         if (!rateLimitResult.allowed) {
+          console.warn('[SECURITY] Rate limit exceeded:', {
+            url: req.url,
+            remaining: rateLimitResult.remaining,
+            resetAt: rateLimitResult.resetAt,
+            retryAfter: rateLimitResult.retryAfter,
+            config: {
+              windowMs: config.rateLimit.windowMs,
+              maxRequests: config.rateLimit.maxRequests
+            }
+          });
+
           await AuditLogger.logRateLimitExceeded(
             req.url,
             'api-endpoint'

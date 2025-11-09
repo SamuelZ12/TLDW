@@ -21,7 +21,9 @@ export class RateLimiter {
     if (customId) return customId;
 
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
 
     if (user) {
       return `user:${user.id}`;
@@ -32,7 +34,6 @@ export class RateLimiter {
     const forwardedFor = headersList.get('x-forwarded-for');
     const realIp = headersList.get('x-real-ip');
     const ip = forwardedFor?.split(',')[0] || realIp || 'unknown';
-
 
     // Hash the IP for privacy
     const hash = crypto.createHash('sha256').update(ip).digest('hex');
@@ -160,13 +161,11 @@ export class RateLimiter {
       }
 
       // Record this request
-      const { error: insertError } = await supabase
-        .from('rate_limits')
-        .insert({
-          key: rateLimitKey,
-          timestamp: new Date(now).toISOString(),
-          identifier
-        });
+      const { error: insertError } = await supabase.from('rate_limits').insert({
+        key: rateLimitKey,
+        timestamp: new Date(now).toISOString(),
+        identifier
+      });
 
       if (insertError) {
         console.error('Failed to insert rate limit record:', insertError);
@@ -195,10 +194,7 @@ export class RateLimiter {
     const rateLimitKey = `ratelimit:${key}:${id}`;
 
     const supabase = await createClient();
-    await supabase
-      .from('rate_limits')
-      .delete()
-      .eq('key', rateLimitKey);
+    await supabase.from('rate_limits').delete().eq('key', rateLimitKey);
   }
 }
 
@@ -238,11 +234,23 @@ export const RATE_LIMITS = {
   AUTH_ATTEMPT: {
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: 5 // 5 login attempts per 15 minutes
+  },
+
+  // Translation operations
+  ANON_TRANSLATION: {
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 10 // 10 API calls per minute for anonymous users
+  },
+  AUTH_TRANSLATION: {
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 30 // 30 API calls per minute for authenticated users
   }
 };
 
 // Helper function for API responses
-export function rateLimitResponse(result: RateLimitResult): NextResponse | null {
+export function rateLimitResponse(
+  result: RateLimitResult
+): NextResponse | null {
   const headers: HeadersInit = {
     'X-RateLimit-Remaining': result.remaining.toString(),
     'X-RateLimit-Reset': result.resetAt.toISOString()

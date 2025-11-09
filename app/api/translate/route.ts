@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withSecurity } from '@/lib/security-middleware';
-import { RATE_LIMITS } from '@/lib/rate-limiter';
+import {
+  RATE_LIMITS,
+  RateLimiter,
+  rateLimitResponse
+} from '@/lib/rate-limiter';
 import { getTranslationClient } from '@/lib/translation';
+import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
 const translateRequestSchema = z.object({
   text: z.string().min(1),
-  targetLanguage: z.string().default('zh-CN'),
+  targetLanguage: z.string().default('zh-CN')
 });
 
 const translateBatchRequestSchema = z.object({
   texts: z.array(z.string()),
-  targetLanguage: z.string().default('zh-CN'),
+  targetLanguage: z.string().default('zh-CN')
 });
 
 async function handler(request: NextRequest) {
@@ -21,11 +26,25 @@ async function handler(request: NextRequest) {
     requestBody = await request.json();
     const body = requestBody;
 
-    console.log('[TRANSLATE] Translation request:', {
-      isBatch: Array.isArray(body.texts),
-      textCount: Array.isArray(body.texts) ? body.texts.length : 1,
-      targetLanguage: body.targetLanguage
-    });
+    // Check rate limiting based on user authentication
+    const supabase = await createClient();
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+    const rateLimitConfig = user
+      ? RATE_LIMITS.AUTH_TRANSLATION
+      : RATE_LIMITS.ANON_TRANSLATION;
+    const rateLimitResult = await RateLimiter.check(
+      'translation',
+      rateLimitConfig
+    );
+
+    if (!rateLimitResult.allowed) {
+      return (
+        rateLimitResponse(rateLimitResult) ||
+        NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 })
+      );
+    }
 
     // Determine if this is a batch or single translation request
     const isBatch = Array.isArray(body.texts);
@@ -35,7 +54,10 @@ async function handler(request: NextRequest) {
       const validation = translateBatchRequestSchema.safeParse(body);
       if (!validation.success) {
         return NextResponse.json(
-          { error: 'Invalid request format', details: validation.error.flatten() },
+          {
+            error: 'Invalid request format',
+            details: validation.error.flatten()
+          },
           { status: 400 }
         );
       }
@@ -54,7 +76,10 @@ async function handler(request: NextRequest) {
       }
 
       const translationClient = getTranslationClient();
-      const translations = await translationClient.translateBatch(texts, targetLanguage);
+      const translations = await translationClient.translateBatch(
+        texts,
+        targetLanguage
+      );
 
       return NextResponse.json({ translations });
     } else {
@@ -62,7 +87,10 @@ async function handler(request: NextRequest) {
       const validation = translateRequestSchema.safeParse(body);
       if (!validation.success) {
         return NextResponse.json(
-          { error: 'Invalid request format', details: validation.error.flatten() },
+          {
+            error: 'Invalid request format',
+            details: validation.error.flatten()
+          },
           { status: 400 }
         );
       }
@@ -70,7 +98,10 @@ async function handler(request: NextRequest) {
       const { text, targetLanguage } = validation.data;
 
       const translationClient = getTranslationClient();
-      const translation = await translationClient.translate(text, targetLanguage);
+      const translation = await translationClient.translate(
+        text,
+        targetLanguage
+      );
 
       return NextResponse.json({ translation });
     }
@@ -80,7 +111,7 @@ async function handler(request: NextRequest) {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
       requestBody: requestBody || 'Unable to parse request body',
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     });
 
     // Provide more specific error messages based on error type
@@ -99,16 +130,13 @@ async function handler(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(
-      { error: 'Translation failed' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Translation failed' }, { status: 500 });
   }
 }
 
-// Apply security with translation-specific rate limits
+// Apply security middleware
+// Note: Rate limiting is handled inside the handler to support different limits for anon/auth users
 export const POST = withSecurity(handler, {
-  rateLimit: RATE_LIMITS.TRANSLATION, // Higher limit since client caches translations
   maxBodySize: 1024 * 1024, // 1MB should be sufficient for text translation
   allowedMethods: ['POST']
 });

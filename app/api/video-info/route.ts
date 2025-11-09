@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractVideoId } from '@/lib/utils';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
+import { shouldUseMockData, getMockVideoInfo } from '@/lib/mock-data';
 
 async function handler(request: NextRequest) {
   try {
@@ -14,6 +15,7 @@ async function handler(request: NextRequest) {
     }
 
     const videoId = extractVideoId(url);
+
     if (!videoId) {
       return NextResponse.json(
         { error: 'Invalid YouTube URL' },
@@ -21,14 +23,27 @@ async function handler(request: NextRequest) {
       );
     }
 
+    // Use mock data if enabled (for development when Supadata is rate-limited)
+    if (shouldUseMockData()) {
+      console.log('[VIDEO-INFO] Using mock data (NEXT_PUBLIC_USE_MOCK_DATA=true)');
+      const mockData = getMockVideoInfo(videoId);
+      return NextResponse.json({
+        videoId,
+        title: mockData.title,
+        author: mockData.channel.name,
+        thumbnail: mockData.thumbnail,
+        duration: mockData.duration,
+        description: mockData.description,
+        tags: mockData.tags
+      });
+    }
+
     // Try Supadata API first for richer metadata including description
     const apiKey = process.env.SUPADATA_API_KEY;
 
     if (apiKey) {
       try {
-        const supadataUrl = `https://api.supadata.ai/v1/youtube/video?id=${videoId}`;
-
-        const supadataResponse = await fetch(supadataUrl, {
+        const supadataResponse = await fetch(`https://api.supadata.ai/v1/youtube/video?id=${videoId}`, {
           method: 'GET',
           headers: {
             'x-api-key': apiKey,
@@ -40,12 +55,15 @@ async function handler(request: NextRequest) {
           const supadataData = await supadataResponse.json();
 
           // Extract video metadata from Supadata response
+          // Ensure duration is always a number (default to 0 if not available)
+          const duration = typeof supadataData.duration === 'number' ? supadataData.duration : 0;
+
           return NextResponse.json({
             videoId,
             title: supadataData.title || 'YouTube Video',
             author: supadataData.channel?.name || supadataData.author || 'Unknown',
             thumbnail: supadataData.thumbnail || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-            duration: supadataData.duration || null,
+            duration,
             description: supadataData.description || undefined,
             tags: supadataData.tags || supadataData.keywords || undefined
           });
@@ -61,10 +79,8 @@ async function handler(request: NextRequest) {
     }
 
     // Fallback to YouTube oEmbed API (no API key required)
-    const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-
     try {
-      const response = await fetch(oembedUrl);
+      const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
 
       if (!response.ok) {
         // Return minimal info if oEmbed fails
@@ -73,7 +89,7 @@ async function handler(request: NextRequest) {
           title: 'YouTube Video',
           author: 'Unknown',
           thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-          duration: null
+          duration: 0 // Default to 0 instead of null
         });
       }
 
@@ -84,21 +100,26 @@ async function handler(request: NextRequest) {
         title: data.title || 'YouTube Video',
         author: data.author_name || 'Unknown',
         thumbnail: data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-        duration: null // oEmbed doesn't provide duration or description
+        duration: 0 // oEmbed doesn't provide duration - default to 0
       });
 
     } catch (fetchError) {
+      console.error('[VIDEO-INFO] oEmbed fetch error:', fetchError);
       // Return minimal info on error
       return NextResponse.json({
         videoId,
         title: 'YouTube Video',
         author: 'Unknown',
         thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-        duration: null
+        duration: 0 // Default to 0 instead of null
       });
     }
     
   } catch (error) {
+    console.error('[VIDEO-INFO] Top-level error:', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return NextResponse.json(
       { error: 'Failed to fetch video information' },
       { status: 500 }

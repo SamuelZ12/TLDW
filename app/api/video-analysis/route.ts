@@ -58,10 +58,13 @@ async function handler(req: NextRequest) {
       validatedData = videoAnalysisRequestSchema.parse(body);
     } catch (error) {
       if (error instanceof z.ZodError) {
+        const formattedError = formatValidationError(error);
+        console.error('[VIDEO-ANALYSIS] Validation error:', formattedError);
         return NextResponse.json(
           {
             error: 'Validation failed',
-            details: formatValidationError(error)
+            details: formattedError,
+            issues: error.issues
           },
           { status: 400 }
         );

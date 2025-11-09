@@ -26,7 +26,9 @@ export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic,
     const translationEnabled = selectedLanguage !== null;
     if (translationEnabled && !translatedTitle && !isLoadingTranslation && onRequestTranslation) {
       setIsLoadingTranslation(true);
-      onRequestTranslation(topic.title, topic.id)
+      // Include language in cache key to allow caching per language
+      const cacheKey = `${topic.id}:${selectedLanguage}`;
+      onRequestTranslation(topic.title, cacheKey)
         .then(translation => {
           setTranslatedTitle(translation);
         })

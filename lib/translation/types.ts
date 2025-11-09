@@ -13,10 +13,3 @@ export interface TranslationError extends Error {
   code?: string;
   details?: unknown;
 }
-
-export type SupportedLanguage = 'zh' | 'zh-CN';
-
-export const SUPPORTED_LANGUAGES = {
-  'zh': 'Chinese (Simplified)',
-  'zh-CN': 'Chinese (Simplified)'
-} as const;

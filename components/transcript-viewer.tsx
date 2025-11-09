@@ -73,7 +73,9 @@ export function TranscriptViewer({
     });
 
     try {
-      const translation = await onRequestTranslation(segment.text, segmentIndex);
+      // Include language in cache key to allow caching per language
+      const cacheKey = `transcript:${segmentIndex}:${selectedLanguage}`;
+      const translation = await onRequestTranslation(segment.text, cacheKey);
       setTranslationsCache(prev => new Map(prev).set(segmentIndex, translation));
     } catch (error) {
       console.error('Translation failed for segment', segmentIndex, error);
