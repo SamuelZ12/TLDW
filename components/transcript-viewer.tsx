@@ -21,7 +21,7 @@ interface TranscriptViewerProps {
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
   videoId?: string;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, segmentIndex: number) => Promise<string>;
+  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
 }
 
 export function TranscriptViewer({

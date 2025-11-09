@@ -172,11 +172,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
                     )}
                     disabled={isOriginalLanguage}
                     onClick={(e) => {
-                      if (!isOriginalLanguage) {
-                        // If selecting English, set to null; otherwise set to the language code
-                        const newLanguage = lang.code === 'en' ? null : lang.code;
-                        onLanguageChange?.(newLanguage);
-                      }
+                      onLanguageChange?.(lang.code);
                     }}
                   >
                     <div className="flex items-center justify-between w-full">
