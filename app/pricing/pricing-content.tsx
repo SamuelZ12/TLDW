@@ -125,8 +125,8 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
         <p className="mx-auto max-w-xl text-sm text-muted-foreground sm:text-base">{heroDescription}</p>
       </div>
 
-      <div className="mx-auto grid max-w-4xl gap-11 md:grid-cols-2">
-        <Card className="relative flex h-full flex-col overflow-hidden rounded-[32px] border border-border/60 bg-background/80 shadow-sm backdrop-blur">
+      <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-11 md:grid-cols-2">
+        <Card className="relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[32px] border border-border/60 bg-background/80 shadow-sm backdrop-blur">
           <CardHeader className="px-6 py-4">
             <div className="rounded-[24px] bg-muted/60 p-6 text-left">
               <div className="space-y-4">
@@ -166,10 +166,10 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
           </CardFooter>
         </Card>
 
-        <Card className="relative flex h-full flex-col overflow-hidden rounded-[32px] border border-transparent bg-white shadow-xl shadow-primary/20">
+        <Card className="relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[32px] border border-transparent bg-white shadow-xl shadow-primary/20">
           <CardHeader className="px-6 py-4">
-            <div className="rounded-[24px] bg-[linear-gradient(to_bottom_right,rgba(233,211,250,0.3),rgba(203,252,255,0.3),rgba(203,227,255,0.3))] p-6 text-left shadow-sm ring-1 ring-white/60 backdrop-blur-sm">
-              <div className="flex items-start justify-between gap-6">
+            <div className="w-full min-w-0 rounded-[24px] bg-[linear-gradient(to_bottom_right,rgba(233,211,250,0.3),rgba(203,252,255,0.3),rgba(203,227,255,0.3))] p-6 text-left shadow-sm ring-1 ring-white/60 backdrop-blur-sm">
+              <div className="flex w-full items-start justify-between gap-6">
                 <div className="space-y-4">
                   <p className="text-sm font-medium text-muted-foreground mb-12">Pro</p>
                   <div className="flex items-baseline gap-2 whitespace-nowrap">

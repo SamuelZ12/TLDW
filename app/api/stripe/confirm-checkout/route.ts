@@ -83,13 +83,22 @@ async function handler(req: NextRequest) {
           : session.customer?.id ?? null,
     } satisfies ProfilesUpdate;
 
-    const { error } = await (serviceClient.from('profiles') as any)
+    const { error, count } = await (serviceClient.from('profiles') as any)
       .update(updatePayload)
-      .eq('id', user.id);
+      .eq('id', user.id)
+      .select('*', { count: 'exact', head: true });
 
     if (error) {
       console.error('Failed to persist subscription via confirmation endpoint:', error);
       return NextResponse.json({ error: 'Failed to update subscription' }, { status: 500 });
+    }
+
+    if (count === 0) {
+      console.error(`⚠️ Profile not found for user ${user.id} during checkout confirmation`);
+      return NextResponse.json({
+        error: 'Profile not found',
+        status: 'subscription_pending'
+      }, { status: 404 });
     }
 
     const subscriptionPeriods = subscription as {

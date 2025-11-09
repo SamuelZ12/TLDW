@@ -114,13 +114,19 @@ async function handleCheckoutCompleted(
       stripe_customer_id: session.customer as string,
     } satisfies ProfilesUpdate;
 
-    const { error } = await (supabase.from('profiles') as any)
+    const { error, count } = await (supabase.from('profiles') as any)
       .update(updatePayload)
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('*', { count: 'exact', head: true });
 
     if (error) {
       console.error('Failed to update subscription after checkout:', error);
       throw new Error(`Database update failed for subscription ${subscriptionId}: ${error.message}`);
+    }
+
+    if (count === 0) {
+      console.error(`⚠️ Profile not found for user ${userId} during checkout completion`);
+      throw new Error(`Profile not found for user ${userId}. This webhook will retry automatically.`);
     }
 
     const subscriptionPeriods = subscription as {
@@ -190,13 +196,19 @@ async function handleSubscriptionUpdated(
 
   const updatePayload = mapStripeSubscriptionToProfileUpdate(subscription) as ProfilesUpdate;
 
-  const { error } = await (supabase.from('profiles') as any)
+  const { error, count } = await (supabase.from('profiles') as any)
     .update(updatePayload)
-    .eq('id', userId);
+    .eq('id', userId)
+    .select('*', { count: 'exact', head: true });
 
   if (error) {
     console.error('Failed to sync subscription update:', error);
     throw new Error(`Failed to sync subscription update: ${error.message}`);
+  }
+
+  if (count === 0) {
+    console.error(`⚠️ Profile not found for user ${userId} during subscription update`);
+    throw new Error(`Profile not found for user ${userId}. This webhook will retry automatically.`);
   }
 
   console.log(`✅ Successfully updated subscription ${subscription.id} for user ${userId}`);

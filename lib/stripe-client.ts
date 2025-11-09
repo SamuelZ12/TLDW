@@ -55,7 +55,7 @@ export const STRIPE_PRICE_IDS = {
  * Validates that all required Stripe configuration is present
  * Call this during app initialization or in API routes to fail fast
  *
- * @throws Error if any required config is missing
+ * @throws Error if any required config is missing or misconfigured
  */
 export function validateStripeConfig(): void {
   const missing: string[] = [];
@@ -91,5 +91,40 @@ export function validateStripeConfig(): void {
       'Get your keys from: https://dashboard.stripe.com/test/apikeys\n' +
       'Get your webhook secret from: https://dashboard.stripe.com/test/webhooks'
     );
+  }
+
+  // Validate that price IDs match the Stripe key mode (test vs live)
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const isTestMode = secretKey?.startsWith('sk_test_');
+  const isLiveMode = secretKey?.startsWith('sk_live_');
+
+  if (isTestMode || isLiveMode) {
+    const priceIds = {
+      'STRIPE_PRO_PRICE_ID': process.env.STRIPE_PRO_PRICE_ID,
+      'STRIPE_PRO_ANNUAL_PRICE_ID': process.env.STRIPE_PRO_ANNUAL_PRICE_ID,
+      'STRIPE_TOPUP_PRICE_ID': process.env.STRIPE_TOPUP_PRICE_ID,
+    };
+
+    const modeMismatches: string[] = [];
+
+    for (const [varName, priceId] of Object.entries(priceIds)) {
+      if (!priceId) continue;
+
+      // Price IDs don't have explicit test/live prefix, but we can warn about potential issues
+      // Stripe will throw a proper error when trying to use them
+      if (isTestMode && priceId.includes('live')) {
+        modeMismatches.push(`${varName} (${priceId}) may be a live mode price but test keys are being used`);
+      }
+    }
+
+    if (modeMismatches.length > 0) {
+      console.warn(
+        '⚠️  Potential Stripe mode mismatch detected:\n' +
+        modeMismatches.map(m => `  - ${m}`).join('\n') +
+        '\n' +
+        'If you encounter "No such price" errors, verify that your price IDs match your Stripe key mode.\n' +
+        `Current mode: ${isTestMode ? 'TEST' : 'LIVE'}`
+      );
+    }
   }
 }
