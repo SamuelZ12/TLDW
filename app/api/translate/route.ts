@@ -24,7 +24,7 @@ async function handler(request: NextRequest) {
 
   try {
     requestBody = await request.json();
-    const body = requestBody;
+    const body = requestBody as Record<string, unknown>;
 
     // Check rate limiting based on user authentication
     const supabase = await createClient();

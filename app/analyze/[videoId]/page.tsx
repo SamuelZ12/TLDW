@@ -1543,7 +1543,9 @@ export default function AnalyzePage() {
       const MAX_CACHE_SIZE = 500;
       if (next.size >= MAX_CACHE_SIZE) {
         const firstKey = next.keys().next().value;
-        next.delete(firstKey);
+        if (firstKey !== undefined) {
+          next.delete(firstKey);
+        }
       }
 
       next.set(cacheKey, translation);
