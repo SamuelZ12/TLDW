@@ -126,27 +126,46 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   return (
     <Card className="h-full flex flex-col overflow-hidden p-0 gap-0 border-0">
       <div className="flex items-center gap-2 p-2 rounded-t-3xl border-b">
-        <DropdownMenu onOpenChange={(open) => {
-          if (!open) setLanguageSearch("");
-          if (activeTab !== "transcript") setActiveTab("transcript");
-        }}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "flex-1 justify-center gap-2 rounded-2xl",
-                activeTab === "transcript"
-                  ? "bg-neutral-100 text-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/50"
-              )}
-            >
-              <Languages className="h-4 w-4" />
-              Transcript
-              <ChevronDown className="h-3 w-3 opacity-50" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-[240px]">
+        <div className="flex-1 relative">
+          <DropdownMenu onOpenChange={(open) => {
+            if (!open) setLanguageSearch("");
+          }}>
+            <div className={cn(
+              "flex items-center gap-0 rounded-2xl",
+              activeTab === "transcript"
+                ? "bg-neutral-100"
+                : "hover:bg-white/50"
+            )}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveTab("transcript")}
+                className={cn(
+                  "flex-1 justify-center gap-2 rounded-l-2xl rounded-r-none border-0",
+                  activeTab === "transcript"
+                    ? "text-foreground hover:bg-neutral-100"
+                    : "text-muted-foreground hover:text-foreground hover:bg-transparent"
+                )}
+              >
+                <Languages className="h-4 w-4" />
+                Transcript
+              </Button>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "px-1.5 rounded-r-2xl rounded-l-none border-0",
+                    activeTab === "transcript"
+                      ? "text-foreground hover:bg-neutral-100"
+                      : "text-muted-foreground hover:text-foreground hover:bg-transparent"
+                  )}
+                >
+                  <ChevronDown className="h-3 w-3 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+            </div>
+            <DropdownMenuContent side="bottom" align="start" sideOffset={4} alignOffset={-200} className="w-[240px]">
             <div className="px-2 py-1.5">
               <div className="relative">
                 <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
@@ -193,7 +212,8 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
               })}
             </div>
           </DropdownMenuContent>
-        </DropdownMenu>
+          </DropdownMenu>
+        </div>
         {showChatTab && (
           <Button
             variant="ghost"
