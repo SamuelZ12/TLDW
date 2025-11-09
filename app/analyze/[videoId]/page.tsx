@@ -32,7 +32,7 @@ import { toast } from "sonner";
 import { buildSuggestedQuestionFallbacks } from "@/lib/suggested-question-fallback";
 
 const GUEST_LIMIT_MESSAGE = "You've used today's free analysis. Sign in to keep going.";
-const AUTH_LIMIT_MESSAGE = "You've used all 3 free videos this month. Upgrade to Pro for 40 videos/month.";
+const AUTH_LIMIT_MESSAGE = "You've used all 5 free videos this month. Upgrade to Pro for 100 videos/month.";
 const DEFAULT_CLIENT_ERROR = "Something went wrong. Please try again.";
 
 type LimitCheckResponse = {
@@ -595,7 +595,7 @@ export default function AnalyzePage() {
           setProcessingStartTime(null);
 
           // Show success notification for cached analysis
-          toast.success("Fast analysis! This video was cached - no credits used.");
+          toast.success("Lucky you — Someone's already analyzed this video! No credits used.");
 
           backgroundOperation(
             'load-cached-themes',
