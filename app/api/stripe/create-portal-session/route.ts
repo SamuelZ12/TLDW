@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 import { getStripeClient } from '@/lib/stripe-client';
 import { getUserSubscriptionStatus } from '@/lib/subscription-manager';
+import { resolveAppUrl } from '@/lib/utils';
 
 /**
  * POST /api/stripe/create-portal-session
@@ -43,11 +44,15 @@ async function handler(req: NextRequest) {
       );
     }
 
+    // Get the origin from the request to ensure redirects work on preview deployments
+    const origin = req.headers.get('origin') || req.headers.get('referer')?.split('?')[0].replace(/\/$/, '') || '';
+    const appUrl = resolveAppUrl(origin);
+
     // Create Stripe billing portal session
     const stripe = getStripeClient();
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: subscription.stripeCustomerId,
-      return_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings`,
+      return_url: `${appUrl}/settings`,
     });
 
     return NextResponse.json({

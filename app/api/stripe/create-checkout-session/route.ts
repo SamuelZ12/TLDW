@@ -8,6 +8,7 @@ import {
   hasProSubscription,
 } from '@/lib/subscription-manager';
 import { formatValidationError } from '@/lib/validation';
+import { resolveAppUrl } from '@/lib/utils';
 
 /**
  * Request schema for creating a checkout session
@@ -138,6 +139,10 @@ async function handler(req: NextRequest) {
       );
     }
 
+    // Get the origin from the request to ensure redirects work on preview deployments
+    const origin = req.headers.get('origin') || req.headers.get('referer')?.split('?')[0].replace(/\/$/, '') || '';
+    const appUrl = resolveAppUrl(origin);
+
     // Create Stripe Checkout session
     const stripe = getStripeClient();
     const session = await stripe.checkout.sessions.create({
@@ -150,8 +155,8 @@ async function handler(req: NextRequest) {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings?canceled=true`,
+      success_url: `${appUrl}/settings?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/settings?canceled=true`,
       metadata: {
         userId: user.id,
         priceType: validatedData.priceType,

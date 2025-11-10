@@ -110,10 +110,21 @@ function safeParseHost(url: string | undefined) {
 }
 
 export function resolveAppUrl(fallbackOrigin?: string) {
+  // Check if we're in a Vercel preview deployment
+  const isVercelPreview = process.env.VERCEL_ENV === 'preview';
+  const vercelUrl = process.env.VERCEL_URL;
+
+  // In preview environments, prioritize fallbackOrigin or Vercel URL
+  if (isVercelPreview) {
+    if (fallbackOrigin) return fallbackOrigin;
+    if (vercelUrl) return `https://${vercelUrl}`;
+  }
+
   const configuredUrl = process.env.NEXT_PUBLIC_APP_URL;
 
   if (!configuredUrl) {
     if (fallbackOrigin) return fallbackOrigin;
+    if (vercelUrl) return `https://${vercelUrl}`;
     if (typeof window !== 'undefined' && window.location?.origin) {
       return window.location.origin;
     }

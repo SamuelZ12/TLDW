@@ -22,13 +22,6 @@ export function Footer() {
             Open Source
           </Link>
           <span className="text-[#d0d0d0]">•</span>
-          <Link
-            href="/pricing"
-            className="transition-colors hover:text-[#5c5c5c]"
-          >
-            Pricing
-          </Link>
-          <span className="text-[#d0d0d0]">•</span>
           <button
             onClick={() => setAboutModalOpen(true)}
             className="transition-colors hover:text-[#5c5c5c]"

@@ -175,18 +175,18 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
                   <div className="flex items-baseline gap-2 whitespace-nowrap">
                     {billingPeriod === 'annual' && (
                       <span className="text-4xl font-semibold text-muted-foreground line-through">
-                        $120
+                        $10
                       </span>
                     )}
                     <span className="text-4xl font-semibold">
-                      {billingPeriod === 'annual' ? '$100' : '$10'}
+                      {billingPeriod === 'annual' ? '$8.33' : '$10'}
                     </span>
                     <span className="text-base text-muted-foreground">
-                      {billingPeriod === 'annual' ? '/ year' : '/ month'}
+                      / month
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {billingPeriod === 'annual' ? 'Get 2 months free' : 'Cancel anytime'}
+                  <p className="text-xs text-muted-foreground whitespace-nowrap">
+                    {billingPeriod === 'annual' ? 'Billed annually, get 2 months free' : 'Cancel anytime'}
                   </p>
                 </div>
                 <div className="flex-shrink-0">
