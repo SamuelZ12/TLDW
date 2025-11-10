@@ -24,6 +24,7 @@ import { Loader2, AlertCircle, CreditCard, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import type { User } from '@supabase/supabase-js'
 import { csrfFetch } from '@/lib/csrf-client'
+import { cn } from '@/lib/utils'
 
 interface Profile {
   id: string
@@ -60,6 +61,56 @@ interface SubscriptionSummary {
   willConsumeTopup: boolean
 }
 
+interface SubscriptionStatusResponse {
+  tier: SubscriptionTier
+  status: SubscriptionStatus
+  stripeCustomerId: string | null
+  cancelAtPeriodEnd: boolean
+  isPastDue: boolean
+  canPurchaseTopup: boolean
+  nextBillingDate: string | null
+  period?: {
+    start: string | null
+    end: string | null
+  } | null
+  usage?: {
+    counted: number
+    cached: number
+    baseLimit: number
+    baseRemaining: number
+    topupCredits: number
+    topupRemaining: number
+    totalRemaining: number
+    resetAt: string
+  } | null
+  willConsumeTopup: boolean
+}
+
+function mapToSubscriptionSummary(payload: SubscriptionStatusResponse): SubscriptionSummary {
+  return {
+    tier: payload.tier,
+    status: payload.status,
+    stripeCustomerId: payload.stripeCustomerId,
+    cancelAtPeriodEnd: payload.cancelAtPeriodEnd,
+    isPastDue: payload.isPastDue,
+    canPurchaseTopup: payload.canPurchaseTopup,
+    nextBillingDate: payload.nextBillingDate,
+    periodStart: payload.period?.start ?? '',
+    periodEnd: payload.period?.end ?? '',
+    usage: {
+      counted: payload.usage?.counted ?? 0,
+      cached: payload.usage?.cached ?? 0,
+      baseLimit: payload.usage?.baseLimit ?? 0,
+      baseRemaining: payload.usage?.baseRemaining ?? 0,
+      topupCredits: payload.usage?.topupCredits ?? 0,
+      topupRemaining: payload.usage?.topupRemaining ?? 0,
+      totalRemaining: payload.usage?.totalRemaining ?? 0,
+      resetAt: payload.usage?.resetAt ?? '',
+    },
+    willConsumeTopup: payload.willConsumeTopup,
+  }
+}
+
 interface SettingsFormProps {
   user: User
   profile: Profile | null
@@ -67,8 +118,40 @@ interface SettingsFormProps {
   subscription: SubscriptionSummary | null
 }
 
-function formatStatus(status: SubscriptionStatus): string {
-  if (!status) return 'No subscription'
+function formatCancellationDate(periodEnd: string | null | undefined): string | null {
+  if (!periodEnd) {
+    return null
+  }
+
+  const cancellationDate = new Date(periodEnd)
+
+  if (Number.isNaN(cancellationDate.valueOf())) {
+    return null
+  }
+
+  return cancellationDate.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function formatStatus(subscription: SubscriptionSummary | null): string {
+  if (!subscription) {
+    return 'No subscription'
+  }
+
+  const { status, cancelAtPeriodEnd, periodEnd, tier } = subscription
+
+  if (tier === 'pro' && cancelAtPeriodEnd) {
+    const cancellationCopy = formatCancellationDate(periodEnd)
+    return cancellationCopy ? `Cancels on ${cancellationCopy}` : 'Scheduled to cancel'
+  }
+
+  if (!status) {
+    return 'No subscription'
+  }
+
   switch (status) {
     case 'active':
       return 'Active'
@@ -96,6 +179,15 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
 
   const [loading, setLoading] = useState(false)
   const [billingAction, setBillingAction] = useState<'subscription' | 'topup' | 'portal' | null>(null)
+  const [pendingSubscription, setPendingSubscription] = useState<SubscriptionSummary | null>(null)
+
+  const currentSubscription = pendingSubscription ?? subscription
+
+  useEffect(() => {
+    if (subscription?.tier === 'pro') {
+      setPendingSubscription(null)
+    }
+  }, [subscription?.tier])
 
   // Poll for subscription updates after Stripe checkout
   useEffect(() => {
@@ -123,12 +215,43 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
       if (timeoutId) clearTimeout(timeoutId)
     }
 
-    const handleActivation = () => {
+    const fetchSubscriptionStatus = async (): Promise<SubscriptionSummary | null> => {
+      try {
+        const response = await fetch('/api/subscription/status', {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          },
+        })
+
+        if (!response.ok) return null
+
+        const payload: SubscriptionStatusResponse = await response.json()
+        return mapToSubscriptionSummary(payload)
+      } catch (error) {
+        console.error('Error fetching subscription status:', error)
+        return null
+      }
+    }
+
+    const syncSubscriptionSnapshot = async (summary?: SubscriptionSummary | null) => {
+      const nextSummary = summary ?? await fetchSubscriptionStatus()
+
+      if (nextSummary?.tier === 'pro') {
+        setPendingSubscription(nextSummary)
+      }
+
+      return nextSummary ?? null
+    }
+
+    const handleActivation = (nextSummary?: SubscriptionSummary | null) => {
       cleanupProcessing()
       if (!hasWelcomed) {
         toast.success('Welcome to Pro! Your subscription is now active.')
         hasWelcomed = true
       }
+      void syncSubscriptionSnapshot(nextSummary)
       router.refresh()
       window.history.replaceState({}, '', '/settings')
     }
@@ -156,6 +279,7 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
         toast.success('Top-Up purchase recorded. Your credits will reflect shortly.')
       }
 
+      void syncSubscriptionSnapshot()
       router.refresh()
       window.history.replaceState({}, '', '/settings')
     }
@@ -192,23 +316,10 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
     }
 
     const pollForSubscription = async () => {
-      try {
-        const response = await fetch('/api/subscription/status', {
-          cache: 'no-store',
-          headers: {
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-          },
-        })
-        if (!response.ok) return
+      const summary = await fetchSubscriptionStatus()
 
-        const data = await response.json()
-
-        if (data.tier === 'pro') {
-          handleActivation()
-        }
-      } catch (error) {
-        console.error('Error polling subscription status:', error)
+      if (summary?.tier === 'pro') {
+        handleActivation(summary)
       }
     }
 
@@ -248,8 +359,12 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
     return fullName !== (profile?.full_name || '')
   }, [fullName, profile?.full_name])
 
-  const planLabel = subscription?.tier === 'pro' ? 'Pro Plan' : 'Free Plan'
-  const planStatus = formatStatus(subscription?.status ?? null)
+  const planLabel = currentSubscription?.tier === 'pro' ? 'Pro Plan' : 'Free Plan'
+  const planStatus = formatStatus(currentSubscription)
+  const isCancellationScheduled =
+    currentSubscription?.tier === 'pro' && currentSubscription.cancelAtPeriodEnd
+  const isStatusWarning = Boolean(currentSubscription?.isPastDue || isCancellationScheduled)
+  const StatusIcon = isStatusWarning ? AlertCircle : Sparkles
 
   const handleUpdateProfile = async () => {
     if (!hasProfileChanges) {
@@ -329,10 +444,10 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
   }
 
   const subscriptionWarnings = useMemo(() => {
-    if (!subscription) return []
+    if (!currentSubscription) return []
     const warnings: Array<{ title: string; message: string; variant?: 'default' | 'destructive' }> = []
 
-    if (subscription.isPastDue) {
+    if (currentSubscription.isPastDue) {
       warnings.push({
         title: 'Payment required',
         message: 'Your payment method failed. Update billing details to restore full access.',
@@ -340,14 +455,17 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
       })
     }
 
-    if (subscription.cancelAtPeriodEnd) {
+    if (currentSubscription.cancelAtPeriodEnd) {
+      const cancellationCopy = formatCancellationDate(currentSubscription.periodEnd)
       warnings.push({
         title: 'Scheduled to cancel',
-        message: 'Your plan will revert to Free at the end of the current billing period.',
+        message: cancellationCopy
+          ? `Your plan will revert to Free on ${cancellationCopy}.`
+          : 'Your plan will revert to Free at the end of the current billing period.',
       })
     }
 
-    if (subscription.willConsumeTopup) {
+    if (currentSubscription.willConsumeTopup) {
       warnings.push({
         title: 'Top-Up credits in use',
         message: 'The next video generation will consume Top-Up credits.',
@@ -355,7 +473,7 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
     }
 
     return warnings
-  }, [subscription])
+  }, [currentSubscription])
 
   const statsRows = useMemo(() => {
     const createdAt = new Date(profile?.created_at || user.created_at)
@@ -384,23 +502,28 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
-            <Badge variant={subscription?.tier === 'pro' ? 'default' : 'secondary'}>
+            <Badge variant={currentSubscription?.tier === 'pro' ? 'default' : 'secondary'}>
               {planLabel}
             </Badge>
-            <span className="text-sm text-muted-foreground flex items-center gap-1">
-              <Sparkles className="h-4 w-4" />
+            <span
+              className={cn(
+                'text-sm flex items-center gap-1',
+                isStatusWarning ? 'text-amber-600 dark:text-amber-500' : 'text-muted-foreground'
+              )}
+            >
+              <StatusIcon className="h-4 w-4" />
               {planStatus}
             </span>
           </div>
 
-          {subscription ? (
+          {currentSubscription ? (
             <UsageIndicator
-              counted={subscription.usage.counted}
-              baseLimit={subscription.usage.baseLimit}
-              baseRemaining={subscription.usage.baseRemaining}
-              topupRemaining={subscription.usage.topupRemaining}
-              resetAt={subscription.usage.resetAt}
-              warning={subscription.isPastDue ? 'PAST_DUE' : null}
+              counted={currentSubscription.usage.counted}
+              baseLimit={currentSubscription.usage.baseLimit}
+              baseRemaining={currentSubscription.usage.baseRemaining}
+              topupRemaining={currentSubscription.usage.topupRemaining}
+              resetAt={currentSubscription.usage.resetAt}
+              warning={currentSubscription.isPastDue ? 'PAST_DUE' : null}
             />
           ) : (
             <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
@@ -421,7 +544,7 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
           )}
         </CardContent>
         <CardFooter className="flex flex-wrap gap-3">
-          {subscription?.tier === 'pro' ? (
+          {currentSubscription?.tier === 'pro' ? (
             <>
               <Button
                 onClick={openBillingPortal}
@@ -442,7 +565,7 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
               <Button
                 variant="outline"
                 onClick={() => handleCheckout('topup')}
-                disabled={billingAction !== null || !subscription.canPurchaseTopup}
+                disabled={billingAction !== null || !currentSubscription?.canPurchaseTopup}
               >
                 {billingAction === 'topup' ? (
                   <>
