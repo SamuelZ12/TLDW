@@ -187,7 +187,7 @@ async function handleSubscriptionUpdated(
   subscription: Stripe.Subscription,
   supabase: SupabaseClient<any, string, any>
 ) {
-  const userId = subscription.metadata?.userId ?? (await getUserIdBySubscription(subscription.id, supabase));
+  const userId = await resolveUserIdFromSubscription(subscription, supabase);
 
   if (!userId) {
     console.error('Unable to resolve user for subscription update:', subscription.id);
@@ -228,7 +228,7 @@ async function handleSubscriptionDeleted(
   subscription: Stripe.Subscription,
   supabase: SupabaseClient<any, string, any>
 ) {
-  const userId = await getUserIdBySubscription(subscription.id, supabase);
+  const userId = await resolveUserIdFromSubscription(subscription, supabase);
 
   if (!userId) {
     console.error('Unable to resolve user for canceled subscription:', subscription.id);
@@ -267,16 +267,19 @@ async function handleInvoicePaymentSucceeded(
   invoice: Stripe.Invoice,
   supabase: SupabaseClient<any, string, any>
 ) {
-  const subscriptionRef = (invoice as Stripe.Invoice & {
-    subscription?: string | Stripe.Subscription | null;
-  }).subscription;
+  const { subscriptionId, customerId } = extractInvoiceRefs(invoice);
 
-  if (!subscriptionRef) {
+  if (!subscriptionId && !customerId) {
     return;
   }
 
-  const subscriptionId = typeof subscriptionRef === 'string' ? subscriptionRef : subscriptionRef.id;
-  const userId = await getUserIdBySubscription(subscriptionId, supabase);
+  let userId: string | null = null;
+  if (subscriptionId) {
+    userId = await getUserIdBySubscription(subscriptionId, supabase);
+  }
+  if (!userId && customerId) {
+    userId = await getUserIdByCustomer(customerId, supabase);
+  }
 
   if (!userId) {
     console.error('Unable to resolve user for invoice:', invoice.id);
@@ -301,16 +304,19 @@ async function handleInvoicePaymentFailed(
   invoice: Stripe.Invoice,
   supabase: SupabaseClient<any, string, any>
 ) {
-  const subscriptionRef = (invoice as Stripe.Invoice & {
-    subscription?: string | Stripe.Subscription | null;
-  }).subscription;
+  const { subscriptionId, customerId } = extractInvoiceRefs(invoice);
 
-  if (!subscriptionRef) {
+  if (!subscriptionId && !customerId) {
     return;
   }
 
-  const subscriptionId = typeof subscriptionRef === 'string' ? subscriptionRef : subscriptionRef.id;
-  const userId = await getUserIdBySubscription(subscriptionId, supabase);
+  let userId: string | null = null;
+  if (subscriptionId) {
+    userId = await getUserIdBySubscription(subscriptionId, supabase);
+  }
+  if (!userId && customerId) {
+    userId = await getUserIdByCustomer(customerId, supabase);
+  }
 
   if (!userId) {
     console.error('Unable to resolve user for failed invoice:', invoice.id);
@@ -354,6 +360,69 @@ async function getUserIdBySubscription(
   }
 
   return data?.id ?? null;
+}
+
+async function getUserIdByCustomer(
+  customerId: string,
+  supabase: SupabaseClient<any, string, any>
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('stripe_customer_id', customerId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Failed to locate user by customer:', error);
+    return null;
+  }
+
+  return data?.id ?? null;
+}
+
+function extractInvoiceRefs(invoice: Stripe.Invoice): { subscriptionId: string | null; customerId: string | null } {
+  const subscriptionRef = (invoice as Stripe.Invoice & {
+    subscription?: string | Stripe.Subscription | null;
+  }).subscription;
+
+  const customerRef = invoice.customer;
+
+  const subscriptionId = subscriptionRef
+    ? typeof subscriptionRef === 'string'
+      ? subscriptionRef
+      : subscriptionRef.id
+    : null;
+
+  const customerId = customerRef
+    ? typeof customerRef === 'string'
+      ? customerRef
+      : customerRef.id
+    : null;
+
+  return { subscriptionId, customerId };
+}
+
+async function resolveUserIdFromSubscription(
+  subscription: Stripe.Subscription,
+  supabase: SupabaseClient<any, string, any>
+): Promise<string | null> {
+  if (subscription.metadata?.userId) {
+    return subscription.metadata.userId;
+  }
+
+  const bySubscription = await getUserIdBySubscription(subscription.id, supabase);
+  if (bySubscription) {
+    return bySubscription;
+  }
+
+  const customerRef = subscription.customer;
+  const customerId = typeof customerRef === 'string' ? customerRef : customerRef?.id ?? null;
+
+  if (!customerId) {
+    return null;
+  }
+
+  return getUserIdByCustomer(customerId, supabase);
 }
 
 async function lockStripeEvent(eventId: string, supabase: SupabaseClient<any, string, any>): Promise<boolean> {
