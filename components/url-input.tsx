@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, ArrowUp, Link } from "lucide-react";
+import { Loader2, ArrowUp, Link, Sparkles } from "lucide-react";
 import { extractVideoId } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,13 +14,23 @@ interface UrlInputProps {
   isLoading?: boolean;
   mode?: TopicGenerationMode;
   onModeChange?: (mode: TopicGenerationMode) => void;
+  onFeelingLucky?: () => void | Promise<void>;
+  isFeelingLucky?: boolean;
 }
 
-export function UrlInput({ onSubmit, isLoading = false, mode, onModeChange }: UrlInputProps) {
+export function UrlInput({
+  onSubmit,
+  isLoading = false,
+  mode,
+  onModeChange,
+  onFeelingLucky,
+  isFeelingLucky = false,
+}: UrlInputProps) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const showModeSelector = typeof onModeChange === "function";
+  const showFeelingLucky = typeof onFeelingLucky === "function";
   const modeValue: TopicGenerationMode = mode ?? "fast";
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -68,28 +78,51 @@ export function UrlInput({ onSubmit, isLoading = false, mode, onModeChange }: Ur
             />
           </div>
 
-          {/* Bottom row: Mode selector (left) and submit button (right) */}
-          <div
-            className={cn(
-              "flex w-full items-center gap-3",
-              showModeSelector ? "justify-between" : "justify-end"
-            )}
-          >
-            {showModeSelector && (
-              <ModeSelector value={modeValue} onChange={onModeChange} />
-            )}
-            <Button
-              type="submit"
-              disabled={isLoading || !url.trim()}
-              size="icon"
-              className="h-7 w-7 shrink-0 rounded-full bg-[#B3B4B4] text-white hover:bg-[#9d9e9e] disabled:bg-[#B3B4B4] disabled:text-white disabled:opacity-100"
-            >
-              {isLoading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <ArrowUp className="h-3.5 w-3.5" />
+          {/* Bottom row: Mode selector (left) and actions (right) */}
+          <div className="flex w-full flex-wrap items-center gap-3">
+            {showModeSelector && <ModeSelector value={modeValue} onChange={onModeChange} />}
+            <div className="ml-auto flex items-center gap-2">
+              {showFeelingLucky && (
+                <Button
+                  type="button"
+                  variant="pill"
+                  size="sm"
+                  disabled={isFeelingLucky || isLoading}
+                  onClick={() => {
+                    if (isFeelingLucky || isLoading) return;
+                    void onFeelingLucky?.();
+                  }}
+                  className={cn(
+                    "h-7 rounded-full border border-[#efefef] bg-white px-3 text-[12px] font-semibold text-[#b3b4b4] shadow-none hover:bg-[#f7f7f7] disabled:bg-[#f5f5f5] disabled:text-[#a7a7a7]",
+                    isFeelingLucky && "cursor-wait"
+                  )}
+                >
+                  {isFeelingLucky ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                      Feeling lucky...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="mr-1.5 h-3 w-3" />
+                      I&apos;m feeling lucky
+                    </>
+                  )}
+                </Button>
               )}
-            </Button>
+              <Button
+                type="submit"
+                disabled={isLoading || !url.trim()}
+                size="icon"
+                className="h-7 w-7 shrink-0 rounded-full bg-[#B3B4B4] text-white hover:bg-[#9d9e9e] disabled:bg-[#B3B4B4] disabled:text-white disabled:opacity-100"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ArrowUp className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
           </div>
         </Card>
         {error && (
