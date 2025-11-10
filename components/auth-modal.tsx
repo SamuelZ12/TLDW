@@ -104,6 +104,7 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
   }
 
   const getURL = () => {
+    console.log('NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL)
     console.log('NEXT_PUBLIC_VERCEL_URL:', process.env.NEXT_PUBLIC_VERCEL_URL)
     let url =
       process.env.NEXT_PUBLIC_APP_URL ?? // Set this to your site URL in production env.
