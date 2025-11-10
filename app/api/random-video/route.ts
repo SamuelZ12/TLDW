@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isTranscriptEnglish } from "@/lib/transcript-language";
 import { withSecurity, SECURITY_PRESETS } from "@/lib/security-middleware";
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
 interface RandomVideoRow {
   youtube_id: string;
@@ -9,6 +12,63 @@ interface RandomVideoRow {
   duration: number | null;
   thumbnail_url: string | null;
   slug: string | null;
+  transcript: unknown;
+}
+
+const RANDOM_BATCH_SIZE = 5;
+const MAX_RANDOM_ATTEMPTS = 6;
+const FALLBACK_BATCH_SIZE = 40;
+
+async function fetchVideoBatch(
+  supabase: SupabaseServerClient,
+  start: number,
+  end: number
+): Promise<RandomVideoRow[]> {
+  const { data, error } = await supabase
+    .from("video_analyses")
+    .select("youtube_id,title,author,duration,thumbnail_url,slug,transcript")
+    .not("topics", "is", null)
+    .order("created_at", { ascending: false })
+    .range(start, end);
+
+  if (error) {
+    console.error("Failed to fetch video batch for feeling lucky:", error);
+    throw error;
+  }
+
+  return Array.isArray(data) ? (data as RandomVideoRow[]) : [];
+}
+
+function selectEnglishVideo(batch: RandomVideoRow[]): RandomVideoRow | null {
+  return batch.find((row) => isTranscriptEnglish(row.transcript)) ?? null;
+}
+
+async function getRandomEnglishVideo(
+  supabase: SupabaseServerClient,
+  totalCount: number
+): Promise<RandomVideoRow | null> {
+  if (totalCount <= 0) {
+    return null;
+  }
+
+  const lastIndex = totalCount - 1;
+
+  for (let attempt = 0; attempt < MAX_RANDOM_ATTEMPTS; attempt += 1) {
+    const randomIndex = Math.floor(Math.random() * totalCount);
+    const startIndex = randomIndex;
+    const endIndex = Math.min(lastIndex, randomIndex + RANDOM_BATCH_SIZE - 1);
+
+    const batch = await fetchVideoBatch(supabase, startIndex, endIndex);
+    const englishCandidate = selectEnglishVideo(batch);
+
+    if (englishCandidate) {
+      return englishCandidate;
+    }
+  }
+
+  const fallbackEnd = Math.min(lastIndex, FALLBACK_BATCH_SIZE - 1);
+  const fallbackBatch = await fetchVideoBatch(supabase, 0, fallbackEnd);
+  return selectEnglishVideo(fallbackBatch);
 }
 
 async function handler() {
@@ -35,29 +95,13 @@ async function handler() {
       );
     }
 
-    const randomIndex = Math.floor(Math.random() * count);
+    const randomVideo = await getRandomEnglishVideo(supabase, count);
 
-    const { data, error: fetchError } = await supabase
-      .from("video_analyses")
-      .select("youtube_id,title,author,duration,thumbnail_url,slug")
-      .not("topics", "is", null)
-      .order("created_at", { ascending: false })
-      .range(randomIndex, randomIndex);
-
-    if (fetchError) {
-      console.error("Failed to fetch random analyzed video:", fetchError);
+    if (!randomVideo) {
+      console.warn("No English video found for feeling lucky request.");
       return NextResponse.json(
-        { error: "Unable to load a sample video right now." },
-        { status: 500 }
-      );
-    }
-
-    const randomVideo = Array.isArray(data) ? (data[0] as RandomVideoRow | undefined) : undefined;
-
-    if (!randomVideo || !randomVideo.youtube_id) {
-      return NextResponse.json(
-        { error: "Unable to load a sample video right now." },
-        { status: 500 }
+        { error: "No English analyzed videos are available yet." },
+        { status: 404 }
       );
     }
 

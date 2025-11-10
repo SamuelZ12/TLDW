@@ -246,12 +246,6 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
                 isPro ? (status === 'past_due' ? 'Update payment method' : 'Manage billing') : 'Upgrade'
               )}
             </Button>
-            {status && isPro && (
-              <span className="text-xs text-muted-foreground text-center">
-                Current status:{' '}
-                <strong className="font-medium capitalize">{formatStatus(status)}</strong>
-              </span>
-            )}
           </CardFooter>
         </Card>
       </div>

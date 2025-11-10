@@ -193,7 +193,13 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
 
     const pollForSubscription = async () => {
       try {
-        const response = await fetch('/api/subscription/status')
+        const response = await fetch('/api/subscription/status', {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          },
+        })
         if (!response.ok) return
 
         const data = await response.json()
