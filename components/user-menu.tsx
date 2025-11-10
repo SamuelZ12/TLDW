@@ -12,8 +12,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Settings, Video, LogOut, Loader2, NotebookPen, Sparkles } from 'lucide-react'
+import { Settings, Video, LogOut, Loader2, NotebookPen } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { AuthModal } from '@/components/auth-modal'
 
 export function UserMenu() {
@@ -74,7 +75,7 @@ export function UserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/pricing" className="cursor-pointer">
-            <Sparkles className="mr-2 h-4 w-4" />
+            <Image src="/Person_Star.svg" alt="" width={14} height={14} className="mr-2" />
             <span>Upgrade Plan</span>
           </Link>
         </DropdownMenuItem>

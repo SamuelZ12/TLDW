@@ -1,33 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractVideoId } from '@/lib/utils';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
+import { NO_CREDITS_USED_MESSAGE } from '@/lib/no-credits-message';
+
+function respondWithNoCredits(payload: Record<string, unknown>, status: number) {
+  return NextResponse.json(
+    {
+      ...payload,
+      creditsMessage: NO_CREDITS_USED_MESSAGE,
+      noCreditsUsed: true,
+    },
+    { status }
+  );
+}
 
 async function handler(request: NextRequest) {
   try {
     const { url } = await request.json();
 
     if (!url) {
-      return NextResponse.json(
-        { error: 'YouTube URL is required' },
-        { status: 400 }
-      );
+      return respondWithNoCredits({ error: 'YouTube URL is required' }, 400);
     }
 
     const videoId = extractVideoId(url);
     
     if (!videoId) {
-      return NextResponse.json(
-        { error: 'Invalid YouTube URL' },
-        { status: 400 }
-      );
+      return respondWithNoCredits({ error: 'Invalid YouTube URL' }, 400);
     }
 
     const apiKey = process.env.SUPADATA_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(
-        { error: 'API configuration error' },
-        { status: 500 }
-      );
+      return respondWithNoCredits({ error: 'API configuration error' }, 500);
     }
 
     let transcriptSegments: any[] | null = null;
@@ -80,19 +83,19 @@ async function handler(request: NextRequest) {
 
       if (!response.ok) {
         if (response.status === 404) {
-          return NextResponse.json(
+          return respondWithNoCredits(
             { error: 'No transcript/captions available for this video. The video may not have subtitles enabled.' },
-            { status: 404 }
+            404
           );
         }
 
         if (unsupportedLanguage) {
-          return NextResponse.json(
+          return respondWithNoCredits(
             {
               error: 'Unsupported transcript language',
               details: 'We currently support only YouTube videos with English transcripts. Please choose a video that has English captions enabled.'
             },
-            { status: 400 }
+            400
           );
         }
 
@@ -113,7 +116,7 @@ async function handler(request: NextRequest) {
               details: supadataDetails
             };
 
-        return NextResponse.json(errorPayload, { status });
+        return respondWithNoCredits(errorPayload, status);
       }
 
       const candidateContent = Array.isArray(parsedBody?.content)
@@ -125,12 +128,12 @@ async function handler(request: NextRequest) {
             : null;
 
       if (!candidateContent || candidateContent.length === 0) {
-        return NextResponse.json(
+        return respondWithNoCredits(
           {
             error: supadataStatusMessage,
             details: supadataDetails
           },
-          { status: 404 }
+          404
         );
       }
 
@@ -173,30 +176,27 @@ async function handler(request: NextRequest) {
         (!hasReportedLanguages && englishRatio < 0.1 && nonSpaceLength > 0);
 
       if (appearsNonEnglish) {
-        return NextResponse.json(
+        return respondWithNoCredits(
           {
             error: 'Unsupported transcript language',
             details: 'We currently support only YouTube videos with English transcripts. Please choose a video that has English captions enabled.'
           },
-          { status: 400 }
+          400
         );
       }
     } catch (fetchError) {
       const errorMessage = fetchError instanceof Error ? fetchError.message : '';
       if (errorMessage.includes('404')) {
-        return NextResponse.json(
+        return respondWithNoCredits(
           { error: 'No transcript/captions available for this video. The video may not have subtitles enabled.' },
-          { status: 404 }
+          404
         );
       }
       throw fetchError;
     }
     
     if (!transcriptSegments || transcriptSegments.length === 0) {
-      return NextResponse.json(
-        { error: 'No transcript available for this video' },
-        { status: 404 }
-      );
+      return respondWithNoCredits({ error: 'No transcript available for this video' }, 404);
     }
 
     const transformedTranscript = Array.isArray(transcriptSegments) ? transcriptSegments.map((item, idx) => {
@@ -225,10 +225,7 @@ async function handler(request: NextRequest) {
       transcript: transformedTranscript
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to fetch transcript' },
-      { status: 500 }
-    );
+    return respondWithNoCredits({ error: 'Failed to fetch transcript' }, 500);
   }
 }
 

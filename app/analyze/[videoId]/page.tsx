@@ -22,6 +22,7 @@ import { useModePreference } from "@/lib/hooks/use-mode-preference";
 type PageState = 'IDLE' | 'ANALYZING_NEW' | 'LOADING_CACHED';
 type AuthModalTrigger = 'generation-limit' | 'save-video' | 'manual' | 'save-note';
 import { extractVideoId } from "@/lib/utils";
+import { NO_CREDITS_USED_MESSAGE } from "@/lib/no-credits-message";
 import { useElapsedTimer } from "@/lib/hooks/use-elapsed-timer";
 import { Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -149,19 +150,26 @@ function buildApiErrorMessage(errorData: unknown, fallback: string): string {
       ? record.details.trim()
       : "";
 
-  if (errorText && detailsText) {
-    return normalizeErrorMessage(`${errorText}: ${detailsText}`, fallback);
+  const combinedMessage =
+    errorText && detailsText
+      ? `${errorText}: ${detailsText}`
+      : detailsText || errorText || undefined;
+
+  const baseMessage = normalizeErrorMessage(combinedMessage, fallback);
+
+  const creditsMessage =
+    typeof record.creditsMessage === "string" && record.creditsMessage.trim().length > 0
+      ? record.creditsMessage.trim()
+      : record.noCreditsUsed
+        ? NO_CREDITS_USED_MESSAGE
+        : "";
+
+  if (!creditsMessage) {
+    return baseMessage;
   }
 
-  if (detailsText) {
-    return normalizeErrorMessage(detailsText, fallback);
-  }
-
-  if (errorText) {
-    return normalizeErrorMessage(errorText, fallback);
-  }
-
-  return normalizeErrorMessage(undefined, fallback);
+  const alreadyIncludes = baseMessage.toLowerCase().includes(creditsMessage.toLowerCase());
+  return alreadyIncludes ? baseMessage : `${baseMessage}\n${creditsMessage}`;
 }
 
 export default function AnalyzePage() {

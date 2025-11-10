@@ -11,6 +11,18 @@ import {
   consumeVideoCredit,
   type GenerationDecision,
 } from '@/lib/subscription-manager';
+import { NO_CREDITS_USED_MESSAGE } from '@/lib/no-credits-message';
+
+function respondWithNoCredits(payload: Record<string, unknown>, status: number) {
+  return NextResponse.json(
+    {
+      ...payload,
+      creditsMessage: NO_CREDITS_USED_MESSAGE,
+      noCreditsUsed: true,
+    },
+    { status }
+  );
+}
 
 async function handler(req: NextRequest) {
   try {
@@ -22,12 +34,12 @@ async function handler(req: NextRequest) {
       validatedData = videoAnalysisRequestSchema.parse(body);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return NextResponse.json(
+        return respondWithNoCredits(
           {
             error: 'Validation failed',
             details: formatValidationError(error)
           },
-          { status: 400 }
+          400
         );
       }
       throw error;
@@ -61,9 +73,9 @@ async function handler(req: NextRequest) {
         });
       } catch (error) {
         console.error('Error generating theme-specific topics:', error);
-        return NextResponse.json(
+        return respondWithNoCredits(
           { error: 'Failed to generate themed topics. Please try again.' },
-          { status: 500 }
+          500
         );
       }
     }
@@ -255,10 +267,7 @@ async function handler(req: NextRequest) {
     console.error('Error in video analysis:', error);
 
     // Return generic error message to client
-    return NextResponse.json(
-      { error: 'An error occurred while processing your request' },
-      { status: 500 }
-    );
+    return respondWithNoCredits({ error: 'An error occurred while processing your request' }, 500);
   }
 }
 
