@@ -455,16 +455,6 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
       })
     }
 
-    if (currentSubscription.cancelAtPeriodEnd) {
-      const cancellationCopy = formatCancellationDate(currentSubscription.periodEnd)
-      warnings.push({
-        title: 'Scheduled to cancel',
-        message: cancellationCopy
-          ? `Your plan will revert to Free on ${cancellationCopy}.`
-          : 'Your plan will revert to Free at the end of the current billing period.',
-      })
-    }
-
     if (currentSubscription.willConsumeTopup) {
       warnings.push({
         title: 'Top-Up credits in use',
