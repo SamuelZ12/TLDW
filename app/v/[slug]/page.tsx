@@ -147,6 +147,7 @@ export default async function VideoPage({ params }: PageProps) {
     : [];
 
   const videoInfo: VideoInfo = {
+    videoId,
     title: video.title,
     author: video.author,
     duration: video.duration || 0,

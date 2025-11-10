@@ -18,7 +18,7 @@ function createStripeClient(): Stripe {
   }
 
   return new Stripe(secretKey, {
-    apiVersion: '2025-03-31.basil',
+    apiVersion: '2025-10-29.clover',
     typescript: true,
     appInfo: {
       name: 'TLDW',
