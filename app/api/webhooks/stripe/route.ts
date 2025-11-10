@@ -155,7 +155,7 @@ async function handleCheckoutCompleted(
       resourceType: 'subscription',
       resourceId: subscriptionId,
       details: { tier: 'pro', status: subscription.status },
-    });
+    }, supabase);
   }
 
   if (session.mode === 'payment') {
@@ -177,7 +177,7 @@ async function handleCheckoutCompleted(
               ? session.payment_intent
               : session.payment_intent?.id ?? 'unknown',
           details: { credits: topupResult.creditsAdded, totalCredits: topupResult.totalCredits },
-        });
+        }, supabase);
       }
     }
   }
@@ -221,7 +221,7 @@ async function handleSubscriptionUpdated(
       status: subscription.status,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
     },
-  });
+  }, supabase);
 }
 
 async function handleSubscriptionDeleted(
@@ -260,7 +260,7 @@ async function handleSubscriptionDeleted(
     resourceType: 'subscription',
     resourceId: subscription.id,
     details: { downgradedToFree: true },
-  });
+  }, supabase);
 }
 
 async function handleInvoicePaymentSucceeded(
@@ -335,7 +335,7 @@ async function handleInvoicePaymentFailed(
     resourceType: 'invoice',
     resourceId: invoice.id,
     details: { subscriptionId },
-  });
+  }, supabase);
 }
 
 async function getUserIdBySubscription(
