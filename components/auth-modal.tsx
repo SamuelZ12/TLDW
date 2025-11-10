@@ -113,6 +113,7 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
     url = url.startsWith('http') ? url : `https://${url}`
     // Make sure to include a trailing `/`.
     url = url.endsWith('/') ? url : `${url}/`
+    console.log('redirect url: ', url)
     return url
   }
 
