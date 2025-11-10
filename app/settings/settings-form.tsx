@@ -20,7 +20,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Loader2, AlertCircle, CreditCard, Clock, Sparkles } from 'lucide-react'
+import { Loader2, AlertCircle, CreditCard, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import type { User } from '@supabase/supabase-js'
 import { csrfFetch } from '@/lib/csrf-client'
@@ -83,17 +83,6 @@ function formatStatus(status: SubscriptionStatus): string {
     default:
       return status
   }
-}
-
-function formatDate(iso: string | null, fallback = 'Not scheduled'): string {
-  if (!iso) return fallback
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return fallback
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  })
 }
 
 export default function SettingsForm({ user, profile, videoCount, subscription }: SettingsFormProps) {
@@ -255,7 +244,6 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
 
   const planLabel = subscription?.tier === 'pro' ? 'Pro Plan' : 'Free Plan'
   const planStatus = formatStatus(subscription?.status ?? null)
-  const nextBillingDate = formatDate(subscription?.nextBillingDate ?? null, 'No upcoming charge')
 
   const handleUpdateProfile = async () => {
     if (!hasProfileChanges) {
@@ -376,21 +364,8 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
       },
     ]
 
-    if (subscription) {
-      stats.push(
-        {
-          label: 'Videos this period',
-          value: `${subscription.usage.counted}`,
-        },
-        {
-          label: 'Top-Up credits',
-          value: `${subscription.usage.topupCredits}`,
-        }
-      )
-    }
-
     return stats
-  }, [profile?.created_at, subscription, user.created_at, videoCount])
+  }, [profile?.created_at, user.created_at, videoCount])
 
   return (
     <div className="space-y-6">
@@ -402,20 +377,14 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Badge variant={subscription?.tier === 'pro' ? 'default' : 'secondary'}>
-                {planLabel}
-              </Badge>
-              <span className="text-sm text-muted-foreground flex items-center gap-1">
-                <Sparkles className="h-4 w-4" />
-                {planStatus}
-              </span>
-            </div>
-            <div className="text-sm text-muted-foreground flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              {nextBillingDate}
-            </div>
+          <div className="flex items-center gap-3">
+            <Badge variant={subscription?.tier === 'pro' ? 'default' : 'secondary'}>
+              {planLabel}
+            </Badge>
+            <span className="text-sm text-muted-foreground flex items-center gap-1">
+              <Sparkles className="h-4 w-4" />
+              {planStatus}
+            </span>
           </div>
 
           {subscription ? (

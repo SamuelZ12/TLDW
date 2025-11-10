@@ -594,8 +594,10 @@ export default function AnalyzePage() {
           setLoadingStage(null);
           setProcessingStartTime(null);
 
-          // Show success notification for cached analysis
-          toast.success("Lucky you — Someone's already analyzed this video! No credits used.");
+          // Show contextual notification for cached analysis
+          if (user && !cacheData.ownedByCurrentUser) {
+            toast.success("Lucky you — Someone's already analyzed this video! No credits used.");
+          }
 
           backgroundOperation(
             'load-cached-themes',

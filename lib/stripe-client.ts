@@ -18,7 +18,7 @@ function createStripeClient(): Stripe {
   }
 
   return new Stripe(secretKey, {
-    apiVersion: '2024-10-28.acacia' as any,
+    apiVersion: '2025-03-31.basil',
     typescript: true,
     appInfo: {
       name: 'TLDW',
@@ -41,7 +41,7 @@ export function getStripeClient(): Stripe {
  * These are configured in .env.local and created in the Stripe Dashboard
  */
 export const STRIPE_PRICE_IDS = {
-  /** Pro subscription: $5/month recurring */
+  /** Pro subscription: $10/month recurring */
   PRO_SUBSCRIPTION: process.env.STRIPE_PRO_PRICE_ID!,
 
   /** Pro subscription: discounted annual option */

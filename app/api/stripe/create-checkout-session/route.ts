@@ -102,16 +102,19 @@ async function handler(req: NextRequest) {
     // Determine the price ID and mode based on priceType
     const isSubscription =
       validatedData.priceType === 'subscription' || validatedData.priceType === 'subscription_annual';
-    priceId = (() => {
-      switch (validatedData.priceType) {
-        case 'subscription':
-          return STRIPE_PRICE_IDS.PRO_SUBSCRIPTION;
-        case 'subscription_annual':
-          return STRIPE_PRICE_IDS.PRO_SUBSCRIPTION_ANNUAL;
-        default:
-          return STRIPE_PRICE_IDS.TOPUP_CREDITS;
-      }
-    })();
+
+    // Select the appropriate price ID
+    switch (validatedData.priceType) {
+      case 'subscription':
+        priceId = STRIPE_PRICE_IDS.PRO_SUBSCRIPTION;
+        break;
+      case 'subscription_annual':
+        priceId = STRIPE_PRICE_IDS.PRO_SUBSCRIPTION_ANNUAL;
+        break;
+      case 'topup':
+        priceId = STRIPE_PRICE_IDS.TOPUP_CREDITS;
+        break;
+    }
 
     const mode = isSubscription ? 'subscription' : 'payment';
 

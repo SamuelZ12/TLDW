@@ -24,6 +24,7 @@ export interface UserSubscription {
   currentPeriodEnd: Date | null;
   cancelAtPeriodEnd: boolean;
   topupCredits: number;
+  userCreatedAt: Date | null;
 }
 
 export interface UsageStats {
@@ -51,14 +52,15 @@ export interface GenerationDecision {
 }
 
 export const TIER_LIMITS: Record<SubscriptionTier, number> = {
-  free: 3,
-  pro: 40,
+  free: 5,
+  pro: 100,
 };
 
 const BILLING_PERIOD_DAYS = 30;
 const THIRTY_DAYS_MS = BILLING_PERIOD_DAYS * 24 * 60 * 60 * 1000;
 
 function resolveBillingPeriod(subscription: UserSubscription, now: Date): { start: Date; end: Date } {
+  // Pro users: use Stripe billing period
   if (
     subscription.tier === 'pro' &&
     subscription.currentPeriodStart &&
@@ -70,6 +72,26 @@ function resolveBillingPeriod(subscription: UserSubscription, now: Date): { star
     };
   }
 
+  // Free users: calculate fixed 30-day billing cycles from signup date
+  if (subscription.userCreatedAt) {
+    const signupTime = subscription.userCreatedAt.getTime();
+    const currentTime = now.getTime();
+    const elapsedMs = currentTime - signupTime;
+
+    // Calculate which billing cycle we're in (0-indexed)
+    const cycleNumber = Math.floor(elapsedMs / THIRTY_DAYS_MS);
+
+    // Calculate period start and end for the current cycle
+    const periodStartMs = signupTime + (cycleNumber * THIRTY_DAYS_MS);
+    const periodEndMs = periodStartMs + THIRTY_DAYS_MS;
+
+    return {
+      start: new Date(periodStartMs),
+      end: new Date(periodEndMs),
+    };
+  }
+
+  // Fallback for users without creation date: rolling window
   const end = now;
   const start = new Date(end.getTime() - THIRTY_DAYS_MS);
   return { start, end };
@@ -84,7 +106,7 @@ export async function getUserSubscriptionStatus(
   const { data: profile, error } = await supabase
     .from('profiles')
     .select(
-      'id, subscription_tier, subscription_status, stripe_customer_id, stripe_subscription_id, subscription_current_period_start, subscription_current_period_end, cancel_at_period_end, topup_credits'
+      'id, subscription_tier, subscription_status, stripe_customer_id, stripe_subscription_id, subscription_current_period_start, subscription_current_period_end, cancel_at_period_end, topup_credits, created_at'
     )
     .eq('id', userId)
     .maybeSingle();
@@ -102,6 +124,7 @@ export async function getUserSubscriptionStatus(
       currentPeriodEnd: null,
       cancelAtPeriodEnd: false,
       topupCredits: 0,
+      userCreatedAt: null,
     };
   }
 
@@ -117,6 +140,7 @@ export async function getUserSubscriptionStatus(
       currentPeriodEnd: null,
       cancelAtPeriodEnd: false,
       topupCredits: 0,
+      userCreatedAt: null,
     };
   }
 
@@ -134,6 +158,7 @@ export async function getUserSubscriptionStatus(
       : null,
     cancelAtPeriodEnd: Boolean(profile.cancel_at_period_end),
     topupCredits: Number(profile.topup_credits ?? 0),
+    userCreatedAt: profile.created_at ? new Date(profile.created_at) : null,
   };
 }
 

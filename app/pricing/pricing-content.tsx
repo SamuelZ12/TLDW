@@ -41,7 +41,7 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
   ]
 
   const proFeatures = [
-    '40 videos / month',
+    '100 videos / month',
     'Everything from Basic',
     'Export transcripts',
     'Transcript translation',
@@ -170,14 +170,16 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
           <CardHeader className="px-6 py-4">
             <div className="w-full min-w-0 rounded-[24px] bg-[linear-gradient(to_bottom_right,rgba(233,211,250,0.3),rgba(203,252,255,0.3),rgba(203,227,255,0.3))] p-6 text-left shadow-sm ring-1 ring-white/60 backdrop-blur-sm">
               <div className="flex w-full items-start justify-between gap-6">
-                <div className="space-y-4">
+                <div className="space-y-4 min-w-0 flex-1">
                   <p className="text-sm font-medium text-muted-foreground mb-12">Pro</p>
                   <div className="flex items-baseline gap-2 whitespace-nowrap">
                     {billingPeriod === 'annual' && (
-                      <span className="text-4xl font-semibold text-muted-foreground line-through">$60</span>
+                      <span className="text-4xl font-semibold text-muted-foreground line-through">
+                        $120
+                      </span>
                     )}
                     <span className="text-4xl font-semibold">
-                      {billingPeriod === 'annual' ? '$50' : '$5'}
+                      {billingPeriod === 'annual' ? '$100' : '$10'}
                     </span>
                     <span className="text-base text-muted-foreground">
                       {billingPeriod === 'annual' ? '/ year' : '/ month'}
@@ -187,7 +189,9 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
                     {billingPeriod === 'annual' ? 'Get 2 months free' : 'Cancel anytime'}
                   </p>
                 </div>
-                <BillingToggle value={billingPeriod} onChange={setBillingPeriod} />
+                <div className="flex-shrink-0">
+                  <BillingToggle value={billingPeriod} onChange={setBillingPeriod} />
+                </div>
               </div>
             </div>
           </CardHeader>

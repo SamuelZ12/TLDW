@@ -213,9 +213,10 @@ function buildReducePrompt(
 ): string {
   const videoInfoBlock = formatVideoInfoForPrompt(videoInfo);
   const segmentContext = segmentLabel ? `Focus: ${segmentLabel} of the video.` : '';
-  const selectionGuidance = minTopics > 0
-    ? `Select between ${minTopics} and ${maxTopics} highlights when possible. If fewer than ${minTopics} candidates meet the quality bar, return the strongest available options.`
-    : `Select up to ${maxTopics} highlights that maximize diversity, insight, and narrative punch while reusing the provided quotes.`;
+  const safeMin = Math.max(0, Math.min(minTopics, maxTopics));
+  const selectionGuidance = safeMin > 0
+    ? `Return between ${safeMin} and ${maxTopics} standout highlights. If fewer than ${safeMin} candidates truly meet the quality bar, respond with only the clips that do—even if that's less. Never exceed ${maxTopics}.`
+    : `Return up to ${maxTopics} standout highlights that maximize diversity, insight, and narrative punch while reusing the provided quotes. It's acceptable to send back a single clip if only one deserves the spotlight.`;
   const candidateBlock = candidates.map((candidate, idx) => {
     const timestamp = candidate.quote?.timestamp ?? '[??:??-??:??]';
     const quoteText = candidate.quote?.text ?? '';
@@ -332,10 +333,13 @@ async function reduceCandidateSubset(
   }
 
   if (reducedTopics.length === 0) {
-    return candidates.slice(0, constrainedMax).map(candidate => ({
-      title: candidate.title,
-      quote: candidate.quote
-    }));
+    if (options.minTopics > 0) {
+      return candidates.slice(0, Math.min(options.minTopics, constrainedMax)).map(candidate => ({
+        title: candidate.title,
+        quote: candidate.quote
+      }));
+    }
+    return [];
   }
 
   return reducedTopics;
@@ -405,16 +409,17 @@ async function runSinglePassTopicGeneration(
   const themeGuidance = theme
     ? `<themeAlignment>
   <criterion name="ThemeRelevance">Every highlight must directly reinforce the theme "${theme}". Discard compelling ideas if they are off-theme.</criterion>
+  <criterion name="ThemeDiscipline">If only one passage perfectly embodies "${theme}", return just that one.</criterion>
 </themeAlignment>`
     : '';
 
   const prompt = `<task>
 <role>You are an expert content strategist.</role>
-<goal>Analyze the provided video transcript and description to create up to five distinct highlight reels that let a busy, intelligent viewer absorb the video's most valuable insights in minutes.</goal>
+<goal>Analyze the provided video transcript and description to create between one and five distinct highlight reels that let a busy, intelligent viewer absorb the video's most valuable insights in minutes.</goal>
 <audience>The audience is forward-thinking and curious. They have a short attention span and expect contrarian insights, actionable mental models, and bold predictions rather than generic advice.</audience>
 <instructions>
   <step name="IdentifyThemes">
-    <description>Analyze the entire transcript to surface up to five high-value, thought-provoking themes.</description>
+    <description>Analyze the entire transcript to surface no more than five high-value, thought-provoking themes. Return fewer if only one or two moments truly earn inclusion.</description>
     <themeCriteria>
       <criterion name="Insightful">Challenge a common assumption or reframe a known concept.</criterion>
       <criterion name="Specific">Avoid vague or catch-all wording.</criterion>
@@ -437,7 +442,7 @@ async function runSinglePassTopicGeneration(
 </instructions>
 <qualityControl>
   <distinctThemes>Each highlight reel title must represent a clearly distinct idea.</distinctThemes>
-  <valueOverQuantity>If only three or four themes meet the quality bar, return that smaller number rather than adding generic options.</valueOverQuantity>
+  <valueOverQuantity>If only one or two themes meet the quality bar, return that smaller number rather than adding filler.</valueOverQuantity>
   <completenessCheck>Verify each passage contains a complete thought that can stand alone; extend the timestamp range if necessary.</completenessCheck>
 </qualityControl>
 ${themeGuidance}
@@ -793,35 +798,10 @@ export async function generateTopicsFromTranscript(
 
     if (firstSegmentCandidates.length === 0 && secondSegmentCandidates.length === 0) {
       firstSegmentCandidates = [...candidateTopics];
-      secondSegmentCandidates = [];
-    }
-
-    if (firstSegmentCandidates.length === 0 || secondSegmentCandidates.length === 0) {
-      const totalCandidates = candidateTopics.length;
-      if (totalCandidates > 1) {
-        const boundaryIndex = Math.max(
-          1,
-          Math.min(
-            totalCandidates - 1,
-            Math.floor((totalCandidates * 3) / 5)
-          )
-        );
-        firstSegmentCandidates = candidateTopics.slice(0, boundaryIndex);
-        secondSegmentCandidates = candidateTopics.slice(boundaryIndex);
-
-        if (firstSegmentCandidates.length === 0 && secondSegmentCandidates.length > 0) {
-          const pivot = Math.ceil(secondSegmentCandidates.length / 2);
-          firstSegmentCandidates = secondSegmentCandidates.slice(0, pivot);
-          secondSegmentCandidates = secondSegmentCandidates.slice(pivot);
-        } else if (secondSegmentCandidates.length === 0 && firstSegmentCandidates.length > 1) {
-          const pivot = Math.floor(firstSegmentCandidates.length / 2);
-          secondSegmentCandidates = firstSegmentCandidates.slice(pivot);
-          firstSegmentCandidates = firstSegmentCandidates.slice(0, pivot);
-        }
-      } else if (totalCandidates === 1) {
-        firstSegmentCandidates = [...candidateTopics];
-        secondSegmentCandidates = [];
-      }
+    } else if (firstSegmentCandidates.length === 0 && secondSegmentCandidates.length > 0) {
+      const pivot = Math.ceil(secondSegmentCandidates.length / 2);
+      firstSegmentCandidates = secondSegmentCandidates.slice(0, pivot);
+      secondSegmentCandidates = secondSegmentCandidates.slice(pivot);
     }
 
     const firstTarget = Math.min(3, requestedTopics);
@@ -832,19 +812,19 @@ export async function generateTopicsFromTranscript(
         label: 'first 3/5 of the video',
         candidates: firstSegmentCandidates,
         maxTopics: firstTarget,
-        minTopics: firstTarget
+        minTopics: firstTarget > 0 ? 1 : 0
       },
       {
         label: 'final 2/5 of the video',
         candidates: secondSegmentCandidates,
         maxTopics: secondTarget,
-        minTopics: secondTarget
+        minTopics: 0
       }
     ].filter(segment => segment.candidates.length > 0 && segment.maxTopics > 0);
 
     const selectionPromises = segmentConfigs.map(segment =>
       reduceCandidateSubset(segment.candidates, {
-        minTopics: Math.max(1, segment.minTopics),
+        minTopics: segment.minTopics,
         maxTopics: segment.maxTopics,
         fastModel,
         videoInfo,
@@ -866,43 +846,7 @@ export async function generateTopicsFromTranscript(
       }
     });
 
-    topicsArray = combinedSelections;
-
-    if (topicsArray.length < requestedTopics) {
-      const usedKeys = new Set(
-        topicsArray
-          .map(topic => topic.quote)
-          .filter((quote): quote is { timestamp: string; text: string } => !!quote?.timestamp && !!quote.text)
-          .map(quote => `${quote.timestamp}|${normalizeWhitespace(quote.text)}`)
-      );
-      for (const key of excludedKeys) {
-        usedKeys.add(key);
-      }
-
-      for (const candidate of candidateTopics) {
-        if (!candidate.quote?.timestamp || !candidate.quote.text) continue;
-        const candidateKey = `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`;
-        if (usedKeys.has(candidateKey)) continue;
-
-        topicsArray.push({
-          title: candidate.title,
-          quote: candidate.quote
-        });
-        usedKeys.add(candidateKey);
-
-        if (topicsArray.length >= requestedTopics) {
-          break;
-        }
-      }
-    }
-
-    if (topicsArray.length === 0) {
-      topicsArray = candidateTopics.slice(0, Math.min(requestedTopics, candidateTopics.length))
-        .map(candidate => ({
-          title: candidate.title,
-          quote: candidate.quote
-        }));
-    }
+    topicsArray = combinedSelections.slice(0, requestedTopics);
   }
 
   if (topicsArray.length === 0) {
