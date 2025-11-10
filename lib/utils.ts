@@ -99,3 +99,38 @@ export function getTopicHSLColor(index: number, videoId?: string): string {
 
 // Re-export parseTimestamp from timestamp-utils for backward compatibility
 export { parseTimestamp } from './timestamp-utils';
+
+function safeParseHost(url: string | undefined) {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveAppUrl(fallbackOrigin?: string) {
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL;
+
+  if (!configuredUrl) {
+    if (fallbackOrigin) return fallbackOrigin;
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin;
+    }
+    return '';
+  }
+
+  const configuredHost = safeParseHost(configuredUrl);
+
+  if (!fallbackOrigin) {
+    return configuredUrl;
+  }
+
+  const fallbackHost = safeParseHost(fallbackOrigin);
+
+  if (configuredHost && fallbackHost && configuredHost !== fallbackHost) {
+    return fallbackOrigin;
+  }
+
+  return configuredUrl;
+}

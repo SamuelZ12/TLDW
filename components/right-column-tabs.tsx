@@ -33,6 +33,13 @@ interface RightColumnTabsProps {
   onCancelEditing?: () => void;
   isAuthenticated?: boolean;
   onRequestSignIn?: () => void;
+  onRequestExport?: () => void;
+  exportButtonState?: {
+    tooltip?: string;
+    disabled?: boolean;
+    badgeLabel?: string;
+    isLoading?: boolean;
+  };
 }
 
 export interface RightColumnTabsHandle {
@@ -62,6 +69,8 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   onCancelEditing,
   isAuthenticated,
   onRequestSignIn,
+  onRequestExport,
+  exportButtonState,
 }, ref) => {
   const [activeTab, setActiveTab] = useState<"transcript" | "chat" | "notes">("transcript");
 
@@ -149,6 +158,8 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
             citationHighlight={citationHighlight}
             onTakeNoteFromSelection={onTakeNoteFromSelection}
             videoId={videoId}
+            onRequestExport={onRequestExport}
+            exportButtonState={exportButtonState}
           />
         </div>
         <div className={cn("absolute inset-0", (activeTab !== "chat" || !showChatTab) && "hidden")}>

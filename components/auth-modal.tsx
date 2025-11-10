@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { resolveAppUrl } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,16 +27,18 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const supabase = createClient()
+  const appUrl = resolveAppUrl(typeof window !== 'undefined' ? window.location.origin : undefined)
 
   const handleSignUp = async () => {
     setLoading(true)
     setError(null)
 
-    const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`
+    const redirectUrl = `${appUrl}/auth/callback`
     console.log('🔐 Starting signup process...')
     console.log('📧 Email:', email)
     console.log('🔗 Redirect URL:', redirectUrl)
     console.log('🌐 NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL)
+    console.log('🧭 Resolved App URL:', appUrl)
 
     const response = await supabase.auth.signUp({
       email,
@@ -108,7 +111,7 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`,
+        redirectTo: `${appUrl}/auth/callback`,
       },
     })
 
