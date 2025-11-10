@@ -363,8 +363,8 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
   const planStatus = formatStatus(currentSubscription)
   const isCancellationScheduled =
     currentSubscription?.tier === 'pro' && currentSubscription.cancelAtPeriodEnd
-  const isStatusWarning = Boolean(currentSubscription?.isPastDue || isCancellationScheduled)
-  const StatusIcon = isStatusWarning ? AlertCircle : Sparkles
+  const isPastDue = Boolean(currentSubscription?.isPastDue)
+  const StatusIcon = isCancellationScheduled ? AlertCircle : isPastDue ? AlertCircle : Sparkles
 
   const handleUpdateProfile = async () => {
     if (!hasProfileChanges) {
@@ -498,7 +498,8 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
             <span
               className={cn(
                 'text-sm flex items-center gap-1',
-                isStatusWarning ? 'text-amber-600 dark:text-amber-500' : 'text-muted-foreground'
+                isPastDue ? 'text-amber-600 dark:text-amber-500' :
+                isCancellationScheduled ? 'text-foreground' : 'text-muted-foreground'
               )}
             >
               <StatusIcon className="h-4 w-4" />
