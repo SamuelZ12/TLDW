@@ -268,6 +268,7 @@ export default async function VideoPage({ params }: PageProps) {
       {/* Client-side interactive component */}
       <VideoPageClient
         videoId={videoId}
+        slug={slug}
         initialVideo={{
           ...video,
           transcript,

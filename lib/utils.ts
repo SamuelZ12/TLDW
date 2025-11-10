@@ -11,6 +11,22 @@ export function extractVideoId(url: string): string | null {
   return match ? match[1] : null;
 }
 
+export function buildVideoSlug(title: string | null | undefined, videoId: string | null | undefined): string {
+  if (!videoId) {
+    return '';
+  }
+
+  const normalizedTitle = (title ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+
+  const slugBase = normalizedTitle || 'video';
+  return `${slugBase}-${videoId}`;
+}
+
 export function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);

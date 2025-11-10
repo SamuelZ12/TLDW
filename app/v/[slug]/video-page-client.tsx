@@ -6,6 +6,7 @@ import { Topic, TranscriptSegment, VideoInfo } from '@/lib/types';
 
 interface VideoPageClientProps {
   videoId: string;
+  slug: string;
   initialVideo: {
     youtube_id: string;
     title: string;
@@ -22,16 +23,16 @@ interface VideoPageClientProps {
   };
 }
 
-export function VideoPageClient({ videoId, initialVideo }: VideoPageClientProps) {
+export function VideoPageClient({ videoId, slug, initialVideo }: VideoPageClientProps) {
   const router = useRouter();
 
   useEffect(() => {
     // Redirect to the existing analyze page with cached parameter
     // This ensures we use the existing, tested UI/UX while the server-rendered
     // page provides SEO benefits
-    const url = `/analyze/${videoId}?cached=true`;
+    const url = `/analyze/${videoId}?cached=true&slug=${encodeURIComponent(slug)}`;
     router.replace(url);
-  }, [videoId, router]);
+  }, [videoId, slug, router]);
 
   // Show a minimal loading state during redirect
   return (

@@ -21,7 +21,7 @@ import { useModePreference } from "@/lib/hooks/use-mode-preference";
 // Page state for better UX
 type PageState = 'IDLE' | 'ANALYZING_NEW' | 'LOADING_CACHED';
 type AuthModalTrigger = 'generation-limit' | 'save-video' | 'manual' | 'save-note';
-import { extractVideoId } from "@/lib/utils";
+import { buildVideoSlug, extractVideoId } from "@/lib/utils";
 import { NO_CREDITS_USED_MESSAGE } from "@/lib/no-credits-message";
 import { useElapsedTimer } from "@/lib/hooks/use-elapsed-timer";
 import { Loader2 } from "lucide-react";
@@ -182,6 +182,7 @@ export default function AnalyzePage() {
   const cachedParamValue = cachedParam?.toLowerCase();
   const isCachedQuery = cachedParamValue === 'true' || cachedParamValue === '1';
   const authErrorParam = searchParams?.get('auth_error');
+  const slugParam = searchParams?.get('slug') ?? null;
   const [pageState, setPageState] = useState<PageState>(() =>
     (routeVideoId || urlParam)
       ? (isCachedQuery ? 'LOADING_CACHED' : 'ANALYZING_NEW')
@@ -218,6 +219,7 @@ export default function AnalyzePage() {
   const rightColumnTabsRef = useRef<RightColumnTabsHandle>(null);
   const abortManager = useRef(new AbortManager());
   const selectedThemeRef = useRef<string | null>(null);
+  const seoPathRef = useRef<string | null>(null);
   const nextThemeRequestIdRef = useRef(0);
   const activeThemeRequestIdRef = useRef<number | null>(null);
   const pendingThemeRequestsRef = useRef(new Map<string, number>());
@@ -243,6 +245,37 @@ export default function AnalyzePage() {
 
   // Cached suggested questions
   const [cachedSuggestedQuestions, setCachedSuggestedQuestions] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const effectiveVideoId = routeVideoId || videoId;
+    if (!effectiveVideoId) {
+      return;
+    }
+
+    const normalizedSlugParam = slugParam?.trim() || null;
+    const derivedSlug = normalizedSlugParam
+      ? normalizedSlugParam
+      : (videoInfo?.title ? buildVideoSlug(videoInfo.title, effectiveVideoId) : null);
+
+    if (!derivedSlug) {
+      return;
+    }
+
+    const targetPath = `/v/${derivedSlug}`;
+
+    if (seoPathRef.current === targetPath || window.location.pathname === targetPath) {
+      seoPathRef.current = targetPath;
+      return;
+    }
+
+    const newUrl = `${targetPath}${window.location.search}`;
+    window.history.replaceState(window.history.state, '', newUrl);
+    seoPathRef.current = targetPath;
+  }, [routeVideoId, videoId, videoInfo?.title, slugParam]);
 
   // Transcript export state
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
