@@ -76,7 +76,7 @@ export function UserMenu() {
         <DropdownMenuItem asChild>
           <Link href="/pricing" className="cursor-pointer">
             <Image src="/Person_Star.svg" alt="" width={14} height={14} className="mr-2" />
-            <span>Upgrade Plan</span>
+            <span>Manage Plan</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

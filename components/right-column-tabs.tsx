@@ -29,7 +29,7 @@ interface RightColumnTabsProps {
   onSaveNote?: (payload: { text: string; source: NoteSource; sourceId?: string | null; metadata?: NoteMetadata | null }) => Promise<void>;
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
   editingNote?: EditingNote | null;
-  onSaveEditingNote?: (noteText: string) => void;
+  onSaveEditingNote?: (payload: { noteText: string; selectedText: string }) => void;
   onCancelEditing?: () => void;
   isAuthenticated?: boolean;
   onRequestSignIn?: () => void;

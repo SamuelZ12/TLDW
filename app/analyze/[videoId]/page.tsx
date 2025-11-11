@@ -1693,7 +1693,7 @@ export default function AnalyzePage() {
     });
   }, [promptSignInForNotes, user]);
 
-  const handleSaveEditingNote = useCallback(async (noteText: string) => {
+  const handleSaveEditingNote = useCallback(async ({ noteText, selectedText }: { noteText: string; selectedText: string }) => {
     if (!editingNote || !videoId) return;
 
     // Use source from editing note or determine from metadata
@@ -1706,11 +1706,19 @@ export default function AnalyzePage() {
       source = "transcript";
     }
 
+    const normalizedSelected = selectedText.trim();
+    const mergedMetadata = normalizedSelected
+      ? {
+          ...(editingNote.metadata ?? {}),
+          selectedText: normalizedSelected,
+        }
+      : editingNote.metadata ?? undefined;
+
     await handleSaveNote({
       text: noteText,
       source,
       sourceId: editingNote.metadata?.chat?.messageId ?? null,
-      metadata: editingNote.metadata,
+      metadata: mergedMetadata,
     });
 
     // Clear editing state

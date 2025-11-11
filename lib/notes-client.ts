@@ -36,6 +36,24 @@ export async function saveNote(payload: SaveNotePayload): Promise<Note> {
   return data.note as Note;
 }
 
+export async function enhanceNoteQuote(quote: string): Promise<string> {
+  const response = await csrfFetch.post('/api/notes/enhance', { quote });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error?.error || 'Failed to enhance note');
+  }
+
+  const data = await response.json().catch(() => ({}));
+  const cleanedText = typeof data.cleanedText === 'string' ? data.cleanedText.trim() : '';
+
+  if (!cleanedText) {
+    throw new Error('Enhancement returned no text');
+  }
+
+  return cleanedText;
+}
+
 export async function deleteNote(noteId: string): Promise<void> {
   const response = await csrfFetch.delete('/api/notes', {
     headers: { 'Content-Type': 'application/json' },
