@@ -81,20 +81,12 @@ export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic,
           style={{ backgroundColor: `hsl(${topicColor})` }}
         />
         <div className="flex-1 min-w-0">
-          {selectedLanguage !== null ? (
-            <div className="space-y-0.5">
-              <span className="font-medium text-sm truncate block">
-                {isLoadingTranslation ? "Translating..." : translatedTitle || topic.title}
-              </span>
-              <span className="text-xs text-muted-foreground truncate block opacity-70">
-                {topic.title}
-              </span>
-            </div>
-          ) : (
-            <span className="font-medium text-sm truncate">
-              {topic.title}
-            </span>
-          )}
+          <span className="font-medium text-sm truncate block">
+            {selectedLanguage !== null
+              ? (isLoadingTranslation ? "Translating..." : translatedTitle || topic.title)
+              : topic.title
+            }
+          </span>
         </div>
       </div>
 

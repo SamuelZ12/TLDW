@@ -41,12 +41,12 @@ export function VideoProgressBar({
   const handleBackgroundClick = (e: React.MouseEvent<HTMLDivElement>) => {
     // Clicking empty space seeks to that position
     if (!progressBarRef.current) return;
-    
+
     const rect = progressBarRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const percentage = clickX / rect.width;
     const clickTime = percentage * videoDuration;
-    
+
     onSeek(clickTime);
   };
 
@@ -86,14 +86,14 @@ export function VideoProgressBar({
   // Flatten segments for rendering without nested maps
   const allSegments = hasDuration
     ? topics.flatMap((topic, topicIndex) =>
-        topic.segments.map((segment, segmentIndex) => ({
-          key: `${topic.id}-${segmentIndex}`,
-          topic,
-          topicIndex,
-          segment,
-          segmentIndex,
-        }))
-      )
+      topic.segments.map((segment, segmentIndex) => ({
+        key: `${topic.id}-${segmentIndex}`,
+        topic,
+        topicIndex,
+        segment,
+        segmentIndex,
+      }))
+    )
     : [];
 
   const getSegmentStyles = (segment: Topic['segments'][number]) => {

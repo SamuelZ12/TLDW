@@ -144,7 +144,7 @@ export default function AnalyzePage() {
   const memoizedSetIsPlayingAll = useCallback((value: boolean) => {
     setIsPlayingAll(value);
   }, []);
-  
+
   // Takeaways generation state
   const [, setTakeawaysContent] = useState<string | null>(null);
   const [, setIsGeneratingTakeaways] = useState<boolean>(false);
@@ -752,7 +752,7 @@ export default function AnalyzePage() {
 
       // Move to understanding stage
       setLoadingStage('understanding');
-      
+
       // Generate quick preview (non-blocking)
       fetch("/api/quick-preview", {
         method: "POST",
@@ -781,7 +781,7 @@ export default function AnalyzePage() {
         .catch((error) => {
           console.error('Error generating quick preview:', error);
         });
-      
+
       // Initiate parallel API requests for topics and takeaways
       setLoadingStage('generating');
       setGenerationStartTime(Date.now());
@@ -1032,8 +1032,8 @@ export default function AnalyzePage() {
 
           const questions = Array.isArray((parsed as any)?.questions)
             ? (parsed as any).questions
-                .filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0)
-                .map((item: string) => item.trim())
+              .filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0)
+              .map((item: string) => item.trim())
             : [];
 
           const normalizedQuestions = questions.length > 0
@@ -1067,7 +1067,7 @@ export default function AnalyzePage() {
           console.error("Failed to generate suggested questions:", error);
         }
       );
-      
+
     } catch (err) {
       setError(
         normalizeErrorMessage(
@@ -1113,7 +1113,7 @@ export default function AnalyzePage() {
     // Reset Play All mode when clicking a citation
     setIsPlayingAll(false);
     setPlayAllIndex(0);
-    
+
     setSelectedTopic(null);
     setCitationHighlight(citation);
 
@@ -1387,7 +1387,7 @@ export default function AnalyzePage() {
     const adjustRightColumnHeight = () => {
       const videoContainer = document.getElementById("video-container");
       const rightColumnContainer = document.getElementById("right-column-container");
-      
+
       if (videoContainer && rightColumnContainer) {
         const videoHeight = videoContainer.offsetHeight;
         setTranscriptHeight(`${videoHeight}px`);
@@ -1399,7 +1399,7 @@ export default function AnalyzePage() {
 
     // Adjust on window resize
     window.addEventListener("resize", adjustRightColumnHeight);
-    
+
     // Also observe video container for size changes
     const resizeObserver = new ResizeObserver(adjustRightColumnHeight);
     const videoContainer = document.getElementById("video-container");
@@ -1519,52 +1519,48 @@ export default function AnalyzePage() {
 
     // Initialize batcher lazily on first use
     if (!translationBatcherRef.current) {
+      console.log(`[Translation] Initializing TranslationBatcher (language-agnostic), cache ref:`, translationCache);
       translationBatcherRef.current = new TranslationBatcher(
         50, // Wait 50ms to collect translation requests
         100, // Max 100 translations per batch
-        translationCache,
-        selectedLanguage // Pass the target language
+        translationCache // Language-agnostic cache
       );
     }
 
-    // Use the batcher - it will automatically batch requests and cache results
-    const translation = await translationBatcherRef.current.translate(text, cacheKey);
+    // Use the batcher - pass target language with each request
+    // Cache is language-agnostic and relies on cache key (e.g., "theme:X:zh-CN")
+    const translation = await translationBatcherRef.current.translate(text, cacheKey, selectedLanguage);
 
-    // Sync cache state (the batcher updates the Map, but we need to trigger re-render)
-    // Implements LRU-like eviction to prevent unbounded memory growth
-    setTranslationCache(prev => {
-      if (prev.has(cacheKey) && prev.get(cacheKey) === translation) {
-        return prev; // No change, don't trigger re-render
+    // Implement LRU-like eviction to prevent unbounded memory growth
+    // Note: We mutate the Map directly since TranslationBatcher holds a reference to it
+    const MAX_CACHE_SIZE = 500;
+    if (translationCache.size >= MAX_CACHE_SIZE && !translationCache.has(cacheKey)) {
+      // Evict oldest entry (first key in Map)
+      const firstKey = translationCache.keys().next().value;
+      if (firstKey !== undefined) {
+        console.log(`[Translation] Cache full (${translationCache.size}), evicting oldest entry: ${firstKey}`);
+        translationCache.delete(firstKey);
       }
-
-      const next = new Map(prev);
-
-      // Evict oldest entry if cache exceeds limit (500 entries ~= 50KB)
-      const MAX_CACHE_SIZE = 500;
-      if (next.size >= MAX_CACHE_SIZE) {
-        const firstKey = next.keys().next().value;
-        if (firstKey !== undefined) {
-          next.delete(firstKey);
-        }
-      }
-
-      next.set(cacheKey, translation);
-      return next;
-    });
+    }
 
     return translation;
   }, [translationCache, selectedLanguage]);
 
   const handleLanguageChange = useCallback((languageCode: string | null) => {
+    console.log(`[Translation] Language changed to: ${languageCode}`);
     setSelectedLanguage(languageCode);
-    // Keep cache since keys are now language-aware (e.g., "topic-1:es", "topic-1:fr")
-    // No need to clear - different languages use different cache keys
-    if (translationBatcherRef.current && languageCode) {
-      translationBatcherRef.current.updateLanguage(languageCode);
-    } else if (translationBatcherRef.current) {
+
+    // Cache is language-agnostic (keys contain language), so no need to clear
+    // Just clear any pending translation requests
+    if (translationBatcherRef.current && !languageCode) {
       // If switching back to English (null), clear the batcher entirely
+      console.log(`[Translation] Clearing batcher (switching to English)`);
       translationBatcherRef.current.clear();
       translationBatcherRef.current = null;
+    } else if (translationBatcherRef.current) {
+      // Clear any pending requests (cache is preserved)
+      console.log(`[Translation] Clearing pending requests for language switch`);
+      translationBatcherRef.current.clearPending();
     }
   }, []);
 
@@ -1701,6 +1697,8 @@ export default function AnalyzePage() {
                   setIsPlayingAll={memoizedSetIsPlayingAll}
                   renderControls={false}
                   onDurationChange={setVideoDuration}
+                  selectedLanguage={selectedLanguage}
+                  onRequestTranslation={handleRequestTranslation}
                 />
                 {(themes.length > 0 || isLoadingThemeTopics || themeError || selectedTheme) && (
                   <div className="flex justify-center">
@@ -1710,6 +1708,8 @@ export default function AnalyzePage() {
                       onSelect={handleThemeSelect}
                       isLoading={isLoadingThemeTopics}
                       error={themeError}
+                      selectedLanguage={selectedLanguage}
+                      onRequestTranslation={handleRequestTranslation}
                     />
                   </div>
                 )}
