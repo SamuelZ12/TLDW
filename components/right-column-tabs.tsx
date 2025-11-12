@@ -191,7 +191,12 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
                       )}
                       disabled={isOriginalLanguage}
                       onClick={(e) => {
-                        onLanguageChange?.(lang.code);
+                        // Toggle: if clicking the currently selected language, deselect it
+                        if (lang.code === currentLanguageCode && selectedLanguage !== null) {
+                          onLanguageChange?.(null);
+                        } else {
+                          onLanguageChange?.(lang.code);
+                        }
                       }}
                     >
                       <div className="flex items-center justify-between w-full">
