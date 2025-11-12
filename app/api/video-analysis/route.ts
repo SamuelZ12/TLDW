@@ -7,6 +7,23 @@ import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 import { generateTopicsFromTranscript, generateThemesFromTranscript } from '@/lib/ai-processing';
 import { GeminiGenerationError, GeminiErrorType } from '@/lib/gemini-client';
 import { hasUnlimitedVideoAllowance } from '@/lib/access-control';
+import {
+  canGenerateVideo,
+  consumeVideoCredit,
+  type GenerationDecision,
+} from '@/lib/subscription-manager';
+import { NO_CREDITS_USED_MESSAGE } from '@/lib/no-credits-message';
+
+function respondWithNoCredits(payload: Record<string, unknown>, status: number) {
+  return NextResponse.json(
+    {
+      ...payload,
+      creditsMessage: NO_CREDITS_USED_MESSAGE,
+      noCreditsUsed: true,
+    },
+    { status }
+  );
+}
 
 function respondWithGeminiError(error: GeminiGenerationError) {
   const statusMap: Record<GeminiErrorType, number> = {
@@ -60,13 +77,13 @@ async function handler(req: NextRequest) {
       if (error instanceof z.ZodError) {
         const formattedError = formatValidationError(error);
         console.error('[VIDEO-ANALYSIS] Validation error:', formattedError);
-        return NextResponse.json(
+        return respondWithNoCredits(
           {
             error: 'Validation failed',
             details: formattedError,
             issues: error.issues
           },
-          { status: 400 }
+          400
         );
       }
       throw error;
@@ -103,9 +120,9 @@ async function handler(req: NextRequest) {
         if (error instanceof GeminiGenerationError) {
           return respondWithGeminiError(error);
         }
-        return NextResponse.json(
+        return respondWithNoCredits(
           { error: 'Failed to generate themed topics. Please try again.' },
-          { status: 500 }
+          500
         );
       }
     }
@@ -166,51 +183,84 @@ async function handler(req: NextRequest) {
       }
     }
 
-    // Only apply rate limiting for NEW video analysis (not cached)
+    // Only apply credit checking for NEW video analysis (not cached)
     const unlimitedAccess = hasUnlimitedVideoAllowance(user);
+    let generationDecision: GenerationDecision | null = null;
 
     if (!unlimitedAccess) {
-      const rateLimitConfig = user ? RATE_LIMITS.AUTH_VIDEO_GENERATION : RATE_LIMITS.ANON_GENERATION;
-      const rateLimitResult = await RateLimiter.check('video-analysis', rateLimitConfig);
+      if (user) {
+        generationDecision = await canGenerateVideo(user.id, videoId, {
+          client: supabase,
+          skipCacheCheck: true,
+        });
 
-      if (!rateLimitResult.allowed) {
-        if (!user) {
+        if (!generationDecision.allowed) {
+          const tier = generationDecision.subscription?.tier ?? 'free';
+          const stats = generationDecision.stats;
+          const resetAt =
+            stats?.resetAt ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+          let errorMessage = 'Monthly limit reached';
+          let upgradeMessage =
+            'You have reached your monthly quota. Upgrade your plan to continue.';
+          let statusCode = 429;
+
+          if (generationDecision.reason === 'SUBSCRIPTION_INACTIVE') {
+            errorMessage = 'Subscription inactive';
+            upgradeMessage =
+              'Your subscription is not active. Visit the billing portal to reactivate and continue generating videos.';
+            statusCode = 402;
+          } else if (tier === 'free') {
+            upgradeMessage =
+              "You've used all 5 free videos this month. Upgrade to Pro for 100 videos/month ($10/mo).";
+          } else if (tier === 'pro') {
+            if (generationDecision.requiresTopupPurchase) {
+              upgradeMessage =
+                'You have used all Pro videos this period. Purchase a Top-Up (+20 videos for $3) or wait for your next billing cycle.';
+            } else {
+              upgradeMessage =
+                'You have used your Pro allowance. Wait for your next billing cycle to reset.';
+            }
+          }
+
+          return NextResponse.json(
+            {
+              error: errorMessage,
+              message: upgradeMessage,
+              code: generationDecision.reason,
+              tier,
+              limit: stats?.baseLimit ?? null,
+              remaining: stats?.totalRemaining ?? 0,
+              resetAt,
+              isAuthenticated: true,
+              warning: generationDecision.warning,
+              requiresTopup: generationDecision.requiresTopupPurchase ?? false,
+            },
+            {
+              status: statusCode,
+              headers: {
+                'X-RateLimit-Remaining': String(Math.max(stats?.totalRemaining ?? 0, 0)),
+                'X-RateLimit-Reset': resetAt,
+              },
+            }
+          );
+        }
+      } else {
+        const rateLimitConfig = RATE_LIMITS.VIDEO_GENERATION_FREE_UNREGISTERED;
+        const rateLimitResult = await RateLimiter.check('video-analysis', rateLimitConfig);
+
+        if (!rateLimitResult.allowed) {
           return NextResponse.json(
             {
               error: 'Sign in to keep analyzing videos',
-              message: 'You\'ve used today\'s free analysis. Create a free account for unlimited video breakdowns.',
+              message:
+                "You've used your free video this month. Create a free account for 5 videos/month, or upgrade to Pro for 100 videos/month.",
               requiresAuth: true,
-              redirectTo: '/?auth=limit'
+              redirectTo: '/?auth=limit',
             },
             { status: 429 }
           );
         }
-
-        const headers: HeadersInit = {
-          'X-RateLimit-Remaining': '0',
-          'X-RateLimit-Reset': rateLimitResult.resetAt.toISOString()
-        };
-
-        if (typeof rateLimitResult.retryAfter === 'number') {
-          headers['Retry-After'] = rateLimitResult.retryAfter.toString();
-        }
-
-        return NextResponse.json(
-          {
-            error: 'Daily limit reached',
-            message: 'You get 5 videos per day. Come back tomorrow.',
-            code: 'DAILY_VIDEO_LIMIT_REACHED',
-            limit: rateLimitConfig.maxRequests,
-            remaining: 0,
-            resetAt: rateLimitResult.resetAt.toISOString(),
-            retryAfter: rateLimitResult.retryAfter ?? null,
-            isAuthenticated: true
-          },
-          {
-            status: 429,
-            headers
-          }
-        );
       }
     }
 
@@ -231,6 +281,26 @@ async function handler(req: NextRequest) {
       console.error('Error generating themes:', error);
     }
 
+    if (
+      user &&
+      !unlimitedAccess &&
+      generationDecision?.subscription &&
+      generationDecision.stats
+    ) {
+      const consumeResult = await consumeVideoCredit({
+        userId: user.id,
+        youtubeId: videoId,
+        subscription: generationDecision.subscription,
+        statsSnapshot: generationDecision.stats,
+        counted: true,
+        client: supabase,
+      });
+
+      if (!consumeResult.success) {
+        console.error('Failed to consume video credit:', consumeResult.error);
+      }
+    }
+
     return NextResponse.json({
       topics,
       themes,
@@ -248,10 +318,7 @@ async function handler(req: NextRequest) {
     }
 
     // Return generic error message to client
-    return NextResponse.json(
-      { error: 'An error occurred while processing your request' },
-      { status: 500 }
-    );
+    return respondWithNoCredits({ error: 'An error occurred while processing your request' }, 500);
   }
 }
 

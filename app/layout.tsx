@@ -40,10 +40,10 @@ export default function RootLayout({
         <AuthProvider>
           <div className="min-h-screen flex flex-col">
             <header className="pointer-events-none fixed top-0 left-0 right-0 z-50 px-6 py-5">
-              <div className="pointer-events-auto flex w-full items-center justify-between">
+              <div className="pointer-events-none flex w-full items-center justify-between gap-6">
                 <Link
                   href="/"
-                  className="flex items-center gap-2 text-[15px] font-semibold text-[#3f3f3f] transition hover:opacity-80"
+                  className="pointer-events-auto flex items-center gap-2 text-[15px] font-semibold text-[#3f3f3f] transition hover:opacity-80"
                 >
                   <Image
                     src="/Video_Play.svg"
@@ -55,7 +55,9 @@ export default function RootLayout({
                   />
 
                 </Link>
-                <UserMenu />
+                <div className="pointer-events-auto">
+                  <UserMenu />
+                </div>
               </div>
             </header>
             <main className="flex-1 mt-8 px-2">

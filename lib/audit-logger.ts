@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { headers } from 'next/headers';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 export enum AuditAction {
   // Authentication
@@ -16,6 +17,13 @@ export enum AuditAction {
   // AI operations
   AI_GENERATION = 'AI_GENERATION',
   AI_CHAT = 'AI_CHAT',
+
+  // Subscription operations
+  SUBSCRIPTION_CREATED = 'SUBSCRIPTION_CREATED',
+  SUBSCRIPTION_UPDATED = 'SUBSCRIPTION_UPDATED',
+  SUBSCRIPTION_CANCELED = 'SUBSCRIPTION_CANCELED',
+  TOPUP_PURCHASED = 'TOPUP_PURCHASED',
+  PAYMENT_FAILED = 'PAYMENT_FAILED',
 
   // Security events
   RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
@@ -35,11 +43,13 @@ export interface AuditLogEntry {
 export class AuditLogger {
   /**
    * Logs an audit event to the database
+   * @param entry - The audit log entry to record
+   * @param client - Optional Supabase client (required for webhook contexts)
    */
-  static async log(entry: AuditLogEntry): Promise<void> {
+  static async log(entry: AuditLogEntry, client?: SupabaseClient): Promise<void> {
     try {
-      const supabase = await createClient();
-      const headersList = await headers();
+      // Use provided client or create a new one (for non-webhook contexts)
+      const supabase = client || await createClient();
 
       // Get user info
       let userId = entry.userId;
@@ -48,11 +58,20 @@ export class AuditLogger {
         userId = user?.id;
       }
 
-      // Get request metadata
-      const ipAddress = headersList.get('x-forwarded-for')?.split(',')[0] ||
-                       headersList.get('x-real-ip') ||
-                       'unknown';
-      const userAgent = headersList.get('user-agent') || 'unknown';
+      // Get request metadata - wrap in try-catch for webhook contexts
+      let ipAddress = 'unknown';
+      let userAgent = 'unknown';
+
+      try {
+        const headersList = await headers();
+        ipAddress = headersList.get('x-forwarded-for')?.split(',')[0] ||
+                   headersList.get('x-real-ip') ||
+                   'unknown';
+        userAgent = headersList.get('user-agent') || 'unknown';
+      } catch (error) {
+        // Headers not available (e.g., in webhook context) - use defaults
+        console.debug('Headers not available for audit log, using defaults');
+      }
 
       // Sanitize details to prevent log injection
       const sanitizedDetails = this.sanitizeDetails(entry.details);

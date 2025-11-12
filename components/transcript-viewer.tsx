@@ -5,9 +5,10 @@ import { TranscriptSegment, Topic, Citation } from "@/lib/types";
 import { getTopicHSLColor, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Eye, EyeOff, ChevronDown } from "lucide-react";
+import { Eye, EyeOff, ChevronDown, Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
 import { SelectionActions, triggerExplainSelection, SelectionActionPayload } from "@/components/selection-actions";
 import { NoteMetadata } from "@/lib/types";
 
@@ -22,6 +23,13 @@ interface TranscriptViewerProps {
   videoId?: string;
   selectedLanguage?: string | null;
   onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
+  onRequestExport?: () => void;
+  exportButtonState?: {
+    tooltip?: string;
+    disabled?: boolean;
+    badgeLabel?: string;
+    isLoading?: boolean;
+  };
 }
 
 export function TranscriptViewer({
@@ -34,7 +42,9 @@ export function TranscriptViewer({
   onTakeNoteFromSelection,
   videoId,
   selectedLanguage = null,
-  onRequestTranslation
+  onRequestTranslation,
+  onRequestExport,
+  exportButtonState,
 }: TranscriptViewerProps) {
   const highlightedRefs = useRef<(HTMLDivElement | null)[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -439,7 +449,7 @@ export function TranscriptViewer({
       <div className="h-full max-h-full flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-5 py-1.5 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.03)]">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-1.5">
               {selectedTopic && !selectedTopic.isCitationReel && (
                 <Tooltip>
@@ -477,30 +487,66 @@ export function TranscriptViewer({
               )}
             </div>
 
-            <Button
-              variant={autoScroll ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setAutoScroll(!autoScroll);
-                if (!autoScroll) {
-                  setShowScrollToCurrentButton(false);
-                  jumpToCurrent();
-                }
-              }}
-              className="text-[11px] h-6 shadow-none"
-            >
-              {autoScroll ? (
-                <>
-                  <Eye className="w-2.5 h-2.5 mr-1" />
-                  Auto
-                </>
-              ) : (
-                <>
-                  <EyeOff className="w-2.5 h-2.5 mr-1" />
-                  Manual
-                </>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={autoScroll ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setAutoScroll(!autoScroll);
+                  if (!autoScroll) {
+                    setShowScrollToCurrentButton(false);
+                    jumpToCurrent();
+                  }
+                }}
+                className="text-[11px] h-6 shadow-none"
+              >
+                {autoScroll ? (
+                  <>
+                    <Eye className="w-2.5 h-2.5 mr-1" />
+                    Auto
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-2.5 h-2.5 mr-1" />
+                    Manual
+                  </>
+                )}
+              </Button>
+
+              {onRequestExport && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onRequestExport}
+                      disabled={exportButtonState?.disabled}
+                      className="h-6 gap-1.5 rounded-full border-slate-200 text-[11px] shadow-none transition hover:border-slate-300 hover:bg-white/80"
+                    >
+                      {exportButtonState?.isLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Download className="h-3.5 w-3.5" />
+                      )}
+                      <span>Export</span>
+                      {exportButtonState?.badgeLabel && (
+                        <Badge
+                          variant="outline"
+                          className="ml-0.5 rounded-full border-blue-200 bg-blue-50 px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wide text-blue-700"
+                        >
+                          {exportButtonState.badgeLabel}
+                        </Badge>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <p className="text-xs">
+                      {exportButtonState?.tooltip ?? "Export transcript"}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
               )}
-            </Button>
+            </div>
           </div>
         </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { RightColumnTabs, type RightColumnTabsHandle } from "@/components/right-column-tabs";
 import { YouTubePlayer } from "@/components/youtube-player";
 import { HighlightsPanel } from "@/components/highlights-panel";
@@ -22,19 +22,104 @@ import { TranslationBatcher } from "@/lib/translation-batcher";
 // Page state for better UX
 type PageState = 'IDLE' | 'ANALYZING_NEW' | 'LOADING_CACHED';
 type AuthModalTrigger = 'generation-limit' | 'save-video' | 'manual' | 'save-note';
-import { extractVideoId } from "@/lib/utils";
+import { buildVideoSlug, extractVideoId } from "@/lib/utils";
+import { NO_CREDITS_USED_MESSAGE } from "@/lib/no-credits-message";
 import { useElapsedTimer } from "@/lib/hooks/use-elapsed-timer";
 import { Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { AuthModal } from "@/components/auth-modal";
+import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
+import { TranscriptExportUpsell } from "@/components/transcript-export-upsell";
 import { useAuth } from "@/contexts/auth-context";
 import { backgroundOperation, AbortManager } from "@/lib/promise-utils";
 import { toast } from "sonner";
+import { createTranscriptExport, hasSpeakerMetadata, type TranscriptExportFormat } from "@/lib/transcript-export";
 import { buildSuggestedQuestionFallbacks } from "@/lib/suggested-question-fallback";
 
 const GUEST_LIMIT_MESSAGE = "You've used today's free analysis. Sign in to keep going.";
-const AUTH_LIMIT_MESSAGE = "You get 5 videos per day. Come back tomorrow.";
+const AUTH_LIMIT_MESSAGE = "You've used all 5 free videos this month. Upgrade to Pro for 100 videos/month.";
 const DEFAULT_CLIENT_ERROR = "Something went wrong. Please try again.";
+
+type LimitCheckResponse = {
+  canGenerate: boolean;
+  isAuthenticated: boolean;
+  tier?: 'free' | 'pro' | 'anonymous';
+  reason?: string | null;
+  requiresTopup?: boolean;
+  requiresAuth?: boolean;
+  status?: string | null;
+  warning?: string | null;
+  unlimited?: boolean;
+  willConsumeTopup?: boolean;
+  resetAt?: string | null;
+  usage?: {
+    totalRemaining?: number | null;
+    counted?: number | null;
+    cached?: number | null;
+    baseLimit?: number | null;
+    baseRemaining?: number | null;
+    topupRemaining?: number | null;
+  } | null;
+};
+
+type SubscriptionStatusState =
+  | 'active'
+  | 'trialing'
+  | 'past_due'
+  | 'canceled'
+  | 'incomplete'
+  | 'incomplete_expired'
+  | 'unpaid'
+  | null;
+
+interface SubscriptionStatusResponse {
+  tier: 'free' | 'pro';
+  status: SubscriptionStatusState;
+  stripeCustomerId?: string | null;
+  cancelAtPeriodEnd?: boolean;
+  isPastDue?: boolean;
+  canPurchaseTopup?: boolean;
+  nextBillingDate?: string | null;
+  willConsumeTopup?: boolean;
+  usage: {
+    counted: number;
+    cached: number;
+    baseLimit: number;
+    baseRemaining: number;
+    topupCredits: number;
+    topupRemaining: number;
+    totalRemaining: number;
+    resetAt: string;
+  };
+}
+
+function isProSubscriptionActive(status: SubscriptionStatusResponse | null): boolean {
+  if (!status) {
+    return false;
+  }
+  if (status.tier !== 'pro') {
+    return false;
+  }
+  return status.status === 'active' || status.status === 'trialing' || status.status === 'past_due';
+}
+
+function buildLimitExceededMessage(limitData?: LimitCheckResponse | null): string {
+  if (!limitData) {
+    return AUTH_LIMIT_MESSAGE;
+  }
+
+  if (limitData.reason === 'SUBSCRIPTION_INACTIVE') {
+    return 'Your subscription is not active. Visit the billing portal to reactivate and continue generating videos.';
+  }
+
+  if (limitData.tier === 'pro') {
+    return limitData.requiresTopup
+      ? 'You have used all Pro videos this period. Purchase a Top-Up (+20 videos for $3) or wait for your next billing cycle.'
+      : 'You have used your Pro allowance. Wait for your next billing cycle to reset.';
+  }
+
+  return AUTH_LIMIT_MESSAGE;
+}
 
 function normalizeErrorMessage(message: string | undefined, fallback: string = DEFAULT_CLIENT_ERROR): string {
   const trimmed = typeof message === "string" ? message.trim() : "";
@@ -66,19 +151,26 @@ function buildApiErrorMessage(errorData: unknown, fallback: string): string {
       ? record.details.trim()
       : "";
 
-  if (errorText && detailsText) {
-    return normalizeErrorMessage(`${errorText}: ${detailsText}`, fallback);
+  const combinedMessage =
+    errorText && detailsText
+      ? `${errorText}: ${detailsText}`
+      : detailsText || errorText || undefined;
+
+  const baseMessage = normalizeErrorMessage(combinedMessage, fallback);
+
+  const creditsMessage =
+    typeof record.creditsMessage === "string" && record.creditsMessage.trim().length > 0
+      ? record.creditsMessage.trim()
+      : record.noCreditsUsed
+        ? NO_CREDITS_USED_MESSAGE
+        : "";
+
+  if (!creditsMessage) {
+    return baseMessage;
   }
 
-  if (detailsText) {
-    return normalizeErrorMessage(detailsText, fallback);
-  }
-
-  if (errorText) {
-    return normalizeErrorMessage(errorText, fallback);
-  }
-
-  return normalizeErrorMessage(undefined, fallback);
+  const alreadyIncludes = baseMessage.toLowerCase().includes(creditsMessage.toLowerCase());
+  return alreadyIncludes ? baseMessage : `${baseMessage}\n${creditsMessage}`;
 }
 
 export default function AnalyzePage() {
@@ -91,6 +183,7 @@ export default function AnalyzePage() {
   const cachedParamValue = cachedParam?.toLowerCase();
   const isCachedQuery = cachedParamValue === 'true' || cachedParamValue === '1';
   const authErrorParam = searchParams?.get('auth_error');
+  const slugParam = searchParams?.get('slug') ?? null;
   const [pageState, setPageState] = useState<PageState>(() =>
     (routeVideoId || urlParam)
       ? (isCachedQuery ? 'LOADING_CACHED' : 'ANALYZING_NEW')
@@ -127,6 +220,7 @@ export default function AnalyzePage() {
   const rightColumnTabsRef = useRef<RightColumnTabsHandle>(null);
   const abortManager = useRef(new AbortManager());
   const selectedThemeRef = useRef<string | null>(null);
+  const seoPathRef = useRef<string | null>(null);
   const nextThemeRequestIdRef = useRef(0);
   const activeThemeRequestIdRef = useRef<number | null>(null);
   const pendingThemeRequestsRef = useRef(new Map<string, number>());
@@ -157,6 +251,52 @@ export default function AnalyzePage() {
   // Translation state - null means English (no translation), otherwise language code
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
   const [translationCache, setTranslationCache] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const effectiveVideoId = routeVideoId || videoId;
+    if (!effectiveVideoId) {
+      return;
+    }
+
+    const normalizedSlugParam = slugParam?.trim() || null;
+    const derivedSlug = normalizedSlugParam
+      ? normalizedSlugParam
+      : (videoInfo?.title ? buildVideoSlug(videoInfo.title, effectiveVideoId) : null);
+
+    if (!derivedSlug) {
+      return;
+    }
+
+    const targetPath = `/v/${derivedSlug}`;
+
+    if (seoPathRef.current === targetPath || window.location.pathname === targetPath) {
+      seoPathRef.current = targetPath;
+      return;
+    }
+
+    const newUrl = `${targetPath}${window.location.search}`;
+    window.history.replaceState(window.history.state, '', newUrl);
+    seoPathRef.current = targetPath;
+  }, [routeVideoId, videoId, videoInfo?.title, slugParam]);
+
+  // Transcript export state
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<TranscriptExportFormat>('txt');
+  const [includeTimestamps, setIncludeTimestamps] = useState(true);
+  const [includeSpeakers, setIncludeSpeakers] = useState(false);
+  const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
+  const [exportDisableMessage, setExportDisableMessage] = useState<string | null>(null);
+  const [isExportingTranscript, setIsExportingTranscript] = useState(false);
+  const [showExportUpsell, setShowExportUpsell] = useState(false);
+  const [isCheckingSubscription, setIsCheckingSubscription] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatusResponse | null>(null);
+  const subscriptionStatusFetchedAtRef = useRef<number | null>(null);
+
+  const hasSpeakerData = useMemo(() => hasSpeakerMetadata(transcript), [transcript]);
 
   // Use custom hook for timer logic
   const elapsedTime = useElapsedTimer(generationStartTime);
@@ -313,26 +453,27 @@ export default function AnalyzePage() {
     }
   };
 
-  const checkRateLimit = useCallback(async () => {
+  const checkRateLimit = useCallback(async (): Promise<LimitCheckResponse | null> => {
     try {
       const response = await fetch('/api/check-limit');
-      const data = await response.json();
+      const data: LimitCheckResponse = await response.json();
 
-      setAuthLimitReached(Boolean(data?.isAuthenticated && data?.canGenerate === false));
+      setAuthLimitReached(Boolean(data?.isAuthenticated && data?.canGenerate === false && data?.reason === 'LIMIT_REACHED'));
 
-      if (Object.prototype.hasOwnProperty.call(data ?? {}, 'remaining')) {
-        const remainingValue =
-          typeof data.remaining === 'number'
-            ? data.remaining
-            : data.remaining === null
-              ? null
-              : -1;
+      const usage = data?.usage;
+      const remainingValue =
+        typeof usage?.totalRemaining === 'number'
+          ? usage.totalRemaining
+          : usage?.totalRemaining === null
+            ? null
+            : -1;
 
-        setRateLimitInfo({
-          remaining: remainingValue,
-          resetAt: data.resetAt ? new Date(data.resetAt) : null
-        });
-      }
+      const resetTimestamp = data?.resetAt ?? null;
+
+      setRateLimitInfo({
+        remaining: remainingValue,
+        resetAt: resetTimestamp ? new Date(resetTimestamp) : null,
+      });
 
       return data;
     } catch (error) {
@@ -342,10 +483,83 @@ export default function AnalyzePage() {
     }
   }, []);
 
+  const fetchSubscriptionStatus = useCallback(
+    async (options?: { force?: boolean }): Promise<SubscriptionStatusResponse | null> => {
+      if (!user) {
+        return null;
+      }
+
+      const lastFetchedAt = subscriptionStatusFetchedAtRef.current;
+      if (
+        !options?.force &&
+        subscriptionStatus &&
+        lastFetchedAt &&
+        Date.now() - lastFetchedAt < 60_000
+      ) {
+        return subscriptionStatus;
+      }
+
+      setIsCheckingSubscription(true);
+      try {
+        const response = await fetch('/api/subscription/status', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+        });
+
+        if (response.status === 401) {
+          storeCurrentVideoForAuth();
+          setAuthModalTrigger('manual');
+          setAuthModalOpen(true);
+          return null;
+        }
+
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => ({}));
+          const message =
+            typeof (errorPayload as { error?: string }).error === 'string'
+              ? (errorPayload as { error?: string }).error!
+              : 'Failed to check subscription status. Please try again.';
+          toast.error(message);
+          return null;
+        }
+
+        const data: SubscriptionStatusResponse = await response.json();
+        setSubscriptionStatus(data);
+        subscriptionStatusFetchedAtRef.current = Date.now();
+        return data;
+      } catch (error) {
+        console.error('Failed to fetch subscription status:', error);
+        toast.error('Unable to check your subscription right now.');
+        return null;
+      } finally {
+        setIsCheckingSubscription(false);
+      }
+    },
+    [user, subscriptionStatus, storeCurrentVideoForAuth, setAuthModalTrigger, setAuthModalOpen]
+  );
+
   // Check rate limit status on mount
   useEffect(() => {
     checkRateLimit();
   }, [checkRateLimit]);
+
+  useEffect(() => {
+    subscriptionStatusFetchedAtRef.current = null;
+    setSubscriptionStatus(null);
+  }, [user]);
+
+  useEffect(() => {
+    if (exportFormat === 'srt' && !includeTimestamps) {
+      setIncludeTimestamps(true);
+    }
+  }, [exportFormat, includeTimestamps]);
+
+  useEffect(() => {
+    if (!hasSpeakerData && includeSpeakers) {
+      setIncludeSpeakers(false);
+    }
+  }, [hasSpeakerData, includeSpeakers]);
 
   // Handle pending video linking when user logs in and videoId is available
   useEffect(() => {
@@ -395,22 +609,36 @@ export default function AnalyzePage() {
   // Check if user can generate based on server-side rate limits
   const checkGenerationLimit = useCallback((
     pendingVideoId?: string,
-    remainingOverride?: number | null
+    remainingOverride?: number | null,
+    latestLimitData?: LimitCheckResponse | null
   ): boolean => {
     if (user) {
-      if (authLimitReached) {
+      const limitReached =
+        latestLimitData?.isAuthenticated
+          ? latestLimitData.canGenerate === false
+          : authLimitReached;
+
+      if (limitReached) {
+        const limitMessage = buildLimitExceededMessage(latestLimitData);
         setIsRateLimitError(true);
-        setError(AUTH_LIMIT_MESSAGE);
-        toast.error(AUTH_LIMIT_MESSAGE);
+        setError(limitMessage);
+        toast.error(limitMessage);
         return false;
       }
       return true;
     }
 
-    const effectiveRemaining =
+    let effectiveRemaining =
       typeof remainingOverride === 'number' || remainingOverride === null
         ? remainingOverride
         : rateLimitInfo.remaining;
+
+    if (!latestLimitData?.isAuthenticated) {
+      const totalRemaining = latestLimitData?.usage?.totalRemaining;
+      if (typeof totalRemaining === 'number' || totalRemaining === null) {
+        effectiveRemaining = totalRemaining;
+      }
+    }
 
     if (
       typeof effectiveRemaining === 'number' &&
@@ -550,6 +778,11 @@ export default function AnalyzePage() {
           setLoadingStage(null);
           setProcessingStartTime(null);
 
+          // Show contextual notification for cached analysis
+          if (user && !cacheData.ownedByCurrentUser) {
+            toast.success("Lucky you — Someone's already analyzed this video! No credits used.");
+          }
+
           backgroundOperation(
             'load-cached-themes',
             async () => {
@@ -645,20 +878,16 @@ export default function AnalyzePage() {
       }
 
       let effectiveRemaining = currentRemaining;
+      const latestLimitData = await checkRateLimit();
 
-      if (!user) {
-        const latestLimitData = await checkRateLimit();
-        if (latestLimitData && Object.prototype.hasOwnProperty.call(latestLimitData, 'remaining')) {
-          effectiveRemaining =
-            typeof latestLimitData.remaining === 'number'
-              ? latestLimitData.remaining
-              : latestLimitData.remaining === null
-                ? null
-                : effectiveRemaining;
+      if (!user && latestLimitData) {
+        const totalRemaining = latestLimitData.usage?.totalRemaining;
+        if (typeof totalRemaining === 'number' || totalRemaining === null) {
+          effectiveRemaining = totalRemaining;
         }
       }
 
-      if (!checkGenerationLimit(extractedVideoId, effectiveRemaining)) {
+      if (!checkGenerationLimit(extractedVideoId, effectiveRemaining, latestLimitData)) {
         return;
       }
 
@@ -1485,7 +1714,7 @@ export default function AnalyzePage() {
     });
   }, [promptSignInForNotes, user]);
 
-  const handleSaveEditingNote = useCallback(async (noteText: string) => {
+  const handleSaveEditingNote = useCallback(async ({ noteText, selectedText }: { noteText: string; selectedText: string }) => {
     if (!editingNote || !videoId) return;
 
     // Use source from editing note or determine from metadata
@@ -1498,11 +1727,19 @@ export default function AnalyzePage() {
       source = "transcript";
     }
 
+    const normalizedSelected = selectedText.trim();
+    const mergedMetadata = normalizedSelected
+      ? {
+          ...(editingNote.metadata ?? {}),
+          selectedText: normalizedSelected,
+        }
+      : editingNote.metadata ?? undefined;
+
     await handleSaveNote({
       text: noteText,
       source,
       sourceId: editingNote.metadata?.chat?.messageId ?? null,
-      metadata: editingNote.metadata,
+      metadata: mergedMetadata,
     });
 
     // Clear editing state
@@ -1563,6 +1800,206 @@ export default function AnalyzePage() {
       translationBatcherRef.current.clearPending();
     }
   }, []);
+
+  const handleExportDialogOpenChange = useCallback((open: boolean) => {
+    setIsExportDialogOpen(open);
+    if (!open) {
+      setExportErrorMessage(null);
+      setExportDisableMessage(null);
+    }
+  }, []);
+
+  const handleRequestExport = useCallback(async () => {
+    if (!videoId || transcript.length === 0) {
+      toast.error('Transcript is still loading. Try again in a few seconds.');
+      return;
+    }
+
+    if (!user) {
+      storeCurrentVideoForAuth();
+      setAuthModalTrigger('manual');
+      setAuthModalOpen(true);
+      return;
+    }
+
+    const status = await fetchSubscriptionStatus();
+    if (!status) {
+      return;
+    }
+
+    if (status.tier !== 'pro') {
+      setShowExportUpsell(true);
+      return;
+    }
+
+    if (!isProSubscriptionActive(status)) {
+      setExportDisableMessage('Your subscription is not active. Visit billing to reactivate and continue exporting transcripts.');
+      setExportErrorMessage(null);
+      setIsExportDialogOpen(true);
+      return;
+    }
+
+    if (status.usage.totalRemaining <= 0) {
+      setExportDisableMessage('You’ve hit your export limit. Purchase a top-up or wait for your cycle reset.');
+      setExportErrorMessage(null);
+      setIsExportDialogOpen(true);
+      return;
+    }
+
+    setExportDisableMessage(null);
+    setExportErrorMessage(null);
+    setIsExportDialogOpen(true);
+  }, [
+    videoId,
+    transcript.length,
+    user,
+    storeCurrentVideoForAuth,
+    setAuthModalTrigger,
+    setAuthModalOpen,
+    fetchSubscriptionStatus,
+  ]);
+
+  const handleConfirmExport = useCallback(async () => {
+    if (transcript.length === 0) {
+      setExportErrorMessage('Transcript is still loading. Please try again.');
+      return;
+    }
+
+    const status = await fetchSubscriptionStatus();
+    if (!status) {
+      setExportErrorMessage('Unable to verify your subscription. Please try again.');
+      return;
+    }
+
+    if (status.tier !== 'pro') {
+      setShowExportUpsell(true);
+      setIsExportDialogOpen(false);
+      return;
+    }
+
+    if (!isProSubscriptionActive(status)) {
+      setExportDisableMessage('Your subscription is not active. Visit billing to reactivate and continue exporting transcripts.');
+      return;
+    }
+
+    if (status.usage.totalRemaining <= 0) {
+      setExportDisableMessage('You’ve hit your export limit. Purchase a top-up or wait for your cycle reset.');
+      return;
+    }
+
+    setIsExportingTranscript(true);
+    setExportErrorMessage(null);
+
+    try {
+      const { blob, filename } = createTranscriptExport(transcript, {
+        format: exportFormat,
+        includeSpeakers: includeSpeakers && hasSpeakerData,
+        includeTimestamps: exportFormat === 'srt' ? true : includeTimestamps,
+        videoTitle: videoInfo?.title,
+        videoAuthor: videoInfo?.author,
+        topics,
+      });
+
+      const downloadUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = downloadUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(downloadUrl);
+
+      toast.success('Transcript export started');
+      setIsExportDialogOpen(false);
+      setExportDisableMessage(null);
+      await fetchSubscriptionStatus({ force: true });
+    } catch (error) {
+      console.error('Transcript export failed:', error);
+      const message =
+        error instanceof Error ? error.message : 'Failed to export transcript. Please try again.';
+      setExportErrorMessage(message);
+      toast.error("We couldn't generate that export. Try again in a moment.");
+    } finally {
+      setIsExportingTranscript(false);
+    }
+  }, [
+    transcript,
+    fetchSubscriptionStatus,
+    exportFormat,
+    includeSpeakers,
+    hasSpeakerData,
+    includeTimestamps,
+    videoInfo,
+    topics,
+  ]);
+
+  const handleUpgradeClick = useCallback(() => {
+    router.push('/pricing');
+  }, [router]);
+
+  const exportButtonState = useMemo(() => {
+    if (!videoId || transcript.length === 0) {
+      return {
+        disabled: true,
+        tooltip: 'Transcript is still loading',
+      };
+    }
+
+    if (isExportingTranscript) {
+      return {
+        disabled: true,
+        isLoading: true,
+        tooltip: 'Preparing export…',
+      };
+    }
+
+    if (isCheckingSubscription) {
+      return {
+        disabled: true,
+        isLoading: true,
+        tooltip: 'Checking export availability…',
+      };
+    }
+
+    if (!user) {
+      return {
+        badgeLabel: 'Pro',
+        tooltip: 'Sign in to export transcripts',
+      };
+    }
+
+    if (subscriptionStatus && subscriptionStatus.tier !== 'pro') {
+      return {
+        badgeLabel: 'Pro',
+        tooltip: 'Upgrade to Pro to export transcripts',
+      };
+    }
+
+    if (subscriptionStatus && !isProSubscriptionActive(subscriptionStatus)) {
+      return {
+        badgeLabel: 'Pro',
+        tooltip: 'Reactivate your subscription to export transcripts',
+      };
+    }
+
+    if (subscriptionStatus && subscriptionStatus.usage.totalRemaining <= 0) {
+      return {
+        badgeLabel: 'Pro',
+        tooltip: 'You’ve hit your export limit. Purchase a top-up or wait for reset.',
+      };
+    }
+
+    return {
+      tooltip: 'Export transcript',
+    };
+  }, [
+    videoId,
+    transcript.length,
+    isExportingTranscript,
+    isCheckingSubscription,
+    user,
+    subscriptionStatus,
+  ]);
 
   return (
     <div className="min-h-screen bg-white pt-12 pb-2">
@@ -1639,7 +2076,7 @@ export default function AnalyzePage() {
             <div className="space-y-4">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900">
-                  {isRateLimitError ? 'Daily limit reached' : 'We couldn\'t finish analyzing this video'}
+                  {isRateLimitError ? 'Monthly limit reached' : 'We couldn\'t finish analyzing this video'}
                 </h2>
                 <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
                   {isRateLimitError
@@ -1654,6 +2091,14 @@ export default function AnalyzePage() {
                 >
                   Go to home
                 </Link>
+                {isRateLimitError && (
+                  <Link
+                    href="/pricing"
+                    className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
+                  >
+                    Upgrade to Pro
+                  </Link>
+                )}
                 {!isRateLimitError && (
                   <button
                     type="button"
@@ -1765,6 +2210,8 @@ export default function AnalyzePage() {
                   selectedLanguage={selectedLanguage}
                   onRequestTranslation={handleRequestTranslation}
                   onLanguageChange={handleLanguageChange}
+                  onRequestExport={handleRequestExport}
+                  exportButtonState={exportButtonState}
                 />
               </div>
             </div>
@@ -1791,6 +2238,29 @@ export default function AnalyzePage() {
           // Check for pending video linking will happen via useEffect
         }}
         currentVideoId={videoId}
+      />
+      <TranscriptExportDialog
+        open={isExportDialogOpen}
+        onOpenChange={handleExportDialogOpenChange}
+        format={exportFormat}
+        onFormatChange={setExportFormat}
+        includeSpeakers={includeSpeakers}
+        onIncludeSpeakersChange={(value) => setIncludeSpeakers(value && hasSpeakerData)}
+        includeTimestamps={includeTimestamps}
+        onIncludeTimestampsChange={setIncludeTimestamps}
+        disableTimestampToggle={exportFormat === 'srt'}
+        onConfirm={handleConfirmExport}
+        isExporting={isExportingTranscript}
+        error={exportErrorMessage}
+        disableDownloadMessage={exportDisableMessage}
+        hasSpeakerData={hasSpeakerData}
+        willConsumeTopup={subscriptionStatus?.willConsumeTopup}
+        videoTitle={videoInfo?.title}
+      />
+      <TranscriptExportUpsell
+        open={showExportUpsell}
+        onOpenChange={setShowExportUpsell}
+        onUpgradeClick={handleUpgradeClick}
       />
     </div>
   );

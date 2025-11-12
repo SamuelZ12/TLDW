@@ -115,6 +115,7 @@ export interface NoteWithVideo extends Note {
     author: string;
     thumbnailUrl: string;
     duration: number;
+    slug?: string | null;
   } | null;
 }
 

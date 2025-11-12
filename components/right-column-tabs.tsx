@@ -48,13 +48,20 @@ interface RightColumnTabsProps {
   onSaveNote?: (payload: { text: string; source: NoteSource; sourceId?: string | null; metadata?: NoteMetadata | null }) => Promise<void>;
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
   editingNote?: EditingNote | null;
-  onSaveEditingNote?: (noteText: string) => void;
+  onSaveEditingNote?: (payload: { noteText: string; selectedText: string }) => void;
   onCancelEditing?: () => void;
   isAuthenticated?: boolean;
   onRequestSignIn?: () => void;
   selectedLanguage?: string | null;
   onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
   onLanguageChange?: (languageCode: string | null) => void;
+  onRequestExport?: () => void;
+  exportButtonState?: {
+    tooltip?: string;
+    disabled?: boolean;
+    badgeLabel?: string;
+    isLoading?: boolean;
+  };
 }
 
 export interface RightColumnTabsHandle {
@@ -87,6 +94,8 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   selectedLanguage = null,
   onRequestTranslation,
   onLanguageChange,
+  onRequestExport,
+  exportButtonState,
 }, ref) => {
   const [activeTab, setActiveTab] = useState<"transcript" | "chat" | "notes">("transcript");
   const [languageSearch, setLanguageSearch] = useState("");
@@ -266,6 +275,8 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
             videoId={videoId}
             selectedLanguage={selectedLanguage}
             onRequestTranslation={onRequestTranslation}
+            onRequestExport={onRequestExport}
+            exportButtonState={exportButtonState}
           />
         </div>
         <div className={cn("absolute inset-0", (activeTab !== "chat" || !showChatTab) && "hidden")}>

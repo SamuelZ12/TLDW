@@ -1,17 +1,30 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { openBillingPortal as openPortalAction, startCheckout } from '@/lib/stripe-actions'
+import { UsageIndicator } from '@/components/usage-indicator'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle
+} from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { User } from '@supabase/supabase-js'
-import { Loader2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Loader2, AlertCircle, CreditCard, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
+import type { User } from '@supabase/supabase-js'
+import { csrfFetch } from '@/lib/csrf-client'
+import { cn } from '@/lib/utils'
 
 interface Profile {
   id: string
@@ -20,29 +33,338 @@ interface Profile {
   avatar_url: string | null
   created_at: string
   updated_at: string
-  free_generations_used: number
+}
+
+type SubscriptionTier = 'free' | 'pro'
+type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'incomplete' | 'trialing' | null
+
+interface SubscriptionSummary {
+  tier: SubscriptionTier
+  status: SubscriptionStatus
+  stripeCustomerId: string | null
+  cancelAtPeriodEnd: boolean
+  isPastDue: boolean
+  canPurchaseTopup: boolean
+  nextBillingDate: string | null
+  periodStart: string
+  periodEnd: string
+  usage: {
+    counted: number
+    cached: number
+    baseLimit: number
+    baseRemaining: number
+    topupCredits: number
+    topupRemaining: number
+    totalRemaining: number
+    resetAt: string
+  }
+  willConsumeTopup: boolean
+}
+
+interface SubscriptionStatusResponse {
+  tier: SubscriptionTier
+  status: SubscriptionStatus
+  stripeCustomerId: string | null
+  cancelAtPeriodEnd: boolean
+  isPastDue: boolean
+  canPurchaseTopup: boolean
+  nextBillingDate: string | null
+  period?: {
+    start: string | null
+    end: string | null
+  } | null
+  usage?: {
+    counted: number
+    cached: number
+    baseLimit: number
+    baseRemaining: number
+    topupCredits: number
+    topupRemaining: number
+    totalRemaining: number
+    resetAt: string
+  } | null
+  willConsumeTopup: boolean
+}
+
+function mapToSubscriptionSummary(payload: SubscriptionStatusResponse): SubscriptionSummary {
+  return {
+    tier: payload.tier,
+    status: payload.status,
+    stripeCustomerId: payload.stripeCustomerId,
+    cancelAtPeriodEnd: payload.cancelAtPeriodEnd,
+    isPastDue: payload.isPastDue,
+    canPurchaseTopup: payload.canPurchaseTopup,
+    nextBillingDate: payload.nextBillingDate,
+    periodStart: payload.period?.start ?? '',
+    periodEnd: payload.period?.end ?? '',
+    usage: {
+      counted: payload.usage?.counted ?? 0,
+      cached: payload.usage?.cached ?? 0,
+      baseLimit: payload.usage?.baseLimit ?? 0,
+      baseRemaining: payload.usage?.baseRemaining ?? 0,
+      topupCredits: payload.usage?.topupCredits ?? 0,
+      topupRemaining: payload.usage?.topupRemaining ?? 0,
+      totalRemaining: payload.usage?.totalRemaining ?? 0,
+      resetAt: payload.usage?.resetAt ?? '',
+    },
+    willConsumeTopup: payload.willConsumeTopup,
+  }
 }
 
 interface SettingsFormProps {
   user: User
   profile: Profile | null
   videoCount: number
+  subscription: SubscriptionSummary | null
 }
 
-export default function SettingsForm({ user, profile, videoCount }: SettingsFormProps) {
+function formatCancellationDate(periodEnd: string | null | undefined): string | null {
+  if (!periodEnd) {
+    return null
+  }
+
+  const cancellationDate = new Date(periodEnd)
+
+  if (Number.isNaN(cancellationDate.valueOf())) {
+    return null
+  }
+
+  return cancellationDate.toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function formatStatus(subscription: SubscriptionSummary | null): string {
+  if (!subscription) {
+    return 'No subscription'
+  }
+
+  const { status, cancelAtPeriodEnd, periodEnd, tier } = subscription
+
+  if (tier === 'pro' && cancelAtPeriodEnd) {
+    const cancellationCopy = formatCancellationDate(periodEnd)
+    return cancellationCopy ? `Cancels on ${cancellationCopy}` : 'Scheduled to cancel'
+  }
+
+  if (!status) {
+    return 'No subscription'
+  }
+
+  switch (status) {
+    case 'active':
+      return 'Active'
+    case 'past_due':
+      return 'Past due'
+    case 'canceled':
+      return 'Canceled'
+    case 'incomplete':
+      return 'Incomplete'
+    case 'trialing':
+      return 'Trialing'
+    default:
+      return status
+  }
+}
+
+export default function SettingsForm({ user, profile, videoCount, subscription }: SettingsFormProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   const [fullName, setFullName] = useState(profile?.full_name || '')
-  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
 
   const [loading, setLoading] = useState(false)
+  const [billingAction, setBillingAction] = useState<'subscription' | 'topup' | 'portal' | null>(null)
+  const [pendingSubscription, setPendingSubscription] = useState<SubscriptionSummary | null>(null)
+
+  const currentSubscription = pendingSubscription ?? subscription
+
+  useEffect(() => {
+    if (subscription?.tier === 'pro') {
+      setPendingSubscription(null)
+    }
+  }, [subscription?.tier])
+
+  // Poll for subscription updates after Stripe checkout
+  useEffect(() => {
+    const sessionId = searchParams.get('session_id')
+
+    if (!sessionId) return
+
+    let pollInterval: NodeJS.Timeout | undefined
+    let timeoutId: NodeJS.Timeout | undefined
+    let processingToastShown = false
+    let hasWelcomed = false
+
+    const showProcessingToast = () => {
+      if (!processingToastShown) {
+        toast.loading('Processing your payment...', { id: 'stripe-processing' })
+        processingToastShown = true
+      }
+    }
+
+    const cleanupProcessing = () => {
+      if (processingToastShown) {
+        toast.dismiss('stripe-processing')
+      }
+      if (pollInterval) clearInterval(pollInterval)
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+
+    const fetchSubscriptionStatus = async (): Promise<SubscriptionSummary | null> => {
+      try {
+        const response = await fetch('/api/subscription/status', {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          },
+        })
+
+        if (!response.ok) return null
+
+        const payload: SubscriptionStatusResponse = await response.json()
+        return mapToSubscriptionSummary(payload)
+      } catch (error) {
+        console.error('Error fetching subscription status:', error)
+        return null
+      }
+    }
+
+    const syncSubscriptionSnapshot = async (summary?: SubscriptionSummary | null) => {
+      const nextSummary = summary ?? await fetchSubscriptionStatus()
+
+      if (nextSummary?.tier === 'pro') {
+        setPendingSubscription(nextSummary)
+      }
+
+      return nextSummary ?? null
+    }
+
+    const handleActivation = (nextSummary?: SubscriptionSummary | null) => {
+      cleanupProcessing()
+      if (!hasWelcomed) {
+        toast.success('Welcome to Pro! Your subscription is now active.')
+        hasWelcomed = true
+      }
+      void syncSubscriptionSnapshot(nextSummary)
+      router.refresh()
+      window.history.replaceState({}, '', '/settings')
+    }
+
+    const handleTopupSuccess = (data: {
+      creditsAdded?: number
+      totalCredits?: number | null
+      alreadyApplied?: boolean
+      updated?: boolean
+    }) => {
+      cleanupProcessing()
+
+      if (data.alreadyApplied) {
+        toast.success('Top-Up credits already applied to your account.')
+      } else if (data.updated && (data.creditsAdded ?? 0) > 0) {
+        const totalCopy =
+          typeof data.totalCredits === 'number'
+            ? `You now have ${data.totalCredits} top-up credits available.`
+            : 'Your credits are ready to use.'
+
+        toast.success(
+          `Added ${data.creditsAdded} Top-Up credits! ${totalCopy}`.trim()
+        )
+      } else {
+        toast.success('Top-Up purchase recorded. Your credits will reflect shortly.')
+      }
+
+      void syncSubscriptionSnapshot()
+      router.refresh()
+      window.history.replaceState({}, '', '/settings')
+    }
+
+    const confirmCheckout = async (): Promise<'handled' | 'subscription_pending'> => {
+      showProcessingToast()
+      try {
+        const response = await csrfFetch.post('/api/stripe/confirm-checkout', { sessionId })
+
+        if (!response.ok) {
+          return 'subscription_pending'
+        }
+
+        const data = await response.json()
+
+        if (data.type === 'topup') {
+          handleTopupSuccess(data)
+          return 'handled'
+        }
+
+        if (data.type === 'subscription' || !data.type) {
+          if (data.updated && data.tier === 'pro') {
+            handleActivation()
+            return 'handled'
+          }
+
+          return 'subscription_pending'
+        }
+      } catch (error) {
+        console.error('Error confirming Stripe checkout:', error)
+      }
+
+      return 'subscription_pending'
+    }
+
+    const pollForSubscription = async () => {
+      const summary = await fetchSubscriptionStatus()
+
+      if (summary?.tier === 'pro') {
+        handleActivation(summary)
+      }
+    }
+
+    const startPolling = () => {
+      showProcessingToast()
+      pollForSubscription()
+      pollInterval = setInterval(pollForSubscription, 2000)
+
+      timeoutId = setTimeout(() => {
+        cleanupProcessing()
+
+        if (subscription?.tier !== 'pro') {
+          toast.error('Payment processing is taking longer than expected. Please refresh the page in a moment.')
+        }
+      }, 30000)
+    }
+
+    ;(async () => {
+      const result = await confirmCheckout()
+
+      if (result === 'subscription_pending') {
+        if (subscription?.tier === 'pro') {
+          cleanupProcessing()
+          window.history.replaceState({}, '', '/settings')
+        } else {
+          startPolling()
+        }
+      }
+    })()
+
+    return () => {
+      cleanupProcessing()
+    }
+  }, [searchParams, subscription?.tier, router])
 
   const hasProfileChanges = useMemo(() => {
     return fullName !== (profile?.full_name || '')
   }, [fullName, profile?.full_name])
+
+  const planLabel = currentSubscription?.tier === 'pro' ? 'Pro Plan' : 'Free Plan'
+  const planStatus = formatStatus(currentSubscription)
+  const isCancellationScheduled =
+    currentSubscription?.tier === 'pro' && currentSubscription.cancelAtPeriodEnd
+  const isPastDue = Boolean(currentSubscription?.isPastDue)
+  const StatusIcon = isCancellationScheduled ? AlertCircle : isPastDue ? AlertCircle : Sparkles
 
   const handleUpdateProfile = async () => {
     if (!hasProfileChanges) {
@@ -90,7 +412,6 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
       toast.error(error.message)
     } else {
       toast.success('Password updated successfully!')
-      setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
     }
@@ -98,12 +419,184 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
     setLoading(false)
   }
 
+  const handleCheckout = async (priceType: 'subscription' | 'topup') => {
+    try {
+      setBillingAction(priceType)
+      await startCheckout(priceType)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected error starting checkout'
+      toast.error(message)
+    } finally {
+      setBillingAction(null)
+    }
+  }
+
+  const openBillingPortal = async () => {
+    try {
+      setBillingAction('portal')
+      await openPortalAction()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unexpected error opening billing portal'
+      toast.error(message)
+    } finally {
+      setBillingAction(null)
+    }
+  }
+
+  const subscriptionWarnings = useMemo(() => {
+    if (!currentSubscription) return []
+    const warnings: Array<{ title: string; message: string; variant?: 'default' | 'destructive' }> = []
+
+    if (currentSubscription.isPastDue) {
+      warnings.push({
+        title: 'Payment required',
+        message: 'Your payment method failed. Update billing details to restore full access.',
+        variant: 'destructive',
+      })
+    }
+
+    if (currentSubscription.willConsumeTopup) {
+      warnings.push({
+        title: 'Top-Up credits in use',
+        message: 'The next video generation will consume Top-Up credits.',
+      })
+    }
+
+    return warnings
+  }, [currentSubscription])
+
+  const statsRows = useMemo(() => {
+    const createdAt = new Date(profile?.created_at || user.created_at)
+    const stats = [
+      {
+        label: 'Account created',
+        value: createdAt.toLocaleDateString(),
+      },
+      {
+        label: 'Videos saved',
+        value: `${videoCount} ${videoCount === 1 ? 'video' : 'videos'}`,
+      },
+    ]
+
+    return stats
+  }, [profile?.created_at, user.created_at, videoCount])
+
   return (
     <div className="space-y-6">
       <Card className="overflow-hidden">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-xl">Subscription</CardTitle>
+          <CardDescription className="text-sm">
+            View your plan, usage, and manage billing preferences.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Badge variant={currentSubscription?.tier === 'pro' ? 'default' : 'secondary'}>
+              {planLabel}
+            </Badge>
+            <span
+              className={cn(
+                'text-sm flex items-center gap-1',
+                isPastDue ? 'text-amber-600 dark:text-amber-500' :
+                isCancellationScheduled ? 'text-foreground' : 'text-muted-foreground'
+              )}
+            >
+              <StatusIcon className="h-4 w-4" />
+              {planStatus}
+            </span>
+          </div>
+
+          {currentSubscription ? (
+            <UsageIndicator
+              counted={currentSubscription.usage.counted}
+              baseLimit={currentSubscription.usage.baseLimit}
+              baseRemaining={currentSubscription.usage.baseRemaining}
+              topupRemaining={currentSubscription.usage.topupRemaining}
+              resetAt={currentSubscription.usage.resetAt}
+              warning={currentSubscription.isPastDue ? 'PAST_DUE' : null}
+            />
+          ) : (
+            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+              Usage tracking will appear here once your account is fully set up.
+            </div>
+          )}
+
+          {subscriptionWarnings.length > 0 && (
+            <div className="space-y-3">
+              {subscriptionWarnings.map((warning, index) => (
+                <Alert key={index} variant={warning.variant ?? 'default'}>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>{warning.title}</AlertTitle>
+                  <AlertDescription>{warning.message}</AlertDescription>
+                </Alert>
+              ))}
+            </div>
+          )}
+        </CardContent>
+        <CardFooter className="flex flex-wrap gap-3">
+          {currentSubscription?.tier === 'pro' ? (
+            <>
+              <Button
+                onClick={openBillingPortal}
+                disabled={billingAction !== null}
+              >
+                {billingAction === 'portal' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Opening portal...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Manage billing
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleCheckout('topup')}
+                disabled={billingAction !== null || !currentSubscription?.canPurchaseTopup}
+              >
+                {billingAction === 'topup' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Redirecting...
+                  </>
+                ) : (
+                  'Buy Top-Up (+20 credits)'
+                )}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                onClick={() => handleCheckout('subscription')}
+                disabled={billingAction !== null}
+              >
+                {billingAction === 'subscription' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Redirecting...
+                  </>
+                ) : (
+                  'Upgrade to Pro'
+                )}
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/pricing">View pricing</Link>
+              </Button>
+            </>
+          )}
+        </CardFooter>
+      </Card>
+
+      <Card className="overflow-hidden">
         <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Profile Information</CardTitle>
-          <CardDescription className="text-sm">Update your personal information and preferences</CardDescription>
+          <CardTitle className="text-xl">Profile information</CardTitle>
+          <CardDescription className="text-sm">
+            Update your personal information and preferences.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
@@ -119,7 +612,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="fullName">Full Name</Label>
+            <Label htmlFor="fullName">Full name</Label>
             <Input
               id="fullName"
               type="text"
@@ -134,7 +627,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
             onClick={handleUpdateProfile} 
             disabled={loading || !hasProfileChanges}
             size="default"
-            className="min-w-[120px]"
+            className="min-w-[140px]"
           >
             {loading ? (
               <>
@@ -142,7 +635,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
                 Saving...
               </>
             ) : (
-              'Save Changes'
+              'Save changes'
             )}
           </Button>
         </CardFooter>
@@ -150,12 +643,14 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
 
       <Card className="overflow-hidden">
         <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Change Password</CardTitle>
-          <CardDescription className="text-sm">Update your password to keep your account secure</CardDescription>
+          <CardTitle className="text-xl">Change password</CardTitle>
+          <CardDescription className="text-sm">
+            Update your password to keep your account secure.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="newPassword">New Password</Label>
+            <Label htmlFor="newPassword">New password</Label>
             <Input
               id="newPassword"
               type="password"
@@ -166,7 +661,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm New Password</Label>
+            <Label htmlFor="confirmPassword">Confirm new password</Label>
             <Input
               id="confirmPassword"
               type="password"
@@ -181,7 +676,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
             onClick={handleUpdatePassword}
             disabled={loading || !newPassword || !confirmPassword}
             size="default"
-            className="min-w-[120px]"
+            className="min-w-[160px]"
           >
             {loading ? (
               <>
@@ -189,7 +684,7 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
                 Updating...
               </>
             ) : (
-              'Update Password'
+              'Update password'
             )}
           </Button>
         </CardFooter>
@@ -197,28 +692,27 @@ export default function SettingsForm({ user, profile, videoCount }: SettingsForm
 
       <Card className="overflow-hidden">
         <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Account Statistics</CardTitle>
-          <CardDescription className="text-sm">Your usage information</CardDescription>
+          <CardTitle className="text-xl">Account statistics</CardTitle>
+          <CardDescription className="text-sm">
+            Key usage metrics and account milestones.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-muted-foreground">Account Created</span>
-              <span className="text-sm font-semibold">
-                {new Date(profile?.created_at || user.created_at).toLocaleDateString()}
-              </span>
-            </div>
-            <Separator className="bg-border/50" />
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-muted-foreground">Videos Analyzed</span>
-              <span className="text-sm font-semibold">
-                {videoCount} {videoCount === 1 ? 'video' : 'videos'}
-              </span>
-            </div>
+            {statsRows.map((row, index) => (
+              <div key={row.label}>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-muted-foreground">{row.label}</span>
+                  <span className="text-sm font-semibold">{row.value}</span>
+                </div>
+                {index < statsRows.length - 1 && (
+                  <Separator className="bg-border/50" />
+                )}
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
     </div>
   )
 }
-
