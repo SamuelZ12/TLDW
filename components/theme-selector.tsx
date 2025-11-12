@@ -65,14 +65,10 @@ export function ThemeSelector({
     }
   }, [baseThemes, selectedTheme]);
 
-  // Clear UI state when language changes (TranslationBatcher handles its own cache)
   useEffect(() => {
-    console.log('[ThemeSelector] Language changed to:', selectedLanguage);
-    console.log('[ThemeSelector] Clearing local translation state (batcher cache is preserved)');
     setLoadingTranslations(new Set());
     setTranslatedThemes(new Map());
 
-    // Reset labels to English
     setYourTopicLabel("Your Topic");
     setOverallHighlightsLabel("Overall highlights");
   }, [selectedLanguage]);
@@ -115,25 +111,18 @@ export function ThemeSelector({
     const translationEnabled = selectedLanguage !== null;
 
     if (!onRequestTranslation || !translationEnabled) {
-      console.log(`[ThemeSelector] Skipping translation for "${theme}": translation disabled or no handler`);
       return;
     }
 
     if (loadingTranslations.has(theme)) {
-      console.log(`[ThemeSelector] Skipping translation for "${theme}": already loading`);
       return;
     }
 
-    // Don't check translatedThemes.has(theme) - causes race condition with React state updates
-    // TranslationBatcher handles caching, so duplicate requests are fast (cache hits)
-
-    console.log(`[ThemeSelector] Requesting translation for theme "${theme}" (language: ${selectedLanguage})`);
     setLoadingTranslations((prev) => new Set(prev).add(theme));
 
     try {
       const cacheKey = `theme:${theme}:${selectedLanguage}`;
       const translation = await onRequestTranslation(theme, cacheKey);
-      console.log(`[ThemeSelector] Translation received for "${theme}":`, translation);
       setTranslatedThemes((prev) => new Map(prev).set(theme, translation));
     } catch (error) {
       console.error(`[ThemeSelector] Translation failed for theme "${theme}":`, error);
@@ -155,13 +144,11 @@ export function ThemeSelector({
 
     const isLoading = loadingTranslations.has(theme);
     if (isLoading) {
-      console.log(`[ThemeSelector] Getting display text for "${theme}": loading`);
       return "Translating...";
     }
 
     const translation = translatedThemes.get(theme);
     const result = translation || theme;
-    console.log(`[ThemeSelector] Getting display text for "${theme}": ${translation ? `translated to "${translation}"` : 'using original'}`);
 
     return result;
   };
@@ -169,15 +156,11 @@ export function ThemeSelector({
   // Request translations for visible themes
   useEffect(() => {
     const translationEnabled = selectedLanguage !== null;
-    console.log('[ThemeSelector] Translation effect triggered. Themes:', displayThemes, 'Language:', selectedLanguage);
 
     if (translationEnabled && onRequestTranslation) {
-      console.log('[ThemeSelector] Requesting translations for', displayThemes.length, 'themes');
       displayThemes.forEach((theme) => {
         requestTranslation(theme);
       });
-    } else {
-      console.log('[ThemeSelector] Skipping translations: enabled=', translationEnabled, 'handler=', !!onRequestTranslation);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayThemes, selectedLanguage, onRequestTranslation]);
