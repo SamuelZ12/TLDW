@@ -9,11 +9,6 @@ import { getTranslationClient } from '@/lib/translation';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
-const translateRequestSchema = z.object({
-  text: z.string().min(1),
-  targetLanguage: z.string().default('zh-CN')
-});
-
 const translateBatchRequestSchema = z.object({
   texts: z.array(z.string()),
   targetLanguage: z.string().default('zh-CN')
@@ -24,7 +19,7 @@ async function handler(request: NextRequest) {
 
   try {
     requestBody = await request.json();
-    const body = requestBody as Record<string, unknown>;
+    const body = requestBody;
 
     // Check rate limiting based on user authentication
     const supabase = await createClient();
@@ -46,65 +41,37 @@ async function handler(request: NextRequest) {
       );
     }
 
-    // Determine if this is a batch or single translation request
-    const isBatch = Array.isArray(body.texts);
-
-    if (isBatch) {
-      // Handle batch translation
-      const validation = translateBatchRequestSchema.safeParse(body);
-      if (!validation.success) {
-        return NextResponse.json(
-          {
-            error: 'Invalid request format',
-            details: validation.error.flatten()
-          },
-          { status: 400 }
-        );
-      }
-
-      const { texts, targetLanguage } = validation.data;
-
-      if (texts.length === 0) {
-        return NextResponse.json({ translations: [] });
-      }
-
-      if (texts.length > 100) {
-        return NextResponse.json(
-          { error: 'Batch size too large. Maximum 100 texts allowed.' },
-          { status: 400 }
-        );
-      }
-
-      const translationClient = getTranslationClient();
-      const translations = await translationClient.translateBatch(
-        texts,
-        targetLanguage
+    const validation = translateBatchRequestSchema.safeParse(body);
+    if (!validation.success) {
+      return NextResponse.json(
+        {
+          error: 'Invalid request format',
+          details: validation.error.flatten()
+        },
+        { status: 400 }
       );
-
-      return NextResponse.json({ translations });
-    } else {
-      // Handle single translation
-      const validation = translateRequestSchema.safeParse(body);
-      if (!validation.success) {
-        return NextResponse.json(
-          {
-            error: 'Invalid request format',
-            details: validation.error.flatten()
-          },
-          { status: 400 }
-        );
-      }
-
-      const { text, targetLanguage } = validation.data;
-
-      const translationClient = getTranslationClient();
-      const translation = await translationClient.translate(
-        text,
-        targetLanguage
-      );
-
-      return NextResponse.json({ translation });
     }
+
+    const { texts, targetLanguage } = validation.data;
+
+    if (texts.length === 0) {
+      return NextResponse.json({ translations: [] });
+    }
+
+    if (texts.length > 100) {
+      return NextResponse.json(
+        { error: 'Batch size too large. Maximum 100 texts allowed.' },
+        { status: 400 }
+      );
+    }
+
+    const translationClient = getTranslationClient();
+    const translations = await translationClient.translateBatch(
+      texts,
+      targetLanguage
+    );
+
+    return NextResponse.json({ translations });
   } catch (error) {
     // Log full error details server-side for debugging
     console.error('[TRANSLATE] Translation error:', {
