@@ -263,7 +263,6 @@ export default function AnalyzePage() {
     if (targetVideoId && !user) {
       try {
         sessionStorage.setItem('pendingVideoId', targetVideoId);
-        console.log('Stored video for post-auth linking:', targetVideoId);
       } catch (error) {
         console.error('Failed to persist pending video ID:', error);
       }

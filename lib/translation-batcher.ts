@@ -52,18 +52,12 @@ export class TranslationBatcher {
     // Check cache first (synchronous, fast)
     if (this.cache.has(cacheKey)) {
       const cached = this.cache.get(cacheKey)!;
-      console.log(`[BATCHER] 🎯 Cache hit: "${cacheKey}"`);
       return cached;
     }
-
-    console.log(`[BATCHER] ❌ Cache miss: "${cacheKey}" - queuing`);
 
     // Add to queue and return a promise
     return new Promise<string>((resolve, reject) => {
       this.queue.push({ text, cacheKey, targetLanguage, resolve, reject });
-      console.log(
-        `[BATCHER] Queue size: ${this.queue.length}/${this.maxBatchSize}`
-      );
 
       // Trigger batch processing if needed
       this.maybeStartBatch();
@@ -77,22 +71,17 @@ export class TranslationBatcher {
   private maybeStartBatch(): void {
     // If queue is full and we're not processing, start immediately
     if (this.queue.length >= this.maxBatchSize && !this.processing) {
-      console.log(`[BATCHER] Queue full, processing immediately`);
       this.processNextBatch();
       return;
     }
 
     // If we're already processing, do nothing - it will drain the queue
     if (this.processing) {
-      console.log(
-        `[BATCHER] Already processing, current batch will handle queued items`
-      );
       return;
     }
 
     // Otherwise, schedule a batch if not already scheduled
     if (!this.scheduledTimeout) {
-      console.log(`[BATCHER] Scheduling batch in ${this.batchDelay}ms`);
       this.scheduledTimeout = setTimeout(() => {
         this.scheduledTimeout = null;
         this.processNextBatch();
@@ -107,7 +96,6 @@ export class TranslationBatcher {
   private async processNextBatch(): Promise<void> {
     // Guard: prevent concurrent processing
     if (this.processing) {
-      console.log(`[BATCHER] Already processing, skipping`);
       return;
     }
 
@@ -126,32 +114,19 @@ export class TranslationBatcher {
 
       // Nothing to process
       if (batch.length === 0) {
-        console.log(`[BATCHER] Queue empty, nothing to process`);
         return;
       }
 
-      console.log(
-        `[BATCHER] 🔄 Processing batch of ${batch.length} (${this.queue.length} remaining in queue)`
-      );
-
       // Execute the batch (all the business logic)
       await this.executeBatch(batch);
-
-      console.log(`[BATCHER] ✅ Batch completed`);
     } catch (error) {
-      console.error(
-        `[BATCHER] ❌ Unexpected error in processNextBatch:`,
-        error
-      );
+      console.error('[Translation] Unexpected error in batch processing:', error);
     } finally {
       // Always release the lock
       this.processing = false;
 
       // If there are more items, schedule next batch
       if (this.queue.length > 0) {
-        console.log(
-          `[BATCHER] ${this.queue.length} items remaining, scheduling next batch`
-        );
         setTimeout(() => this.processNextBatch(), 0);
       }
     }
@@ -164,8 +139,6 @@ export class TranslationBatcher {
   private async executeBatch(batch: TranslationRequest[]): Promise<void> {
     // Group requests by target language
     const byLanguage = this.groupByLanguage(batch);
-
-    console.log(`[BATCHER] Batch contains ${byLanguage.size} language(s)`);
 
     // Process each language group
     for (const [targetLanguage, requests] of byLanguage.entries()) {
@@ -197,10 +170,6 @@ export class TranslationBatcher {
     targetLanguage: string,
     requests: TranslationRequest[]
   ): Promise<void> {
-    console.log(
-      `[BATCHER] Translating ${requests.length} items to ${targetLanguage}`
-    );
-
     try {
       // Get unique texts (avoid translating duplicates)
       const uniqueTexts = Array.from(new Set(requests.map((r) => r.text)));
@@ -234,29 +203,15 @@ export class TranslationBatcher {
 
         // Cache it
         this.cache.set(request.cacheKey, translation);
-        console.log(`[BATCHER] 💾 Cached: "${request.cacheKey}"`);
 
         // Resolve the promise
         request.resolve(translation);
       }
-
-      console.log(
-        `[BATCHER] ✅ ${targetLanguage} group completed. Cache size: ${this.cache.size}`
-      );
     } catch (error) {
-      console.error(
-        `[BATCHER] ❌ Failed to translate ${targetLanguage} group:`,
-        error
-      );
+      console.error('[Translation] Failed to translate batch:', error);
 
       // On error, resolve with original text
       for (const request of requests) {
-        console.log(
-          `[BATCHER] Fallback to original: "${request.text.substring(
-            0,
-            30
-          )}..."`
-        );
         request.resolve(request.text);
       }
     }
@@ -271,7 +226,6 @@ export class TranslationBatcher {
       this.scheduledTimeout = null;
     }
 
-    console.log(`[BATCHER] Clearing ${this.queue.length} pending requests`);
     this.queue = [];
   }
 

@@ -10,7 +10,6 @@ export function useTranslation() {
     if (!selectedLanguage) return text;
 
     if (!translationBatcherRef.current) {
-      console.log(`[Translation] Initializing TranslationBatcher (language-agnostic), cache ref:`, translationCache);
       translationBatcherRef.current = new TranslationBatcher(
         50,
         100,
@@ -24,7 +23,6 @@ export function useTranslation() {
     if (translationCache.size >= MAX_CACHE_SIZE && !translationCache.has(cacheKey)) {
       const firstKey = translationCache.keys().next().value;
       if (firstKey !== undefined) {
-        console.log(`[Translation] Cache full (${translationCache.size}), evicting oldest entry: ${firstKey}`);
         translationCache.delete(firstKey);
       }
     }
@@ -33,15 +31,12 @@ export function useTranslation() {
   }, [translationCache, selectedLanguage]);
 
   const handleLanguageChange = useCallback((languageCode: string | null) => {
-    console.log(`[Translation] Language changed to: ${languageCode}`);
     setSelectedLanguage(languageCode);
 
     if (translationBatcherRef.current && !languageCode) {
-      console.log(`[Translation] Clearing batcher (switching to English)`);
       translationBatcherRef.current.clear();
       translationBatcherRef.current = null;
     } else if (translationBatcherRef.current) {
-      console.log(`[Translation] Clearing pending requests for language switch`);
       translationBatcherRef.current.clearPending();
     }
   }, []);
