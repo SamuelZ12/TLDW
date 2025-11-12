@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm install:*)",
-      "WebFetch(domain:docs.supadata.ai)"
+      "WebFetch(domain:docs.supadata.ai)",
+      "Bash(comm -23:*)",
+      "Bash(comm:*)"
     ],
     "deny": []
   }

@@ -17,7 +17,9 @@ import { SelectionActionPayload, EXPLAIN_SELECTION_EVENT } from "@/components/se
 import { fetchNotes, saveNote } from "@/lib/notes-client";
 import { EditingNote } from "@/components/notes-panel";
 import { useModePreference } from "@/lib/hooks/use-mode-preference";
-import { TranslationBatcher } from "@/lib/translation-batcher";
+import { useTranslation } from "@/lib/hooks/use-translation";
+import { useSubscription } from "@/lib/hooks/use-subscription";
+import { useTranscriptExport } from "@/lib/hooks/use-transcript-export";
 
 // Page state for better UX
 type PageState = 'IDLE' | 'ANALYZING_NEW' | 'LOADING_CACHED';
@@ -33,7 +35,7 @@ import { TranscriptExportUpsell } from "@/components/transcript-export-upsell";
 import { useAuth } from "@/contexts/auth-context";
 import { backgroundOperation, AbortManager } from "@/lib/promise-utils";
 import { toast } from "sonner";
-import { createTranscriptExport, hasSpeakerMetadata, type TranscriptExportFormat } from "@/lib/transcript-export";
+import { hasSpeakerMetadata } from "@/lib/transcript-export";
 import { buildSuggestedQuestionFallbacks } from "@/lib/suggested-question-fallback";
 
 const GUEST_LIMIT_MESSAGE = "You've used today's free analysis. Sign in to keep going.";
@@ -62,46 +64,6 @@ type LimitCheckResponse = {
   } | null;
 };
 
-type SubscriptionStatusState =
-  | 'active'
-  | 'trialing'
-  | 'past_due'
-  | 'canceled'
-  | 'incomplete'
-  | 'incomplete_expired'
-  | 'unpaid'
-  | null;
-
-interface SubscriptionStatusResponse {
-  tier: 'free' | 'pro';
-  status: SubscriptionStatusState;
-  stripeCustomerId?: string | null;
-  cancelAtPeriodEnd?: boolean;
-  isPastDue?: boolean;
-  canPurchaseTopup?: boolean;
-  nextBillingDate?: string | null;
-  willConsumeTopup?: boolean;
-  usage: {
-    counted: number;
-    cached: number;
-    baseLimit: number;
-    baseRemaining: number;
-    topupCredits: number;
-    topupRemaining: number;
-    totalRemaining: number;
-    resetAt: string;
-  };
-}
-
-function isProSubscriptionActive(status: SubscriptionStatusResponse | null): boolean {
-  if (!status) {
-    return false;
-  }
-  if (status.tier !== 'pro') {
-    return false;
-  }
-  return status.status === 'active' || status.status === 'trialing' || status.status === 'past_due';
-}
 
 function buildLimitExceededMessage(limitData?: LimitCheckResponse | null): string {
   if (!limitData) {
@@ -224,7 +186,6 @@ export default function AnalyzePage() {
   const nextThemeRequestIdRef = useRef(0);
   const activeThemeRequestIdRef = useRef<number | null>(null);
   const pendingThemeRequestsRef = useRef(new Map<string, number>());
-  const translationBatcherRef = useRef<TranslationBatcher | null>(null);
 
   // Play All state (lifted from YouTubePlayer)
   const [isPlayingAll, setIsPlayingAll] = useState(false);
@@ -248,9 +209,13 @@ export default function AnalyzePage() {
   // Cached suggested questions
   const [cachedSuggestedQuestions, setCachedSuggestedQuestions] = useState<string[] | null>(null);
 
-  // Translation state - null means English (no translation), otherwise language code
-  const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
-  const [translationCache, setTranslationCache] = useState<Map<string, string>>(new Map());
+  // Use custom hooks for translation
+  const {
+    selectedLanguage,
+    translationCache,
+    handleRequestTranslation,
+    handleLanguageChange,
+  } = useTranslation();
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -283,21 +248,6 @@ export default function AnalyzePage() {
     seoPathRef.current = targetPath;
   }, [routeVideoId, videoId, videoInfo?.title, slugParam]);
 
-  // Transcript export state
-  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
-  const [exportFormat, setExportFormat] = useState<TranscriptExportFormat>('txt');
-  const [includeTimestamps, setIncludeTimestamps] = useState(true);
-  const [includeSpeakers, setIncludeSpeakers] = useState(false);
-  const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
-  const [exportDisableMessage, setExportDisableMessage] = useState<string | null>(null);
-  const [isExportingTranscript, setIsExportingTranscript] = useState(false);
-  const [showExportUpsell, setShowExportUpsell] = useState(false);
-  const [isCheckingSubscription, setIsCheckingSubscription] = useState(false);
-  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatusResponse | null>(null);
-  const subscriptionStatusFetchedAtRef = useRef<number | null>(null);
-
-  const hasSpeakerData = useMemo(() => hasSpeakerMetadata(transcript), [transcript]);
-
   // Use custom hook for timer logic
   const elapsedTime = useElapsedTimer(generationStartTime);
   const processingElapsedTime = useElapsedTimer(processingStartTime);
@@ -306,6 +256,70 @@ export default function AnalyzePage() {
   const { user } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalTrigger, setAuthModalTrigger] = useState<AuthModalTrigger>('generation-limit');
+
+  // Store current video data in sessionStorage before auth
+  const storeCurrentVideoForAuth = useCallback((id?: string) => {
+    const targetVideoId = id ?? videoId;
+    if (targetVideoId && !user) {
+      try {
+        sessionStorage.setItem('pendingVideoId', targetVideoId);
+        console.log('Stored video for post-auth linking:', targetVideoId);
+      } catch (error) {
+        console.error('Failed to persist pending video ID:', error);
+      }
+    }
+  }, [user, videoId]);
+
+  const handleAuthRequired = useCallback(() => {
+    storeCurrentVideoForAuth();
+    setAuthModalTrigger('manual');
+    setAuthModalOpen(true);
+  }, [storeCurrentVideoForAuth]);
+
+  // Use custom hook for subscription
+  const {
+    subscriptionStatus,
+    isCheckingSubscription,
+    fetchSubscriptionStatus,
+  } = useSubscription({
+    user,
+    onAuthRequired: handleAuthRequired,
+  });
+
+  const hasSpeakerData = useMemo(() => hasSpeakerMetadata(transcript), [transcript]);
+
+  // Use custom hook for transcript export
+  const {
+    isExportDialogOpen,
+    exportFormat,
+    includeTimestamps,
+    includeSpeakers,
+    exportErrorMessage,
+    exportDisableMessage,
+    isExportingTranscript,
+    showExportUpsell,
+    exportButtonState,
+    setExportFormat,
+    setIncludeTimestamps,
+    setIncludeSpeakers,
+    setShowExportUpsell,
+    handleExportDialogOpenChange,
+    handleRequestExport,
+    handleConfirmExport,
+    handleUpgradeClick,
+  } = useTranscriptExport({
+    videoId,
+    transcript,
+    topics,
+    videoInfo,
+    user,
+    hasSpeakerData,
+    subscriptionStatus,
+    isCheckingSubscription,
+    fetchSubscriptionStatus,
+    onAuthRequired: handleAuthRequired,
+  });
+
   const [rateLimitInfo, setRateLimitInfo] = useState<{
     remaining: number | null;
     resetAt: Date | null;
@@ -333,19 +347,6 @@ export default function AnalyzePage() {
   const clearPlaybackCommand = useCallback(() => {
     setPlaybackCommand(null);
   }, []);
-
-  // Store current video data in sessionStorage before auth
-  const storeCurrentVideoForAuth = useCallback((id?: string) => {
-    const targetVideoId = id ?? videoId;
-    if (targetVideoId && !user) {
-      try {
-        sessionStorage.setItem('pendingVideoId', targetVideoId);
-        console.log('Stored video for post-auth linking:', targetVideoId);
-      } catch (error) {
-        console.error('Failed to persist pending video ID:', error);
-      }
-    }
-  }, [user, videoId]);
 
   const promptSignInForNotes = useCallback(() => {
     if (user) return;
@@ -483,83 +484,10 @@ export default function AnalyzePage() {
     }
   }, []);
 
-  const fetchSubscriptionStatus = useCallback(
-    async (options?: { force?: boolean }): Promise<SubscriptionStatusResponse | null> => {
-      if (!user) {
-        return null;
-      }
-
-      const lastFetchedAt = subscriptionStatusFetchedAtRef.current;
-      if (
-        !options?.force &&
-        subscriptionStatus &&
-        lastFetchedAt &&
-        Date.now() - lastFetchedAt < 60_000
-      ) {
-        return subscriptionStatus;
-      }
-
-      setIsCheckingSubscription(true);
-      try {
-        const response = await fetch('/api/subscription/status', {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          cache: 'no-store',
-        });
-
-        if (response.status === 401) {
-          storeCurrentVideoForAuth();
-          setAuthModalTrigger('manual');
-          setAuthModalOpen(true);
-          return null;
-        }
-
-        if (!response.ok) {
-          const errorPayload = await response.json().catch(() => ({}));
-          const message =
-            typeof (errorPayload as { error?: string }).error === 'string'
-              ? (errorPayload as { error?: string }).error!
-              : 'Failed to check subscription status. Please try again.';
-          toast.error(message);
-          return null;
-        }
-
-        const data: SubscriptionStatusResponse = await response.json();
-        setSubscriptionStatus(data);
-        subscriptionStatusFetchedAtRef.current = Date.now();
-        return data;
-      } catch (error) {
-        console.error('Failed to fetch subscription status:', error);
-        toast.error('Unable to check your subscription right now.');
-        return null;
-      } finally {
-        setIsCheckingSubscription(false);
-      }
-    },
-    [user, subscriptionStatus, storeCurrentVideoForAuth, setAuthModalTrigger, setAuthModalOpen]
-  );
-
   // Check rate limit status on mount
   useEffect(() => {
     checkRateLimit();
   }, [checkRateLimit]);
-
-  useEffect(() => {
-    subscriptionStatusFetchedAtRef.current = null;
-    setSubscriptionStatus(null);
-  }, [user]);
-
-  useEffect(() => {
-    if (exportFormat === 'srt' && !includeTimestamps) {
-      setIncludeTimestamps(true);
-    }
-  }, [exportFormat, includeTimestamps]);
-
-  useEffect(() => {
-    if (!hasSpeakerData && includeSpeakers) {
-      setIncludeSpeakers(false);
-    }
-  }, [hasSpeakerData, includeSpeakers]);
 
   // Handle pending video linking when user logs in and videoId is available
   useEffect(() => {
