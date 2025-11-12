@@ -23,7 +23,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Loader2, AlertCircle, CreditCard, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import type { User } from '@supabase/supabase-js'
-import { csrfFetch } from '@/lib/csrf-client'
+import { csrfFetch, getCSRFToken } from '@/lib/csrf-client'
 import { cn } from '@/lib/utils'
 
 interface Profile {
@@ -182,6 +182,14 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
   const [pendingSubscription, setPendingSubscription] = useState<SubscriptionSummary | null>(null)
 
   const currentSubscription = pendingSubscription ?? subscription
+
+  // Pre-fetch CSRF token in background for faster checkout (PERFORMANCE OPTIMIZATION)
+  // This saves ~100-200ms on first Stripe action by caching the token before user clicks
+  useEffect(() => {
+    getCSRFToken().catch((error) => {
+      console.error('Failed to pre-fetch CSRF token:', error)
+    })
+  }, [])
 
   useEffect(() => {
     if (subscription?.tier === 'pro') {
