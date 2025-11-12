@@ -90,7 +90,7 @@ export function useTranscriptExport({
     }
 
     if (status.usage.totalRemaining <= 0) {
-      setExportDisableMessage('You've hit your export limit. Purchase a top-up or wait for your cycle reset.');
+      setExportDisableMessage("You've hit your export limit. Purchase a top-up or wait for your cycle reset.");
       setExportErrorMessage(null);
       setIsExportDialogOpen(true);
       return;
@@ -131,7 +131,7 @@ export function useTranscriptExport({
     }
 
     if (status.usage.totalRemaining <= 0) {
-      setExportDisableMessage('You've hit your export limit. Purchase a top-up or wait for your cycle reset.');
+      setExportDisableMessage("You've hit your export limit. Purchase a top-up or wait for your cycle reset.");
       return;
     }
 
@@ -233,7 +233,7 @@ export function useTranscriptExport({
     if (subscriptionStatus && subscriptionStatus.usage.totalRemaining <= 0) {
       return {
         badgeLabel: 'Pro',
-        tooltip: 'You've hit your export limit. Purchase a top-up or wait for reset.',
+        tooltip: "You've hit your export limit. Purchase a top-up or wait for reset.",
       };
     }
 
