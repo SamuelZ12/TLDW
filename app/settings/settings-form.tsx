@@ -141,10 +141,10 @@ function formatStatus(subscription: SubscriptionSummary | null): string {
     return 'No subscription'
   }
 
-  const { status, cancelAtPeriodEnd, periodEnd, tier } = subscription
+  const { status, cancelAtPeriodEnd, periodEnd, nextBillingDate } = subscription
 
-  if (tier === 'pro' && cancelAtPeriodEnd) {
-    const cancellationCopy = formatCancellationDate(periodEnd)
+  if (cancelAtPeriodEnd) {
+    const cancellationCopy = formatCancellationDate(nextBillingDate ?? periodEnd)
     return cancellationCopy ? `Cancels on ${cancellationCopy}` : 'Scheduled to cancel'
   }
 
@@ -369,8 +369,7 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
 
   const planLabel = currentSubscription?.tier === 'pro' ? 'Pro Plan' : 'Free Plan'
   const planStatus = formatStatus(currentSubscription)
-  const isCancellationScheduled =
-    currentSubscription?.tier === 'pro' && currentSubscription.cancelAtPeriodEnd
+  const isCancellationScheduled = Boolean(currentSubscription?.cancelAtPeriodEnd)
   const isPastDue = Boolean(currentSubscription?.isPastDue)
   const StatusIcon = isCancellationScheduled ? AlertCircle : isPastDue ? AlertCircle : Sparkles
 

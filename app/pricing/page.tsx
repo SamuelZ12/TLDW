@@ -12,6 +12,7 @@ export default async function PricingPage() {
 
   let tier: SubscriptionTier | 'anonymous' = 'anonymous'
   let status: SubscriptionStatus = null
+  let cancelAtPeriodEnd = false
 
   if (user) {
     tier = 'free'
@@ -20,12 +21,18 @@ export default async function PricingPage() {
     if (subscription) {
       tier = subscription.tier
       status = subscription.status
+      cancelAtPeriodEnd = subscription.cancelAtPeriodEnd
     }
   }
 
   return (
     <div className="container mx-auto max-w-5xl px-4 py-12 sm:py-16">
-      <PricingContent isAuthenticated={Boolean(user)} tier={tier} status={status} />
+      <PricingContent
+        isAuthenticated={Boolean(user)}
+        tier={tier}
+        status={status}
+        cancelAtPeriodEnd={cancelAtPeriodEnd}
+      />
     </div>
   )
 }

@@ -168,6 +168,13 @@ export const SECURITY_PRESETS = {
     allowedMethods: ['GET', 'POST', 'PUT', 'DELETE'],
     csrfProtection: true
   },
+  AUTHENTICATED_READ_ONLY: {
+    requireAuth: true,
+    rateLimit: RATE_LIMITS.READ_ONLY,
+    maxBodySize: 1024 * 1024, // 1MB
+    allowedMethods: ['GET'],
+    csrfProtection: false
+  },
   STRICT: {
     requireAuth: true,
     rateLimit: {

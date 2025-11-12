@@ -35,7 +35,6 @@ export function UserMenu() {
         const response = await fetch('/api/subscription/status', {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
-          cache: 'no-store',
         })
 
         if (!response.ok) {
@@ -59,7 +58,7 @@ export function UserMenu() {
     return () => {
       isActive = false
     }
-  }, [user])
+  }, [user?.id])
 
   const planActionLabel = subscriptionTier === 'pro'
     ? 'Manage Billing'

@@ -89,6 +89,19 @@ async function getExistingConfiguration(stripe: Stripe): Promise<Stripe.BillingP
 }
 
 /**
+ * Get the product ID from a price
+ */
+async function getProductFromPrice(stripe: Stripe, priceId: string): Promise<string | null> {
+  try {
+    const price = await stripe.prices.retrieve(priceId);
+    return typeof price.product === 'string' ? price.product : price.product.id;
+  } catch (error) {
+    console.error(`❌ Error fetching price ${priceId}:`, error);
+    return null;
+  }
+}
+
+/**
  * Create a new billing portal configuration
  */
 async function createPortalConfiguration(stripe: Stripe): Promise<void> {
@@ -98,6 +111,40 @@ async function createPortalConfiguration(stripe: Stripe): Promise<void> {
   console.log(`📋 Creating Customer Portal configuration...`);
   console.log(`   Mode: ${isTestMode ? 'TEST' : 'LIVE'}`);
   console.log(`   Return URL: ${appUrl}/settings\n`);
+
+  // Get price IDs from environment
+  const monthlyPriceId = process.env.STRIPE_PRO_PRICE_ID;
+  const annualPriceId = process.env.STRIPE_PRO_ANNUAL_PRICE_ID;
+
+  // Fetch product ID from the monthly price
+  let productId: string | null = null;
+  let subscriptionUpdateConfig: any = undefined;
+
+  if (monthlyPriceId && annualPriceId) {
+    console.log('🔍 Fetching product information for subscription updates...\n');
+    productId = await getProductFromPrice(stripe, monthlyPriceId);
+
+    if (productId) {
+      subscriptionUpdateConfig = {
+        enabled: true,
+        default_allowed_updates: ['price'],
+        proration_behavior: 'always_invoice',
+        products: [
+          {
+            product: productId,
+            prices: [monthlyPriceId, annualPriceId],
+          },
+        ],
+      };
+      console.log(`✅ Product found: ${productId}`);
+      console.log(`   Monthly price: ${monthlyPriceId}`);
+      console.log(`   Annual price: ${annualPriceId}\n`);
+    } else {
+      console.log('⚠️  Could not fetch product ID, subscription updates will be disabled\n');
+    }
+  } else {
+    console.log('⚠️  Price IDs not configured, subscription updates will be disabled\n');
+  }
 
   try {
     const configuration = await stripe.billingPortal.configurations.create({
@@ -134,9 +181,9 @@ async function createPortalConfiguration(stripe: Stripe): Promise<void> {
             ],
           },
         },
-        // Note: subscription_update requires specific products to be configured
-        // This can be enabled manually in the Stripe Dashboard if you want to allow
-        // customers to switch between subscription tiers
+        ...(subscriptionUpdateConfig && {
+          subscription_update: subscriptionUpdateConfig,
+        }),
       },
       default_return_url: `${appUrl}/settings`,
     });
@@ -150,7 +197,11 @@ async function createPortalConfiguration(stripe: Stripe): Promise<void> {
     console.log('   • Update email and address');
     console.log('   • View invoice history');
     console.log('   • Update payment methods');
-    console.log('   • Cancel subscriptions (at period end)\n');
+    console.log('   • Cancel subscriptions (at period end)');
+    if (subscriptionUpdateConfig) {
+      console.log('   • Switch between monthly and annual plans');
+    }
+    console.log('');
   } catch (error) {
     if (error instanceof Error) {
       console.error('❌ Error creating portal configuration:', error.message);
@@ -180,6 +231,40 @@ async function updatePortalConfiguration(
   console.log(`📋 Updating existing Customer Portal configuration...`);
   console.log(`   Configuration ID: ${configId}\n`);
 
+  // Get price IDs from environment
+  const monthlyPriceId = process.env.STRIPE_PRO_PRICE_ID;
+  const annualPriceId = process.env.STRIPE_PRO_ANNUAL_PRICE_ID;
+
+  // Fetch product ID from the monthly price
+  let productId: string | null = null;
+  let subscriptionUpdateConfig: any = undefined;
+
+  if (monthlyPriceId && annualPriceId) {
+    console.log('🔍 Fetching product information for subscription updates...\n');
+    productId = await getProductFromPrice(stripe, monthlyPriceId);
+
+    if (productId) {
+      subscriptionUpdateConfig = {
+        enabled: true,
+        default_allowed_updates: ['price'],
+        proration_behavior: 'always_invoice',
+        products: [
+          {
+            product: productId,
+            prices: [monthlyPriceId, annualPriceId],
+          },
+        ],
+      };
+      console.log(`✅ Product found: ${productId}`);
+      console.log(`   Monthly price: ${monthlyPriceId}`);
+      console.log(`   Annual price: ${annualPriceId}\n`);
+    } else {
+      console.log('⚠️  Could not fetch product ID, subscription updates will be disabled\n');
+    }
+  } else {
+    console.log('⚠️  Price IDs not configured, subscription updates will be disabled\n');
+  }
+
   try {
     const configuration = await stripe.billingPortal.configurations.update(configId, {
       business_profile: {
@@ -202,15 +287,25 @@ async function updatePortalConfiguration(
           enabled: true,
           mode: 'at_period_end',
         },
-        // Note: subscription_update requires products to be specified
-        // We omit it during update to avoid requiring product configuration
-        // Users can enable this manually in the Stripe Dashboard if needed
+        ...(subscriptionUpdateConfig && {
+          subscription_update: subscriptionUpdateConfig,
+        }),
       },
     });
 
     console.log('✅ Customer Portal configuration updated successfully!');
     console.log(`   Configuration ID: ${configuration.id}`);
     console.log(`   Active: ${configuration.is_default ? 'Yes (default)' : 'Yes'}\n`);
+
+    console.log('📝 Enabled features:');
+    console.log('   • Update email and address');
+    console.log('   • View invoice history');
+    console.log('   • Update payment methods');
+    console.log('   • Cancel subscriptions (at period end)');
+    if (subscriptionUpdateConfig) {
+      console.log('   • Switch between monthly and annual plans');
+    }
+    console.log('');
   } catch (error) {
     if (error instanceof Error) {
       console.error('❌ Error updating portal configuration:', error.message);

@@ -55,7 +55,7 @@ async function handler(req: NextRequest) {
     // This replaces 3-4 sequential queries with 1 batched query, saving ~150-200ms
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('email, subscription_tier, subscription_status, stripe_customer_id')
+      .select('email, subscription_tier, subscription_status, stripe_customer_id, subscription_current_period_end, cancel_at_period_end, stripe_subscription_id')
       .eq('id', user.id)
       .single();
 
@@ -159,6 +159,29 @@ async function handler(req: NextRequest) {
     const origin = req.headers.get('origin') || req.headers.get('referer')?.split('?')[0].replace(/\/$/, '') || '';
     const appUrl = resolveAppUrl(origin);
 
+    // Check if user has a canceled subscription that's still active
+    const isCanceled = profile.subscription_status === 'canceled' || profile.cancel_at_period_end;
+    const currentPeriodEnd = profile.subscription_current_period_end
+      ? new Date(profile.subscription_current_period_end)
+      : null;
+    const periodEndInFuture = currentPeriodEnd && currentPeriodEnd > new Date();
+
+    // For canceled subscriptions with remaining time, we'll use subscription_schedule
+    // to start the new subscription when the old one ends
+    let scheduleNewSubscription = false;
+    let trialEndTimestamp: number | undefined;
+
+    if (isSubscription && isCanceled && periodEndInFuture && currentPeriodEnd) {
+      scheduleNewSubscription = true;
+      // Convert to Unix timestamp for Stripe (seconds, not milliseconds)
+      trialEndTimestamp = Math.floor(currentPeriodEnd.getTime() / 1000);
+      console.log('Scheduling new subscription to start at period end:', {
+        subscriptionId: profile.stripe_subscription_id,
+        periodEnd: currentPeriodEnd,
+        trialEndTimestamp,
+      });
+    }
+
     // Create Stripe Checkout session
     const stripe = getStripeClient();
     const session = await stripe.checkout.sessions.create({
@@ -179,13 +202,18 @@ async function handler(req: NextRequest) {
       },
       // Allow promotion codes
       allow_promotion_codes: true,
-      // For subscriptions, set billing cycle anchor
+      // For subscriptions, configure subscription data
       ...(mode === 'subscription' && {
         subscription_data: {
           metadata: {
             userId: user.id,
             billingPeriod: validatedData.priceType === 'subscription_annual' ? 'annual' : 'monthly',
           },
+          // If user has canceled subscription, use trial_end to start new subscription
+          // at the end of their current period
+          ...(scheduleNewSubscription && trialEndTimestamp && {
+            trial_end: trialEndTimestamp,
+          }),
         },
       }),
     });

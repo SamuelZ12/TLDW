@@ -20,11 +20,12 @@ interface PricingContentProps {
   isAuthenticated: boolean
   tier: SubscriptionTier | 'anonymous'
   status: SubscriptionStatus
+  cancelAtPeriodEnd: boolean
 }
 
 type BillingPeriod = 'monthly' | 'annual'
 
-export default function PricingContent({ isAuthenticated, tier, status }: PricingContentProps) {
+export default function PricingContent({ isAuthenticated, tier, status, cancelAtPeriodEnd }: PricingContentProps) {
   const router = useRouter()
   const [pendingAction, setPendingAction] = useState<'subscription' | 'topup' | 'portal' | null>(null)
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>('annual')
@@ -32,6 +33,7 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
   const currentTier: SubscriptionTier | 'anonymous' = tier
   const isPro = currentTier === 'pro'
   const isFreeUser = currentTier === 'free'
+  const isCanceled = status === 'canceled' || cancelAtPeriodEnd
 
   const freeFeatures = [
     '5 videos / month',
@@ -237,7 +239,7 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
           </CardContent>
           <CardFooter className="mt-auto flex flex-col gap-2 px-4 pb-2 pt-0">
             <Button
-              onClick={isPro ? handlePortal : () => handleUpgrade(billingPeriod)}
+              onClick={isPro && !isCanceled ? handlePortal : () => handleUpgrade(billingPeriod)}
               disabled={pendingAction !== null}
               size="lg"
               className="w-full rounded-full h-[42px] text-[14px] font-semibold shadow-none"
@@ -248,7 +250,7 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
                   Redirecting...
                 </>
               ) : (
-                isPro ? (status === 'past_due' ? 'Update payment method' : 'Manage billing') : 'Upgrade'
+                isPro && !isCanceled ? (status === 'past_due' ? 'Update payment method' : 'Manage billing') : 'Upgrade'
               )}
             </Button>
           </CardFooter>

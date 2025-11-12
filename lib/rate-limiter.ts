@@ -253,6 +253,12 @@ export const RATE_LIMITS = {
   AUTH_ATTEMPT: {
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: 5 // 5 login attempts per 15 minutes
+  },
+
+  // Read-only endpoints (status checks, etc.)
+  READ_ONLY: {
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 100 // 100 requests per minute
   }
 };
 
