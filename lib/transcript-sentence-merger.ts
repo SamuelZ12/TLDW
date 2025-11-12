@@ -11,23 +11,80 @@ export interface MergedSentence {
 }
 
 /**
+ * Check if a period at the given position is truly sentence-ending
+ * Returns false for decimal numbers, URLs, abbreviations, file extensions
+ */
+function isSentenceEndingPeriod(text: string, periodIndex: number): boolean {
+  // Get characters before and after the period
+  const before = text.charAt(periodIndex - 1);
+  const after = text.charAt(periodIndex + 1);
+
+  // Decimal number: digit before and digit after (e.g., "2.2", "3.14")
+  if (/\d/.test(before) && /\d/.test(after)) {
+    return false;
+  }
+
+  // Check for common TLDs and file extensions (e.g., ".com", ".org", ".txt")
+  // Look at the next few characters after the period
+  const afterPeriod = text.slice(periodIndex + 1, periodIndex + 5).toLowerCase();
+  const commonPatterns = [
+    'com', 'org', 'net', 'edu', 'gov', 'co', 'io', 'ai', 'dev',
+    'txt', 'pdf', 'jpg', 'png', 'gif', 'doc', 'zip', 'html', 'js', 'ts'
+  ];
+
+  for (const pattern of commonPatterns) {
+    // Check if pattern matches and is followed by space, punctuation, or end of string
+    if (afterPeriod.startsWith(pattern)) {
+      const charAfterPattern = text.charAt(periodIndex + 1 + pattern.length);
+      if (!charAfterPattern || /[\s,;!?]/.test(charAfterPattern)) {
+        return false; // It's a TLD or file extension
+      }
+    }
+  }
+
+  // Common abbreviations (check 1-3 chars before period)
+  const beforePeriod = text.slice(Math.max(0, periodIndex - 3), periodIndex).toLowerCase();
+  const commonAbbrevs = ['dr', 'mr', 'mrs', 'ms', 'vs', 'etc', 'inc', 'ltd', 'jr', 'sr'];
+
+  for (const abbrev of commonAbbrevs) {
+    if (beforePeriod.endsWith(abbrev)) {
+      return false;
+    }
+  }
+
+  // If none of the above patterns match, it's likely a sentence-ending period
+  return true;
+}
+
+/**
  * Check if text ends with a sentence-ending punctuation
  */
 function endsWithSentence(text: string): boolean {
   const trimmed = text.trim();
-  // Check for sentence endings: period, question mark, exclamation, or Chinese/Japanese punctuation
-  return /[.!?\u3002\uff01\uff1f\u203c\u2047\u2048]$/.test(trimmed);
+
+  // Check for non-period sentence endings: question mark, exclamation, or Chinese/Japanese punctuation
+  if (/[!?\u3002\uff01\uff1f\u203c\u2047\u2048]$/.test(trimmed)) {
+    return true;
+  }
+
+  // Check for period - need to verify it's truly sentence-ending
+  if (trimmed.endsWith('.')) {
+    const periodIndex = trimmed.length - 1;
+    return isSentenceEndingPeriod(trimmed, periodIndex);
+  }
+
+  return false;
 }
 
 /**
- * Find sentence-ending punctuation near the end of text (within last 2 words)
+ * Find sentence-ending punctuation near the beginning of text (within first 2 words)
  * Returns the index position right after the punctuation, or -1 if none found
  */
-function findLatePunctuation(text: string): number {
+function findEarlyPunctuation(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return -1;
 
-  // Regex to find sentence-ending punctuation
+  // Regex to find all potential sentence-ending punctuation
   const sentencePunctuationRegex = /[.!?\u3002\uff01\uff1f\u203c\u2047\u2048]/g;
 
   // Find all punctuation positions
@@ -39,8 +96,75 @@ function findLatePunctuation(text: string): number {
 
   if (matches.length === 0) return -1;
 
-  // Get the last punctuation position
-  const lastPuncIndex = matches[matches.length - 1];
+  // Filter to only include truly sentence-ending punctuation
+  const sentenceEndingMatches = matches.filter(index => {
+    const char = trimmed.charAt(index);
+
+    // Non-period punctuation is always sentence-ending
+    if (char !== '.') {
+      return true;
+    }
+
+    // For periods, check if they're truly sentence-ending
+    return isSentenceEndingPeriod(trimmed, index);
+  });
+
+  if (sentenceEndingMatches.length === 0) return -1;
+
+  // Get the first true sentence-ending punctuation position
+  const firstPuncIndex = sentenceEndingMatches[0];
+
+  // Get text before the punctuation
+  const beforePunc = trimmed.slice(0, firstPuncIndex).trim();
+
+  // Count words before punctuation
+  const wordsBefore = beforePunc ? beforePunc.split(/\s+/).length : 0;
+
+  // If 0-2 words before punctuation, this is early punctuation
+  if (wordsBefore >= 0 && wordsBefore <= 2) {
+    return firstPuncIndex + 1; // Return position right after punctuation
+  }
+
+  return -1;
+}
+
+/**
+ * Find sentence-ending punctuation near the end of text (within last 2 words)
+ * Returns the index position right after the punctuation, or -1 if none found
+ */
+function findLatePunctuation(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return -1;
+
+  // Regex to find all potential sentence-ending punctuation
+  const sentencePunctuationRegex = /[.!?\u3002\uff01\uff1f\u203c\u2047\u2048]/g;
+
+  // Find all punctuation positions
+  const matches: number[] = [];
+  let match;
+  while ((match = sentencePunctuationRegex.exec(trimmed)) !== null) {
+    matches.push(match.index);
+  }
+
+  if (matches.length === 0) return -1;
+
+  // Filter to only include truly sentence-ending punctuation
+  const sentenceEndingMatches = matches.filter(index => {
+    const char = trimmed.charAt(index);
+
+    // Non-period punctuation is always sentence-ending
+    if (char !== '.') {
+      return true;
+    }
+
+    // For periods, check if they're truly sentence-ending
+    return isSentenceEndingPeriod(trimmed, index);
+  });
+
+  if (sentenceEndingMatches.length === 0) return -1;
+
+  // Get the last true sentence-ending punctuation position
+  const lastPuncIndex = sentenceEndingMatches[sentenceEndingMatches.length - 1];
 
   // Get text after the punctuation
   const afterPunc = trimmed.slice(lastPuncIndex + 1).trim();
@@ -92,6 +216,42 @@ export function mergeTranscriptSegmentsIntoSentences(
         currentSegments.push(segment);
       }
       continue;
+    }
+
+    // Check for early punctuation (within first 2 words)
+    // This handles cases like ". You should" that should attach to previous sentence
+    const earlySplitPos = findEarlyPunctuation(text);
+    if (earlySplitPos > 0 && currentSentence.length > 0) {
+      // Split the text at the early punctuation
+      const beforeEarlyPunc = text.slice(0, earlySplitPos).trim();
+      const afterEarlyPunc = text.slice(earlySplitPos).trim();
+
+      // Add text before punctuation (including punctuation) to current sentence
+      if (beforeEarlyPunc) {
+        currentSentence.push(beforeEarlyPunc);
+      }
+      currentSegments.push(segment);
+
+      // Complete the current sentence
+      merged.push({
+        text: currentSentence.join(' ').replace(/\s+/g, ' ').trim(),
+        startIndex,
+        endIndex: i,
+        segments: [...currentSegments]
+      });
+
+      // Reset for next sentence
+      currentSentence = [];
+      currentSegments = [];
+
+      // Continue processing the rest of the text after early punctuation
+      if (afterEarlyPunc) {
+        text = afterEarlyPunc;
+        // Don't set startIndex yet - will be set below when adding to sentence
+      } else {
+        // No more text in this segment after early punctuation
+        continue;
+      }
     }
 
     // Check for late punctuation (within last 2 words)
