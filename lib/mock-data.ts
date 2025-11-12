@@ -6,18 +6,27 @@
  * You can mix and match: use real video data with mock translation, or vice versa
  */
 
-import transcriptData from '../transcript_data.json';
+import transcriptData from '../resources/transcripts/example_1.json';
 
 export const MOCK_VIDEO_INFO = {
   id: 'dQw4w9WgXcQ',
   title: 'Huberman Lab Essentials: Understanding Emotions',
-  description: 'Dr. Andrew Huberman discusses the science of emotions, including the role of the vagus nerve, dopamine, serotonin, and how food and nutrition impact our emotional states.',
+  description:
+    'Dr. Andrew Huberman discusses the science of emotions, including the role of the vagus nerve, dopamine, serotonin, and how food and nutrition impact our emotional states.',
   duration: 7500, // Approximate duration based on transcript
   thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
   uploadDate: '2024-01-15T10:00:00Z',
   viewCount: 1245823,
   likeCount: 45341,
-  tags: ['neuroscience', 'emotions', 'brain', 'health', 'psychology', 'dopamine', 'serotonin'],
+  tags: [
+    'neuroscience',
+    'emotions',
+    'brain',
+    'health',
+    'psychology',
+    'dopamine',
+    'serotonin'
+  ],
   channel: {
     id: 'UC2D2CMWXMOVWx7giW1n3LIg',
     name: 'Andrew Huberman'

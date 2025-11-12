@@ -1,28 +1,9 @@
-import { GoogleGenerativeAI, GenerationConfig, SchemaType } from '@google/generative-ai';
+import {
+  GoogleGenerativeAI,
+  GenerationConfig,
+  SchemaType
+} from '@google/generative-ai';
 import { z } from 'zod';
-
-export type GeminiErrorType =
-  | 'overloaded'
-  | 'rate limited'
-  | 'authentication failed'
-  | 'invalid request'
-  | 'unknown error';
-
-export class GeminiGenerationError extends Error {
-  readonly type: GeminiErrorType;
-  readonly attemptedModels: string[];
-
-  constructor(type: GeminiErrorType, attemptedModels: string[], message: string, cause?: unknown) {
-    super(message);
-    this.name = 'GeminiGenerationError';
-    this.type = type;
-    this.attemptedModels = attemptedModels;
-    if (cause !== undefined) {
-      // Preserve the original error for logs and debugging in environments without Error.cause support.
-      (this as any).cause = cause;
-    }
-  }
-}
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -32,7 +13,7 @@ const MODEL_CASCADE = [
   'gemini-2.5-pro'
 ] as const;
 
-type ValidModel = typeof MODEL_CASCADE[number];
+type ValidModel = (typeof MODEL_CASCADE)[number];
 
 interface GeminiModelConfig {
   generationConfig?: GenerationConfig;
@@ -46,35 +27,39 @@ function isValidModel(model: string): model is ValidModel {
 }
 
 function isRetryableError(error: any): boolean {
-  if (error instanceof GeminiGenerationError) {
-    return false;
-  }
-  const status = error?.status;
-  const message = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
-  return status === 503 ||
-         status === 429 ||
-         message.includes('503') ||
-         message.includes('429') ||
-         message.includes('overload') ||
-         message.includes('rate limit');
+  return (
+    error?.status === 503 ||
+    error?.status === 429 ||
+    error?.message?.includes('503') ||
+    error?.message?.includes('429') ||
+    error?.message?.includes('overload') ||
+    error?.message?.includes('rate limit')
+  );
 }
 
-function getErrorType(error: any): GeminiErrorType {
-  if (error instanceof GeminiGenerationError) {
-    return error.type;
-  }
-  const status = error?.status;
-  const message = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
-  if (status === 503 || message.includes('503') || message.includes('overload')) {
+function getErrorType(error: any): string {
+  if (
+    error?.status === 503 ||
+    error?.message?.includes('503') ||
+    error?.message?.includes('overload')
+  ) {
     return 'overloaded';
   }
-  if (status === 429 || message.includes('429') || message.includes('rate limit')) {
+  if (
+    error?.status === 429 ||
+    error?.message?.includes('429') ||
+    error?.message?.includes('rate limit')
+  ) {
     return 'rate limited';
   }
-  if (status === 401 || message.includes('401') || message.includes('unauthorized')) {
+  if (
+    error?.status === 401 ||
+    error?.message?.includes('401') ||
+    error?.message?.includes('unauthorized')
+  ) {
     return 'authentication failed';
   }
-  if (status === 400 || message.includes('400')) {
+  if (error?.status === 400 || error?.message?.includes('400')) {
     return 'invalid request';
   }
   return 'unknown error';
@@ -114,7 +99,9 @@ function convertToGeminiSchema(jsonSchema: any): any {
   if (jsonSchema.type === 'array') {
     const arraySchema: Record<string, any> = {
       type: SchemaType.ARRAY,
-      items: jsonSchema.items ? convertToGeminiSchema(jsonSchema.items) : { type: SchemaType.STRING }
+      items: jsonSchema.items
+        ? convertToGeminiSchema(jsonSchema.items)
+        : { type: SchemaType.STRING }
     };
 
     if (typeof jsonSchema.minItems === 'number') {
@@ -151,15 +138,20 @@ export async function generateWithFallback(
   config: GeminiModelConfig = {}
 ): Promise<string> {
   if (config.preferredModel && !isValidModel(config.preferredModel)) {
-    console.warn(`Invalid preferredModel "${config.preferredModel}", using default cascade`);
+    console.warn(
+      `Invalid preferredModel "${config.preferredModel}", using default cascade`
+    );
   }
 
-  const models = config.preferredModel && isValidModel(config.preferredModel)
-    ? [config.preferredModel, ...MODEL_CASCADE.filter(m => m !== config.preferredModel)]
-    : [...MODEL_CASCADE];
+  const models =
+    config.preferredModel && isValidModel(config.preferredModel)
+      ? [
+          config.preferredModel,
+          ...MODEL_CASCADE.filter((m) => m !== config.preferredModel)
+        ]
+      : [...MODEL_CASCADE];
 
   let lastError: any;
-  let lastErrorType: GeminiErrorType = 'unknown error';
   const attemptedModels: string[] = [];
 
   for (const modelName of models) {
@@ -175,17 +167,21 @@ export async function generateWithFallback(
           const geminiSchema = convertToGeminiSchema(jsonSchema);
           generationConfig = {
             ...generationConfig,
-            responseMimeType: "application/json",
+            responseMimeType: 'application/json',
             responseSchema: geminiSchema
           };
           console.log(`Using structured output with schema for ${modelName}`);
         } catch (schemaError) {
-          console.error(`Failed to convert Zod schema to Gemini schema:`, schemaError);
-          throw new GeminiGenerationError(
-            'invalid request',
-            attemptedModels.slice(),
-            `Schema conversion failed: ${schemaError instanceof Error ? schemaError.message : 'Unknown error'}`,
+          console.error(
+            `Failed to convert Zod schema to Gemini schema:`,
             schemaError
+          );
+          throw new Error(
+            `Schema conversion failed: ${
+              schemaError instanceof Error
+                ? schemaError.message
+                : 'Unknown error'
+            }`
           );
         }
       }
@@ -202,7 +198,10 @@ export async function generateWithFallback(
         ? await Promise.race([
             generatePromise,
             new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('Request timeout')), config.timeoutMs)
+              setTimeout(
+                () => reject(new Error('Request timeout')),
+                config.timeoutMs
+              )
             )
           ])
         : await generatePromise;
@@ -214,39 +213,44 @@ export async function generateWithFallback(
       if (response) {
         const usage = geminiResponse?.usageMetadata || {};
         const promptTokens = usage.promptTokenCount ?? 'n/a';
-        const candidateTokens = usage.candidatesTokenCount ?? usage.outputTokenCount ?? 'n/a';
+        const candidateTokens =
+          usage.candidatesTokenCount ?? usage.outputTokenCount ?? 'n/a';
         const totalTokens = usage.totalTokenCount ?? 'n/a';
         console.log(
           `[Gemini][${modelName}] latency=${latencyMs}ms promptChars=${promptLength} ` +
-          `promptTokens=${promptTokens} responseTokens=${candidateTokens} totalTokens=${totalTokens}`
+            `promptTokens=${promptTokens} responseTokens=${candidateTokens} totalTokens=${totalTokens}`
         );
         console.log(`Content generated using ${modelName}`);
         return response;
       }
 
-      console.warn(`Model ${modelName} returned empty response, trying next...`);
+      console.warn(
+        `Model ${modelName} returned empty response, trying next...`
+      );
     } catch (error) {
       lastError = error;
       const errorType = getErrorType(error);
-      lastErrorType = errorType;
 
       if (!isRetryableError(error)) {
-        console.error(`Model ${modelName} failed with non-retryable error (${errorType}):`, error);
-        const message = `Gemini API error (${errorType}): ${error instanceof Error ? error.message : 'Unknown error'}`;
-        throw new GeminiGenerationError(errorType, attemptedModels.slice(), message, error);
+        console.error(
+          `Model ${modelName} failed with non-retryable error (${errorType}):`,
+          error
+        );
+        throw new Error(
+          `Gemini API error (${errorType}): ${
+            error instanceof Error ? error.message : 'Unknown error'
+          }`
+        );
       }
 
       console.log(`Model ${modelName} ${errorType}, trying next...`);
     }
   }
 
-  const errorType = lastErrorType ?? getErrorType(lastError);
-  throw new GeminiGenerationError(
-    errorType,
-    attemptedModels.slice(),
+  const errorType = getErrorType(lastError);
+  throw new Error(
     `All Gemini models failed after trying: ${attemptedModels.join(', ')}. ` +
       `Last error type: ${errorType}. ` +
-      `${lastError instanceof Error ? lastError.message : 'Unknown error'}`,
-    lastError
+      `${lastError instanceof Error ? lastError.message : 'Unknown error'}`
   );
 }

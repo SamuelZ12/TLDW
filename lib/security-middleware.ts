@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { RateLimiter, RATE_LIMITS, rateLimitResponse } from '@/lib/rate-limiter';
+import {
+  RateLimiter,
+  RATE_LIMITS,
+  rateLimitResponse
+} from '@/lib/rate-limiter';
 import { AuditLogger, AuditAction } from '@/lib/audit-logger';
 import { createClient } from '@/lib/supabase/server';
 import { validateCSRF, injectCSRFToken } from '@/lib/csrf-protection';
@@ -22,10 +26,15 @@ export function withSecurity(
   handler: (req: NextRequest) => Promise<NextResponse>,
   config: SecurityMiddlewareConfig = {}
 ) {
-  return async function securedHandler(req: NextRequest): Promise<NextResponse> {
+  return async function securedHandler(
+    req: NextRequest
+  ): Promise<NextResponse> {
     try {
       // 1. Check allowed methods
-      if (config.allowedMethods && !config.allowedMethods.includes(req.method)) {
+      if (
+        config.allowedMethods &&
+        !config.allowedMethods.includes(req.method)
+      ) {
         return NextResponse.json(
           { error: 'Method not allowed' },
           { status: 405 }
@@ -35,13 +44,15 @@ export function withSecurity(
       // 2. Check authentication if required
       if (config.requireAuth) {
         const supabase = await createClient();
-        const { data: { user }, error } = await supabase.auth.getUser();
+        const {
+          data: { user },
+          error
+        } = await supabase.auth.getUser();
 
         if (error || !user) {
-          await AuditLogger.logSecurityEvent(
-            AuditAction.UNAUTHORIZED_ACCESS,
-            { endpoint: req.url }
-          );
+          await AuditLogger.logSecurityEvent(AuditAction.UNAUTHORIZED_ACCESS, {
+            endpoint: req.url
+          });
 
           return NextResponse.json(
             { error: 'Authentication required' },
@@ -58,25 +69,11 @@ export function withSecurity(
         );
 
         if (!rateLimitResult.allowed) {
-          console.warn('[SECURITY] Rate limit exceeded:', {
-            url: req.url,
-            remaining: rateLimitResult.remaining,
-            resetAt: rateLimitResult.resetAt,
-            retryAfter: rateLimitResult.retryAfter,
-            config: {
-              windowMs: config.rateLimit.windowMs,
-              maxRequests: config.rateLimit.maxRequests
-            }
-          });
+          await AuditLogger.logRateLimitExceeded(req.url, 'api-endpoint');
 
-          await AuditLogger.logRateLimitExceeded(
-            req.url,
-            'api-endpoint'
-          );
-
-          return rateLimitResponse(rateLimitResult) || NextResponse.json(
-            { error: 'Rate limit exceeded' },
-            { status: 429 }
+          return (
+            rateLimitResponse(rateLimitResult) ||
+            NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 })
           );
         }
       }
@@ -93,17 +90,17 @@ export function withSecurity(
       }
 
       // 5. CSRF Protection for state-changing operations
-      if (config.csrfProtection && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+      if (
+        config.csrfProtection &&
+        ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
+      ) {
         const csrfValidation = await validateCSRF(req);
         if (!csrfValidation.valid) {
-          await AuditLogger.logSecurityEvent(
-            AuditAction.UNAUTHORIZED_ACCESS,
-            {
-              endpoint: req.url,
-              reason: 'CSRF validation failed',
-              error: csrfValidation.error
-            }
-          );
+          await AuditLogger.logSecurityEvent(AuditAction.UNAUTHORIZED_ACCESS, {
+            endpoint: req.url,
+            reason: 'CSRF validation failed',
+            error: csrfValidation.error
+          });
 
           return NextResponse.json(
             { error: csrfValidation.error || 'CSRF validation failed' },
@@ -119,8 +116,14 @@ export function withSecurity(
       response.headers.set('X-Content-Type-Options', 'nosniff');
       response.headers.set('X-Frame-Options', 'DENY');
       response.headers.set('X-XSS-Protection', '1; mode=block');
-      response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-      response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+      response.headers.set(
+        'Referrer-Policy',
+        'strict-origin-when-cross-origin'
+      );
+      response.headers.set(
+        'Permissions-Policy',
+        'camera=(), microphone=(), geolocation=()'
+      );
 
       // Add CORS headers if needed (configure as per your requirements)
       const origin = req.headers.get('origin');

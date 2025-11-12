@@ -32,7 +32,6 @@ export function UrlInput({
   const showModeSelector = typeof onModeChange === "function";
   const showFeelingLucky = typeof onFeelingLucky === "function";
   const modeValue: TopicGenerationMode = mode ?? "fast";
-  const hasInput = url.trim().length > 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
