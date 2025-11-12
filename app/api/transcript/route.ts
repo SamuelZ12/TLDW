@@ -5,12 +5,15 @@ import { shouldUseMockData, getMockTranscript } from '@/lib/mock-data';
 import { mergeTranscriptSegmentsIntoSentences } from '@/lib/transcript-sentence-merger';
 import { NO_CREDITS_USED_MESSAGE } from '@/lib/no-credits-message';
 
-function respondWithNoCredits(payload: Record<string, unknown>, status: number) {
+function respondWithNoCredits(
+  payload: Record<string, unknown>,
+  status: number
+) {
   return NextResponse.json(
     {
       ...payload,
       creditsMessage: NO_CREDITS_USED_MESSAGE,
-      noCreditsUsed: true,
+      noCreditsUsed: true
     },
     { status }
   );
@@ -30,14 +33,12 @@ async function handler(request: NextRequest) {
       return respondWithNoCredits({ error: 'Invalid YouTube URL' }, 400);
     }
 
-    // Use mock data if enabled (for development when Supadata is rate-limited)
     if (shouldUseMockData()) {
       console.log(
         '[TRANSCRIPT] Using mock data (NEXT_PUBLIC_USE_MOCK_DATA=true)'
       );
       const mockData = getMockTranscript(videoId);
 
-      // Transform mock data to match the expected format
       const rawSegments = mockData.content.map((item: any) => ({
         text: item.text,
         start: item.offset / 1000, // Convert milliseconds to seconds
@@ -46,13 +47,11 @@ async function handler(request: NextRequest) {
 
       // Merge segments into complete sentences for better translation
       const mergedSentences = mergeTranscriptSegmentsIntoSentences(rawSegments);
-      const transformedTranscript = mergedSentences.map(sentence => ({
+      const transformedTranscript = mergedSentences.map((sentence) => ({
         text: sentence.text,
         start: sentence.segments[0].start, // Use first segment's start time
         duration: sentence.segments.reduce((sum, seg) => sum + seg.duration, 0) // Sum all durations
       }));
-
-      console.log('[TRANSCRIPT] Merged', rawSegments.length, 'segments into', transformedTranscript.length, 'sentences');
 
       return NextResponse.json({
         videoId,
@@ -62,9 +61,6 @@ async function handler(request: NextRequest) {
 
     const apiKey = process.env.SUPADATA_API_KEY;
     if (!apiKey) {
-      console.error(
-        '[TRANSCRIPT] SUPADATA_API_KEY environment variable not set'
-      );
       return respondWithNoCredits({ error: 'API configuration error' }, 500);
     }
 
@@ -125,7 +121,10 @@ async function handler(request: NextRequest) {
       if (!response.ok) {
         if (response.status === 404) {
           return respondWithNoCredits(
-            { error: 'No transcript/captions available for this video. The video may not have subtitles enabled.' },
+            {
+              error:
+                'No transcript/captions available for this video. The video may not have subtitles enabled.'
+            },
             404
           );
         }
@@ -246,7 +245,10 @@ async function handler(request: NextRequest) {
         fetchError instanceof Error ? fetchError.message : '';
       if (errorMessage.includes('404')) {
         return respondWithNoCredits(
-          { error: 'No transcript/captions available for this video. The video may not have subtitles enabled.' },
+          {
+            error:
+              'No transcript/captions available for this video. The video may not have subtitles enabled.'
+          },
           404
         );
       }
@@ -254,7 +256,10 @@ async function handler(request: NextRequest) {
     }
 
     if (!transcriptSegments || transcriptSegments.length === 0) {
-      return respondWithNoCredits({ error: 'No transcript available for this video' }, 404);
+      return respondWithNoCredits(
+        { error: 'No transcript available for this video' },
+        404
+      );
     }
 
     const rawSegments = Array.isArray(transcriptSegments)
@@ -276,13 +281,11 @@ async function handler(request: NextRequest) {
 
     // Merge segments into complete sentences for better translation
     const mergedSentences = mergeTranscriptSegmentsIntoSentences(rawSegments);
-    const transformedTranscript = mergedSentences.map(sentence => ({
+    const transformedTranscript = mergedSentences.map((sentence) => ({
       text: sentence.text,
       start: sentence.segments[0].start, // Use first segment's start time
       duration: sentence.segments.reduce((sum, seg) => sum + seg.duration, 0) // Sum all durations
     }));
-
-    console.log('[TRANSCRIPT] Merged', rawSegments.length, 'segments into', transformedTranscript.length, 'sentences');
 
     return NextResponse.json({
       videoId,
