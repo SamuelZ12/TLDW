@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import {
@@ -20,6 +20,52 @@ import { AuthModal } from '@/components/auth-modal'
 export function UserMenu() {
   const { user, loading, signOut } = useAuth()
   const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [subscriptionTier, setSubscriptionTier] = useState<'free' | 'pro' | null>(null)
+
+  useEffect(() => {
+    if (!user) {
+      setSubscriptionTier(null)
+      return
+    }
+
+    let isActive = true
+
+    const fetchSubscriptionTier = async () => {
+      try {
+        const response = await fetch('/api/subscription/status', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+        })
+
+        if (!response.ok) {
+          console.error('Failed to fetch subscription status', response.status)
+          if (isActive) setSubscriptionTier(null)
+          return
+        }
+
+        const payload: { tier?: 'free' | 'pro' | null } = await response.json()
+        if (isActive) {
+          setSubscriptionTier(payload?.tier === 'pro' ? 'pro' : 'free')
+        }
+      } catch (error) {
+        console.error('Error fetching subscription status', error)
+        if (isActive) setSubscriptionTier(null)
+      }
+    }
+
+    fetchSubscriptionTier()
+
+    return () => {
+      isActive = false
+    }
+  }, [user])
+
+  const planActionLabel = subscriptionTier === 'pro'
+    ? 'Manage Billing'
+    : subscriptionTier === 'free'
+      ? 'Upgrade Plan'
+      : 'Plans'
 
   if (loading) {
     return (
@@ -76,7 +122,7 @@ export function UserMenu() {
         <DropdownMenuItem asChild>
           <Link href="/pricing" className="cursor-pointer">
             <Image src="/Person_Star.svg" alt="" width={14} height={14} className="mr-2" />
-            <span>Plans</span>
+            <span>{planActionLabel}</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
@@ -106,4 +152,3 @@ export function UserMenu() {
     </DropdownMenu>
   )
 }
-
