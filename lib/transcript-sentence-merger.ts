@@ -20,6 +20,43 @@ function endsWithSentence(text: string): boolean {
 }
 
 /**
+ * Find sentence-ending punctuation near the end of text (within last 2 words)
+ * Returns the index position right after the punctuation, or -1 if none found
+ */
+function findLatePunctuation(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return -1;
+
+  // Regex to find sentence-ending punctuation
+  const sentencePunctuationRegex = /[.!?\u3002\uff01\uff1f\u203c\u2047\u2048]/g;
+
+  // Find all punctuation positions
+  const matches: number[] = [];
+  let match;
+  while ((match = sentencePunctuationRegex.exec(trimmed)) !== null) {
+    matches.push(match.index);
+  }
+
+  if (matches.length === 0) return -1;
+
+  // Get the last punctuation position
+  const lastPuncIndex = matches[matches.length - 1];
+
+  // Get text after the punctuation
+  const afterPunc = trimmed.slice(lastPuncIndex + 1).trim();
+
+  // Count words after punctuation
+  const wordsAfter = afterPunc ? afterPunc.split(/\s+/).length : 0;
+
+  // If 1-2 words after punctuation, we should split here
+  if (wordsAfter >= 1 && wordsAfter <= 2) {
+    return lastPuncIndex + 1; // Return position right after punctuation
+  }
+
+  return -1;
+}
+
+/**
  * Merge transcript segments into complete sentences for better translation quality
  *
  * @param segments - Array of transcript segments
@@ -36,16 +73,58 @@ export function mergeTranscriptSegmentsIntoSentences(
   let currentSentence: string[] = [];
   let currentSegments: TranscriptSegment[] = [];
   let startIndex = 0;
+  let carryoverText = ''; // Text to prepend to next segment
 
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
-    const text = segment.text || '';
+    let text = segment.text || '';
+
+    // Prepend carryover text from previous segment split
+    if (carryoverText) {
+      text = carryoverText + ' ' + text;
+      carryoverText = '';
+    }
 
     // Skip empty segments
     if (!text.trim()) {
       // If we have accumulated text, still count this as part of the sentence
       if (currentSentence.length > 0) {
         currentSegments.push(segment);
+      }
+      continue;
+    }
+
+    // Check for late punctuation (within last 2 words)
+    const splitPos = findLatePunctuation(text);
+    if (splitPos > 0) {
+      // Split the text at the punctuation
+      const beforePunc = text.slice(0, splitPos).trim();
+      const afterPunc = text.slice(splitPos).trim();
+
+      // Add text before punctuation to current sentence
+      if (currentSentence.length === 0) {
+        startIndex = i;
+      }
+      if (beforePunc) {
+        currentSentence.push(beforePunc);
+      }
+      currentSegments.push(segment);
+
+      // Complete the current sentence
+      merged.push({
+        text: currentSentence.join(' ').replace(/\s+/g, ' ').trim(),
+        startIndex,
+        endIndex: i,
+        segments: [...currentSegments]
+      });
+
+      // Reset for next sentence
+      currentSentence = [];
+      currentSegments = [];
+
+      // Store text after punctuation as carryover for next segment
+      if (afterPunc) {
+        carryoverText = afterPunc;
       }
       continue;
     }
@@ -83,59 +162,15 @@ export function mergeTranscriptSegmentsIntoSentences(
     });
   }
 
-  return merged;
-}
-
-/**
- * Map translated sentences back to individual segment translations
- *
- * @param mergedSentences - Array of merged sentences
- * @param translations - Array of translated texts (must match length of mergedSentences)
- * @returns Map of segment index to translated text
- */
-export function mapTranslationsToSegments(
-  mergedSentences: MergedSentence[],
-  translations: string[]
-): Map<number, string> {
-  const segmentTranslations = new Map<number, string>();
-
-  if (mergedSentences.length !== translations.length) {
-    console.error('[SENTENCE-MERGER] Translation count mismatch', {
-      sentences: mergedSentences.length,
-      translations: translations.length
+  // Handle any remaining carryover text from last segment
+  if (carryoverText.trim()) {
+    merged.push({
+      text: carryoverText.trim(),
+      startIndex: segments.length - 1,
+      endIndex: segments.length - 1,
+      segments: [segments[segments.length - 1]]
     });
-    return segmentTranslations;
   }
 
-  for (let i = 0; i < mergedSentences.length; i++) {
-    const sentence = mergedSentences[i];
-    const translation = translations[i];
-
-    // For now, assign the full translated sentence to each segment
-    // In the future, we could try to split the translation proportionally
-    for (let segIdx = sentence.startIndex; segIdx <= sentence.endIndex; segIdx++) {
-      segmentTranslations.set(segIdx, translation);
-    }
-  }
-
-  return segmentTranslations;
-}
-
-/**
- * Get the sentence group for a specific segment index
- *
- * @param segmentIndex - Index of the segment
- * @param mergedSentences - Array of merged sentences
- * @returns The merged sentence containing this segment, or null if not found
- */
-export function getSentenceForSegment(
-  segmentIndex: number,
-  mergedSentences: MergedSentence[]
-): MergedSentence | null {
-  for (const sentence of mergedSentences) {
-    if (segmentIndex >= sentence.startIndex && segmentIndex <= sentence.endIndex) {
-      return sentence;
-    }
-  }
-  return null;
+  return merged;
 }
