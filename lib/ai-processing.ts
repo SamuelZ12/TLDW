@@ -404,6 +404,13 @@ function buildFallbackTopics(
   fullText: string,
   theme?: string
 ): ParsedTopic[] {
+  // Don't generate generic fallbacks for theme-based generation
+  // If AI can't find theme-relevant content, return empty array
+  if (theme) {
+    console.log(`[buildFallbackTopics] Skipping fallback generation for theme: "${theme}"`);
+    return [];
+  }
+
   if (transcript.length === 0) {
     if (!fullText) return [];
     return [
@@ -541,7 +548,17 @@ ${transcriptWithTimestamps}
     let parsedResponse: ParsedTopic[];
     try {
       parsedResponse = JSON.parse(response);
-    } catch {
+    } catch (error) {
+      console.warn('Failed to parse single-pass topic response as JSON', error);
+
+      // For themed requests, avoid returning generic fallbacks that do not respect the theme.
+      if (theme) {
+        console.warn(
+          `[runSinglePassTopicGeneration] Skipping fallback after parse failure because a theme was requested: "${theme}"`
+        );
+        return [];
+      }
+
       // Dynamic fallback: if total duration is known and short, use the full video window
       const fallbackEnd = totalDuration > 0 ? Math.min(60, Math.round(totalDuration)) : 30;
       const fallbackLabel = isVeryShort || isShort ? 'Full Video' : 'Full Video';

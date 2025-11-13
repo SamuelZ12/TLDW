@@ -169,6 +169,15 @@ export default function AnalyzePage() {
   const [themeTopicsMap, setThemeTopicsMap] = useState<Record<string, Topic[]>>({});
   const [themeCandidateMap, setThemeCandidateMap] = useState<Record<string, TopicCandidate[]>>({});
   const [usedTopicKeys, setUsedTopicKeys] = useState<Set<string>>(new Set());
+  const baseTopicKeySet = useMemo(() => {
+    const keys = new Set<string>();
+    baseTopics.forEach((topic) => {
+      if (topic.quote?.timestamp && topic.quote.text) {
+        keys.add(`${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`);
+      }
+    });
+    return keys;
+  }, [baseTopics]);
   const [isLoadingThemeTopics, setIsLoadingThemeTopics] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
@@ -1372,11 +1381,7 @@ export default function AnalyzePage() {
       setPlayAllIndex(0);
       setIsLoadingThemeTopics(false);
       activeThemeRequestIdRef.current = null;
-      setUsedTopicKeys(new Set(
-        baseTopics
-          .filter((topic): topic is Topic & { quote: { timestamp: string; text: string } } => !!topic.quote?.timestamp && !!topic.quote.text)
-          .map(topic => `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`)
-      ));
+      setUsedTopicKeys(new Set(baseTopicKeySet));
     };
 
     if (!themeLabel) {
@@ -1434,7 +1439,7 @@ export default function AnalyzePage() {
       setIsLoadingThemeTopics(true);
       const requestKey = `theme-topics:${normalizedTheme}:${requestId}`;
       const controller = abortManager.current.createController(requestKey);
-      const exclusionKeys = Array.from(usedTopicKeys).map((key) => key.slice(0, 500));
+      const exclusionKeys = Array.from(baseTopicKeySet).map((key) => key.slice(0, 500));
 
       try {
         const response = await fetch("/api/video-analysis", {
@@ -1458,6 +1463,12 @@ export default function AnalyzePage() {
         }
 
         const data = await response.json();
+
+        // Check if the API returned an error (e.g., no content found for theme)
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
         const hydratedThemeTopics = hydrateTopicsWithTranscript(Array.isArray(data.topics) ? data.topics : [], transcript);
         const candidatePool = Array.isArray(data.topicCandidates) ? data.topicCandidates : undefined;
         setThemeCandidateMap(prev => ({
@@ -1539,6 +1550,7 @@ export default function AnalyzePage() {
     transcript,
     selectedTheme,
     baseTopics,
+    baseTopicKeySet,
     themeTopicsMap,
     usedTopicKeys,
     mode,
