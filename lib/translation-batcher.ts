@@ -26,19 +26,28 @@ export class TranslationBatcher {
   private readonly batchDelay: number;
   private readonly maxBatchSize: number;
   private readonly cache: Map<string, string>;
+  private readonly maxRetries: number;
+  private readonly batchThrottleMs: number;
+  private readonly onError?: (error: Error, isRateLimitError: boolean) => void;
 
   constructor(
-    batchDelay: number = 50,
-    maxBatchSize: number = 100,
-    cache: Map<string, string>
+    batchDelay: number = 20,
+    maxBatchSize: number = 1000,
+    cache: Map<string, string>,
+    maxRetries: number = 3,
+    batchThrottleMs: number = 200,
+    onError?: (error: Error, isRateLimitError: boolean) => void
   ) {
-    if (maxBatchSize < 1 || maxBatchSize > 100) {
-      throw new Error('maxBatchSize must be between 1 and 100');
+    if (maxBatchSize < 1 || maxBatchSize > 10000) {
+      throw new Error('maxBatchSize must be between 1 and 10000');
     }
 
     this.batchDelay = batchDelay;
     this.maxBatchSize = maxBatchSize;
     this.cache = cache;
+    this.maxRetries = maxRetries;
+    this.batchThrottleMs = batchThrottleMs;
+    this.onError = onError;
   }
 
   /**
@@ -140,8 +149,15 @@ export class TranslationBatcher {
     // Group requests by target language
     const byLanguage = this.groupByLanguage(batch);
 
-    // Process each language group
+    // Process each language group with throttling between groups
+    let isFirst = true;
     for (const [targetLanguage, requests] of byLanguage.entries()) {
+      // Add throttle delay between batches (except for the first one)
+      if (!isFirst && this.batchThrottleMs > 0) {
+        await this.sleep(this.batchThrottleMs);
+      }
+      isFirst = false;
+
       await this.translateLanguageGroup(targetLanguage, requests);
     }
   }
@@ -164,56 +180,124 @@ export class TranslationBatcher {
   }
 
   /**
+   * Sleep helper for retry logic
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Calculate exponential backoff delay
+   */
+  private getBackoffDelay(attempt: number, retryAfter?: number): number {
+    // If server provides Retry-After, use it
+    if (retryAfter) {
+      return retryAfter * 1000; // Convert seconds to milliseconds
+    }
+    // Otherwise use exponential backoff: 1s, 2s, 4s, 8s...
+    return Math.min(1000 * Math.pow(2, attempt), 10000); // Cap at 10 seconds
+  }
+
+  /**
    * Translate a group of requests for a single language
    */
   private async translateLanguageGroup(
     targetLanguage: string,
     requests: TranslationRequest[]
   ): Promise<void> {
-    try {
-      // Get unique texts (avoid translating duplicates)
-      const uniqueTexts = Array.from(new Set(requests.map((r) => r.text)));
+    // Get unique texts (avoid translating duplicates)
+    const uniqueTexts = Array.from(new Set(requests.map((r) => r.text)));
 
-      // Make API call
-      const response = await fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          texts: uniqueTexts,
-          targetLanguage: targetLanguage
-        })
-      });
+    let lastError: Error | null = null;
 
-      if (!response.ok) {
-        throw new Error(`Translation API error: ${response.status}`);
+    // Retry loop with exponential backoff
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        // Make API call
+        const response = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            texts: uniqueTexts,
+            targetLanguage: targetLanguage
+          })
+        });
+
+        if (!response.ok) {
+          // Handle rate limiting with retry
+          if (response.status === 429) {
+            const retryAfter = response.headers.get('Retry-After');
+            const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : undefined;
+
+            // If we haven't exceeded max retries, wait and retry
+            if (attempt < this.maxRetries) {
+              const delay = this.getBackoffDelay(attempt, retryAfterSeconds);
+              console.warn(
+                `[Translation] Rate limited (429). Retrying in ${delay}ms (attempt ${attempt + 1}/${this.maxRetries})`
+              );
+              await this.sleep(delay);
+              continue; // Retry
+            }
+
+            // Max retries exceeded
+            throw new Error(`Translation API rate limit exceeded after ${this.maxRetries} retries`);
+          }
+
+          // For other errors, throw immediately
+          throw new Error(`Translation API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const translations: string[] = data.translations;
+
+        // Map texts to translations
+        const translationMap = new Map<string, string>();
+        uniqueTexts.forEach((text, index) => {
+          translationMap.set(text, translations[index] || text);
+        });
+
+        // Resolve all requests and cache results
+        for (const request of requests) {
+          const translation = translationMap.get(request.text) || request.text;
+
+          // Cache it
+          this.cache.set(request.cacheKey, translation);
+
+          // Resolve the promise
+          request.resolve(translation);
+        }
+
+        // Success! Exit retry loop
+        return;
+      } catch (error) {
+        lastError = error as Error;
+
+        // If this is the last attempt, don't retry
+        if (attempt === this.maxRetries) {
+          break;
+        }
+
+        // For non-429 errors, log and exit retry loop
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (!errorMessage?.includes('429') && !errorMessage?.includes('rate limit')) {
+          console.error('[Translation] API error (non-retryable):', error);
+          break;
+        }
       }
+    }
 
-      const data = await response.json();
-      const translations: string[] = data.translations;
+    // If we get here, all retries failed
+    console.error('[Translation] Failed to translate batch after retries:', lastError);
 
-      // Map texts to translations
-      const translationMap = new Map<string, string>();
-      uniqueTexts.forEach((text, index) => {
-        translationMap.set(text, translations[index] || text);
-      });
+    // Notify error handler if provided
+    if (lastError && this.onError) {
+      const isRateLimitError = lastError.message?.includes('429') || lastError.message?.includes('rate limit');
+      this.onError(lastError, isRateLimitError);
+    }
 
-      // Resolve all requests and cache results
-      for (const request of requests) {
-        const translation = translationMap.get(request.text) || request.text;
-
-        // Cache it
-        this.cache.set(request.cacheKey, translation);
-
-        // Resolve the promise
-        request.resolve(translation);
-      }
-    } catch (error) {
-      console.error('[Translation] Failed to translate batch:', error);
-
-      // On error, resolve with original text
-      for (const request of requests) {
-        request.resolve(request.text);
-      }
+    // On error, resolve with original text
+    for (const request of requests) {
+      request.resolve(request.text);
     }
   }
 

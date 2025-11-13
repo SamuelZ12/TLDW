@@ -18,7 +18,7 @@ import { fetchNotes, saveNote } from "@/lib/notes-client";
 import { EditingNote } from "@/components/notes-panel";
 import { useModePreference } from "@/lib/hooks/use-mode-preference";
 import { useTranslation } from "@/lib/hooks/use-translation";
-import { useSubscription } from "@/lib/hooks/use-subscription";
+import { useSubscription, isProSubscriptionActive } from "@/lib/hooks/use-subscription";
 import { useTranscriptExport } from "@/lib/hooks/use-transcript-export";
 
 // Page state for better UX
@@ -284,6 +284,22 @@ export default function AnalyzePage() {
     user,
     onAuthRequired: handleAuthRequired,
   });
+
+  // Ensure we fetch subscription status early so Pro users aren't blocked
+  useEffect(() => {
+    if (user && !subscriptionStatus && !isCheckingSubscription) {
+      fetchSubscriptionStatus().catch((err) => {
+        console.error('Failed to prefetch subscription status:', err);
+      });
+    }
+  }, [user, subscriptionStatus, isCheckingSubscription, fetchSubscriptionStatus]);
+
+  // Allow translation for signed-in users while status loads; enforce once known
+  const canUseTranslation = useMemo(() => {
+    if (!user) return false;
+    if (!subscriptionStatus) return true; // optimistic until we know
+    return isProSubscriptionActive(subscriptionStatus);
+  }, [user, subscriptionStatus]);
 
   const hasSpeakerData = useMemo(() => hasSpeakerMetadata(transcript), [transcript]);
 
@@ -1883,6 +1899,14 @@ export default function AnalyzePage() {
                   onLanguageChange={handleLanguageChange}
                   onRequestExport={handleRequestExport}
                   exportButtonState={exportButtonState}
+                  canUseTranslation={canUseTranslation}
+                  onUpgradeToPro={() => {
+                    if (!user) {
+                      handleAuthRequired();
+                      return;
+                    }
+                    handleUpgradeClick();
+                  }}
                 />
               </div>
             </div>
