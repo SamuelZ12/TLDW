@@ -1,24 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { videoAnalysisRequestSchema, formatValidationError } from '@/lib/validation';
+import {
+  videoAnalysisRequestSchema,
+  formatValidationError
+} from '@/lib/validation';
 import { RateLimiter, RATE_LIMITS } from '@/lib/rate-limiter';
 import { z } from 'zod';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
-import { generateTopicsFromTranscript, generateThemesFromTranscript } from '@/lib/ai-processing';
+import {
+  generateTopicsFromTranscript,
+  generateThemesFromTranscript
+} from '@/lib/ai-processing';
 import { hasUnlimitedVideoAllowance } from '@/lib/access-control';
 import {
   canGenerateVideo,
   consumeVideoCredit,
-  type GenerationDecision,
+  type GenerationDecision
 } from '@/lib/subscription-manager';
 import { NO_CREDITS_USED_MESSAGE } from '@/lib/no-credits-message';
 
-function respondWithNoCredits(payload: Record<string, unknown>, status: number) {
+function respondWithNoCredits(
+  payload: Record<string, unknown>,
+  status: number
+) {
   return NextResponse.json(
     {
       ...payload,
       creditsMessage: NO_CREDITS_USED_MESSAGE,
-      noCreditsUsed: true,
+      noCreditsUsed: true
     },
     { status }
   );
@@ -57,13 +66,17 @@ async function handler(req: NextRequest) {
 
     if (theme) {
       try {
-        const { topics: themedTopics } = await generateTopicsFromTranscript(transcript, model, {
-          videoInfo,
-          theme,
-          excludeTopicKeys: new Set(validatedData.excludeTopicKeys ?? []),
-          includeCandidatePool: false,
-          mode
-        });
+        const { topics: themedTopics } = await generateTopicsFromTranscript(
+          transcript,
+          model,
+          {
+            videoInfo,
+            theme,
+            excludeTopicKeys: new Set(validatedData.excludeTopicKeys ?? []),
+            includeCandidatePool: false,
+            mode
+          }
+        );
 
         return NextResponse.json({
           topics: themedTopics,
@@ -83,7 +96,9 @@ async function handler(req: NextRequest) {
     const supabase = await createClient();
 
     // Get current user if logged in
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
 
     // Check for cached analysis FIRST (before consuming rate limit)
     if (!forceRegenerate) {
@@ -104,7 +119,7 @@ async function handler(req: NextRequest) {
             p_thumbnail_url: cachedVideo.thumbnail_url,
             p_transcript: cachedVideo.transcript,
             p_topics: cachedVideo.topics,
-            p_summary: cachedVideo.summary || null,  // Ensure null instead of undefined
+            p_summary: cachedVideo.summary || null, // Ensure null instead of undefined
             p_suggested_questions: cachedVideo.suggested_questions || null,
             p_model_used: cachedVideo.model_used,
             p_user_id: user.id
@@ -144,14 +159,15 @@ async function handler(req: NextRequest) {
       if (user) {
         generationDecision = await canGenerateVideo(user.id, videoId, {
           client: supabase,
-          skipCacheCheck: true,
+          skipCacheCheck: true
         });
 
         if (!generationDecision.allowed) {
           const tier = generationDecision.subscription?.tier ?? 'free';
           const stats = generationDecision.stats;
           const resetAt =
-            stats?.resetAt ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+            stats?.resetAt ??
+            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
           let errorMessage = 'Monthly limit reached';
           let upgradeMessage =
@@ -187,20 +203,25 @@ async function handler(req: NextRequest) {
               resetAt,
               isAuthenticated: true,
               warning: generationDecision.warning,
-              requiresTopup: generationDecision.requiresTopupPurchase ?? false,
+              requiresTopup: generationDecision.requiresTopupPurchase ?? false
             },
             {
               status: statusCode,
               headers: {
-                'X-RateLimit-Remaining': String(Math.max(stats?.totalRemaining ?? 0, 0)),
-                'X-RateLimit-Reset': resetAt,
-              },
+                'X-RateLimit-Remaining': String(
+                  Math.max(stats?.totalRemaining ?? 0, 0)
+                ),
+                'X-RateLimit-Reset': resetAt
+              }
             }
           );
         }
       } else {
         const rateLimitConfig = RATE_LIMITS.VIDEO_GENERATION_FREE_UNREGISTERED;
-        const rateLimitResult = await RateLimiter.check('video-analysis', rateLimitConfig);
+        const rateLimitResult = await RateLimiter.check(
+          'video-analysis',
+          rateLimitConfig
+        );
 
         if (!rateLimitResult.allowed) {
           return NextResponse.json(
@@ -209,7 +230,7 @@ async function handler(req: NextRequest) {
               message:
                 "You've used your free video this month. Create a free account for 5 videos/month, or upgrade to Pro for 100 videos/month.",
               requiresAuth: true,
-              redirectTo: '/?auth=limit',
+              redirectTo: '/?auth=limit'
             },
             { status: 429 }
           );
@@ -217,12 +238,16 @@ async function handler(req: NextRequest) {
       }
     }
 
-    const generationResult = await generateTopicsFromTranscript(transcript, model, {
-      videoInfo,
-      includeCandidatePool: validatedData.includeCandidatePool,
-      excludeTopicKeys: new Set(validatedData.excludeTopicKeys ?? []),
-      mode
-    });
+    const generationResult = await generateTopicsFromTranscript(
+      transcript,
+      model,
+      {
+        videoInfo,
+        includeCandidatePool: validatedData.includeCandidatePool,
+        excludeTopicKeys: new Set(validatedData.excludeTopicKeys ?? []),
+        mode
+      }
+    );
     const topics = generationResult.topics;
     const topicCandidates = generationResult.candidates;
     const modelUsed = generationResult.modelUsed;
@@ -246,7 +271,7 @@ async function handler(req: NextRequest) {
         subscription: generationDecision.subscription,
         statsSnapshot: generationDecision.stats,
         counted: true,
-        client: supabase,
+        client: supabase
       });
 
       if (!consumeResult.success) {
@@ -258,16 +283,20 @@ async function handler(req: NextRequest) {
       topics,
       themes,
       cached: false,
-      topicCandidates: validatedData.includeCandidatePool ? topicCandidates ?? [] : undefined,
+      topicCandidates: validatedData.includeCandidatePool
+        ? topicCandidates ?? []
+        : undefined,
       modelUsed
     });
-
   } catch (error) {
     // Log error details server-side only
     console.error('Error in video analysis:', error);
 
     // Return generic error message to client
-    return respondWithNoCredits({ error: 'An error occurred while processing your request' }, 500);
+    return respondWithNoCredits(
+      { error: 'An error occurred while processing your request' },
+      500
+    );
   }
 }
 

@@ -17,6 +17,9 @@ import { SelectionActionPayload, EXPLAIN_SELECTION_EVENT } from "@/components/se
 import { fetchNotes, saveNote } from "@/lib/notes-client";
 import { EditingNote } from "@/components/notes-panel";
 import { useModePreference } from "@/lib/hooks/use-mode-preference";
+import { useTranslation } from "@/lib/hooks/use-translation";
+import { useSubscription } from "@/lib/hooks/use-subscription";
+import { useTranscriptExport } from "@/lib/hooks/use-transcript-export";
 
 // Page state for better UX
 type PageState = 'IDLE' | 'ANALYZING_NEW' | 'LOADING_CACHED';
@@ -32,7 +35,7 @@ import { TranscriptExportUpsell } from "@/components/transcript-export-upsell";
 import { useAuth } from "@/contexts/auth-context";
 import { backgroundOperation, AbortManager } from "@/lib/promise-utils";
 import { toast } from "sonner";
-import { createTranscriptExport, hasSpeakerMetadata, type TranscriptExportFormat } from "@/lib/transcript-export";
+import { hasSpeakerMetadata } from "@/lib/transcript-export";
 import { buildSuggestedQuestionFallbacks } from "@/lib/suggested-question-fallback";
 
 const GUEST_LIMIT_MESSAGE = "You've used today's free analysis. Sign in to keep going.";
@@ -61,46 +64,6 @@ type LimitCheckResponse = {
   } | null;
 };
 
-type SubscriptionStatusState =
-  | 'active'
-  | 'trialing'
-  | 'past_due'
-  | 'canceled'
-  | 'incomplete'
-  | 'incomplete_expired'
-  | 'unpaid'
-  | null;
-
-interface SubscriptionStatusResponse {
-  tier: 'free' | 'pro';
-  status: SubscriptionStatusState;
-  stripeCustomerId?: string | null;
-  cancelAtPeriodEnd?: boolean;
-  isPastDue?: boolean;
-  canPurchaseTopup?: boolean;
-  nextBillingDate?: string | null;
-  willConsumeTopup?: boolean;
-  usage: {
-    counted: number;
-    cached: number;
-    baseLimit: number;
-    baseRemaining: number;
-    topupCredits: number;
-    topupRemaining: number;
-    totalRemaining: number;
-    resetAt: string;
-  };
-}
-
-function isProSubscriptionActive(status: SubscriptionStatusResponse | null): boolean {
-  if (!status) {
-    return false;
-  }
-  if (status.tier !== 'pro') {
-    return false;
-  }
-  return status.status === 'active' || status.status === 'trialing' || status.status === 'past_due';
-}
 
 function buildLimitExceededMessage(limitData?: LimitCheckResponse | null): string {
   if (!limitData) {
@@ -236,7 +199,7 @@ export default function AnalyzePage() {
   const memoizedSetIsPlayingAll = useCallback((value: boolean) => {
     setIsPlayingAll(value);
   }, []);
-  
+
   // Takeaways generation state
   const [, setTakeawaysContent] = useState<string | null>(null);
   const [, setIsGeneratingTakeaways] = useState<boolean>(false);
@@ -245,6 +208,14 @@ export default function AnalyzePage() {
 
   // Cached suggested questions
   const [cachedSuggestedQuestions, setCachedSuggestedQuestions] = useState<string[] | null>(null);
+
+  // Use custom hooks for translation
+  const {
+    selectedLanguage,
+    translationCache,
+    handleRequestTranslation,
+    handleLanguageChange,
+  } = useTranslation();
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -277,21 +248,6 @@ export default function AnalyzePage() {
     seoPathRef.current = targetPath;
   }, [routeVideoId, videoId, videoInfo?.title, slugParam]);
 
-  // Transcript export state
-  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
-  const [exportFormat, setExportFormat] = useState<TranscriptExportFormat>('txt');
-  const [includeTimestamps, setIncludeTimestamps] = useState(true);
-  const [includeSpeakers, setIncludeSpeakers] = useState(false);
-  const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
-  const [exportDisableMessage, setExportDisableMessage] = useState<string | null>(null);
-  const [isExportingTranscript, setIsExportingTranscript] = useState(false);
-  const [showExportUpsell, setShowExportUpsell] = useState(false);
-  const [isCheckingSubscription, setIsCheckingSubscription] = useState(false);
-  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatusResponse | null>(null);
-  const subscriptionStatusFetchedAtRef = useRef<number | null>(null);
-
-  const hasSpeakerData = useMemo(() => hasSpeakerMetadata(transcript), [transcript]);
-
   // Use custom hook for timer logic
   const elapsedTime = useElapsedTimer(generationStartTime);
   const processingElapsedTime = useElapsedTimer(processingStartTime);
@@ -300,6 +256,69 @@ export default function AnalyzePage() {
   const { user } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalTrigger, setAuthModalTrigger] = useState<AuthModalTrigger>('generation-limit');
+
+  // Store current video data in sessionStorage before auth
+  const storeCurrentVideoForAuth = useCallback((id?: string) => {
+    const targetVideoId = id ?? videoId;
+    if (targetVideoId && !user) {
+      try {
+        sessionStorage.setItem('pendingVideoId', targetVideoId);
+      } catch (error) {
+        console.error('Failed to persist pending video ID:', error);
+      }
+    }
+  }, [user, videoId]);
+
+  const handleAuthRequired = useCallback(() => {
+    storeCurrentVideoForAuth();
+    setAuthModalTrigger('manual');
+    setAuthModalOpen(true);
+  }, [storeCurrentVideoForAuth]);
+
+  // Use custom hook for subscription
+  const {
+    subscriptionStatus,
+    isCheckingSubscription,
+    fetchSubscriptionStatus,
+  } = useSubscription({
+    user,
+    onAuthRequired: handleAuthRequired,
+  });
+
+  const hasSpeakerData = useMemo(() => hasSpeakerMetadata(transcript), [transcript]);
+
+  // Use custom hook for transcript export
+  const {
+    isExportDialogOpen,
+    exportFormat,
+    includeTimestamps,
+    includeSpeakers,
+    exportErrorMessage,
+    exportDisableMessage,
+    isExportingTranscript,
+    showExportUpsell,
+    exportButtonState,
+    setExportFormat,
+    setIncludeTimestamps,
+    setIncludeSpeakers,
+    setShowExportUpsell,
+    handleExportDialogOpenChange,
+    handleRequestExport,
+    handleConfirmExport,
+    handleUpgradeClick,
+  } = useTranscriptExport({
+    videoId,
+    transcript,
+    topics,
+    videoInfo,
+    user,
+    hasSpeakerData,
+    subscriptionStatus,
+    isCheckingSubscription,
+    fetchSubscriptionStatus,
+    onAuthRequired: handleAuthRequired,
+  });
+
   const [rateLimitInfo, setRateLimitInfo] = useState<{
     remaining: number | null;
     resetAt: Date | null;
@@ -327,19 +346,6 @@ export default function AnalyzePage() {
   const clearPlaybackCommand = useCallback(() => {
     setPlaybackCommand(null);
   }, []);
-
-  // Store current video data in sessionStorage before auth
-  const storeCurrentVideoForAuth = useCallback((id?: string) => {
-    const targetVideoId = id ?? videoId;
-    if (targetVideoId && !user) {
-      try {
-        sessionStorage.setItem('pendingVideoId', targetVideoId);
-        console.log('Stored video for post-auth linking:', targetVideoId);
-      } catch (error) {
-        console.error('Failed to persist pending video ID:', error);
-      }
-    }
-  }, [user, videoId]);
 
   const promptSignInForNotes = useCallback(() => {
     if (user) return;
@@ -477,83 +483,10 @@ export default function AnalyzePage() {
     }
   }, []);
 
-  const fetchSubscriptionStatus = useCallback(
-    async (options?: { force?: boolean }): Promise<SubscriptionStatusResponse | null> => {
-      if (!user) {
-        return null;
-      }
-
-      const lastFetchedAt = subscriptionStatusFetchedAtRef.current;
-      if (
-        !options?.force &&
-        subscriptionStatus &&
-        lastFetchedAt &&
-        Date.now() - lastFetchedAt < 60_000
-      ) {
-        return subscriptionStatus;
-      }
-
-      setIsCheckingSubscription(true);
-      try {
-        const response = await fetch('/api/subscription/status', {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          cache: 'no-store',
-        });
-
-        if (response.status === 401) {
-          storeCurrentVideoForAuth();
-          setAuthModalTrigger('manual');
-          setAuthModalOpen(true);
-          return null;
-        }
-
-        if (!response.ok) {
-          const errorPayload = await response.json().catch(() => ({}));
-          const message =
-            typeof (errorPayload as { error?: string }).error === 'string'
-              ? (errorPayload as { error?: string }).error!
-              : 'Failed to check subscription status. Please try again.';
-          toast.error(message);
-          return null;
-        }
-
-        const data: SubscriptionStatusResponse = await response.json();
-        setSubscriptionStatus(data);
-        subscriptionStatusFetchedAtRef.current = Date.now();
-        return data;
-      } catch (error) {
-        console.error('Failed to fetch subscription status:', error);
-        toast.error('Unable to check your subscription right now.');
-        return null;
-      } finally {
-        setIsCheckingSubscription(false);
-      }
-    },
-    [user, subscriptionStatus, storeCurrentVideoForAuth, setAuthModalTrigger, setAuthModalOpen]
-  );
-
   // Check rate limit status on mount
   useEffect(() => {
     checkRateLimit();
   }, [checkRateLimit]);
-
-  useEffect(() => {
-    subscriptionStatusFetchedAtRef.current = null;
-    setSubscriptionStatus(null);
-  }, [user]);
-
-  useEffect(() => {
-    if (exportFormat === 'srt' && !includeTimestamps) {
-      setIncludeTimestamps(true);
-    }
-  }, [exportFormat, includeTimestamps]);
-
-  useEffect(() => {
-    if (!hasSpeakerData && includeSpeakers) {
-      setIncludeSpeakers(false);
-    }
-  }, [hasSpeakerData, includeSpeakers]);
 
   // Handle pending video linking when user logs in and videoId is available
   useEffect(() => {
@@ -970,7 +903,7 @@ export default function AnalyzePage() {
 
       // Move to understanding stage
       setLoadingStage('understanding');
-      
+
       // Generate quick preview (non-blocking)
       fetch("/api/quick-preview", {
         method: "POST",
@@ -999,7 +932,7 @@ export default function AnalyzePage() {
         .catch((error) => {
           console.error('Error generating quick preview:', error);
         });
-      
+
       // Initiate parallel API requests for topics and takeaways
       setLoadingStage('generating');
       setGenerationStartTime(Date.now());
@@ -1043,76 +976,85 @@ export default function AnalyzePage() {
       setShowChatTab(true);
       setIsGeneratingTakeaways(true);
 
-      // Wait for both to complete using Promise.allSettled
-      const [topicsResult, takeawaysResult] = await Promise.allSettled([
-        topicsPromise,
-        takeawaysPromise
-      ]);
+      const toSettled = <T,>(promise: Promise<T>) =>
+        promise.then(
+          (value) => ({ status: 'fulfilled', value } as const),
+          (reason) => ({ status: 'rejected', reason } as const)
+        );
+
+      const topicsSettledPromise = toSettled(topicsPromise);
+      const takeawaysSettledPromise = toSettled(takeawaysPromise);
+
+      const topicsResult = await topicsSettledPromise;
+      if (topicsResult.status === 'rejected') {
+        takeawaysController.abort();
+        await takeawaysSettledPromise;
+        throw topicsResult.reason;
+      }
+
+      const topicsRes = topicsResult.value;
+      if (!topicsRes.ok) {
+        const errorData = await topicsRes.json().catch(() => ({ error: "Unknown error" }));
+        const requiresAuth = Boolean((errorData as any)?.requiresAuth);
+
+        if (topicsRes.status === 429 && requiresAuth) {
+          takeawaysController.abort();
+          await takeawaysSettledPromise;
+          redirectToAuthForLimit(
+            typeof (errorData as any)?.message === "string" ? (errorData as any).message : undefined,
+            extractedVideoId
+          );
+          return;
+        }
+
+        if (topicsRes.status === 429) {
+          setIsRateLimitError(true);
+          checkRateLimit();
+          takeawaysController.abort();
+          await takeawaysSettledPromise;
+
+          const limitMessageRaw =
+            typeof (errorData as any)?.message === "string"
+              ? (errorData as any).message.trim()
+              : "";
+
+          const limitErrorRaw =
+            typeof (errorData as any)?.error === "string"
+              ? (errorData as any).error.trim()
+              : "";
+
+          const limitMessage =
+            limitMessageRaw.length > 0
+              ? limitMessageRaw
+              : limitErrorRaw.length > 0
+                ? limitErrorRaw
+                : AUTH_LIMIT_MESSAGE;
+
+          throw new Error(limitMessage);
+        }
+
+        takeawaysController.abort();
+        await takeawaysSettledPromise;
+        const message = buildApiErrorMessage(errorData, "Failed to generate topics");
+        throw new Error(message);
+      }
+
+      const topicsData = await topicsRes.json();
+      const rawTopics = Array.isArray(topicsData.topics) ? topicsData.topics : [];
+      const generatedTopics: Topic[] = hydrateTopicsWithTranscript(rawTopics, normalizedTranscriptData);
+      const generatedThemes: string[] = Array.isArray(topicsData.themes) ? topicsData.themes : [];
+      const rawCandidates: TopicCandidate[] = Array.isArray(topicsData.topicCandidates) ? topicsData.topicCandidates : [];
+      const generatedCandidates: TopicCandidate[] = rawCandidates.map(candidate => ({
+        ...candidate,
+        key: `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`
+      }));
+
+      const takeawaysResult = await takeawaysSettledPromise;
 
       // Move to processing stage
       setLoadingStage('processing');
       setGenerationStartTime(null);
       setProcessingStartTime(Date.now());
-
-      // Process topics result
-      let generatedTopics: Topic[] = [];
-      let generatedThemes: string[] = [];
-      let generatedCandidates: TopicCandidate[] = [];
-      if (topicsResult.status === 'fulfilled') {
-        const topicsRes = topicsResult.value;
-
-        if (!topicsRes.ok) {
-          const errorData = await topicsRes.json().catch(() => ({ error: "Unknown error" }));
-          const requiresAuth = Boolean((errorData as any)?.requiresAuth);
-
-          if (topicsRes.status === 429 && requiresAuth) {
-            redirectToAuthForLimit(
-              typeof (errorData as any)?.message === "string" ? (errorData as any).message : undefined,
-              extractedVideoId
-            );
-            return;
-          }
-
-          if (topicsRes.status === 429) {
-            setIsRateLimitError(true);
-            checkRateLimit();
-
-            const limitMessageRaw =
-              typeof (errorData as any)?.message === "string"
-                ? (errorData as any).message.trim()
-                : "";
-
-            const limitErrorRaw =
-              typeof (errorData as any)?.error === "string"
-                ? (errorData as any).error.trim()
-                : "";
-
-            const limitMessage =
-              limitMessageRaw.length > 0
-                ? limitMessageRaw
-                : limitErrorRaw.length > 0
-                  ? limitErrorRaw
-                  : AUTH_LIMIT_MESSAGE;
-
-            throw new Error(limitMessage);
-          }
-
-          const message = buildApiErrorMessage(errorData, "Failed to generate topics");
-          throw new Error(message);
-        }
-
-        const topicsData = await topicsRes.json();
-        const rawTopics = Array.isArray(topicsData.topics) ? topicsData.topics : [];
-        generatedTopics = hydrateTopicsWithTranscript(rawTopics, normalizedTranscriptData);
-        generatedThemes = Array.isArray(topicsData.themes) ? topicsData.themes : [];
-        generatedCandidates = Array.isArray(topicsData.topicCandidates) ? topicsData.topicCandidates : [];
-        generatedCandidates = generatedCandidates.map(candidate => ({
-          ...candidate,
-          key: `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`
-        }));
-      } else {
-        throw topicsResult.reason;
-      }
 
       // Process takeaways result from parallel execution
       let generatedTakeaways = null;
@@ -1241,8 +1183,8 @@ export default function AnalyzePage() {
 
           const questions = Array.isArray((parsed as any)?.questions)
             ? (parsed as any).questions
-                .filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0)
-                .map((item: string) => item.trim())
+              .filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0)
+              .map((item: string) => item.trim())
             : [];
 
           const normalizedQuestions = questions.length > 0
@@ -1276,7 +1218,7 @@ export default function AnalyzePage() {
           console.error("Failed to generate suggested questions:", error);
         }
       );
-      
+
     } catch (err) {
       setError(
         normalizeErrorMessage(
@@ -1289,6 +1231,7 @@ export default function AnalyzePage() {
       setLoadingStage(null);
       setGenerationStartTime(null);
       setProcessingStartTime(null);
+      setIsGeneratingTakeaways(false);
     }
   }, [
     rateLimitInfo.remaining,
@@ -1321,7 +1264,7 @@ export default function AnalyzePage() {
     // Reset Play All mode when clicking a citation
     setIsPlayingAll(false);
     setPlayAllIndex(0);
-    
+
     setSelectedTopic(null);
     setCitationHighlight(citation);
 
@@ -1595,7 +1538,7 @@ export default function AnalyzePage() {
     const adjustRightColumnHeight = () => {
       const videoContainer = document.getElementById("video-container");
       const rightColumnContainer = document.getElementById("right-column-container");
-      
+
       if (videoContainer && rightColumnContainer) {
         const videoHeight = videoContainer.offsetHeight;
         setTranscriptHeight(`${videoHeight}px`);
@@ -1607,7 +1550,7 @@ export default function AnalyzePage() {
 
     // Adjust on window resize
     window.addEventListener("resize", adjustRightColumnHeight);
-    
+
     // Also observe video container for size changes
     const resizeObserver = new ResizeObserver(adjustRightColumnHeight);
     const videoContainer = document.getElementById("video-container");
@@ -1728,206 +1671,6 @@ export default function AnalyzePage() {
   const handleCancelEditing = useCallback(() => {
     setEditingNote(null);
   }, []);
-
-  const handleExportDialogOpenChange = useCallback((open: boolean) => {
-    setIsExportDialogOpen(open);
-    if (!open) {
-      setExportErrorMessage(null);
-      setExportDisableMessage(null);
-    }
-  }, []);
-
-  const handleRequestExport = useCallback(async () => {
-    if (!videoId || transcript.length === 0) {
-      toast.error('Transcript is still loading. Try again in a few seconds.');
-      return;
-    }
-
-    if (!user) {
-      storeCurrentVideoForAuth();
-      setAuthModalTrigger('manual');
-      setAuthModalOpen(true);
-      return;
-    }
-
-    const status = await fetchSubscriptionStatus();
-    if (!status) {
-      return;
-    }
-
-    if (status.tier !== 'pro') {
-      setShowExportUpsell(true);
-      return;
-    }
-
-    if (!isProSubscriptionActive(status)) {
-      setExportDisableMessage('Your subscription is not active. Visit billing to reactivate and continue exporting transcripts.');
-      setExportErrorMessage(null);
-      setIsExportDialogOpen(true);
-      return;
-    }
-
-    if (status.usage.totalRemaining <= 0) {
-      setExportDisableMessage('You’ve hit your export limit. Purchase a top-up or wait for your cycle reset.');
-      setExportErrorMessage(null);
-      setIsExportDialogOpen(true);
-      return;
-    }
-
-    setExportDisableMessage(null);
-    setExportErrorMessage(null);
-    setIsExportDialogOpen(true);
-  }, [
-    videoId,
-    transcript.length,
-    user,
-    storeCurrentVideoForAuth,
-    setAuthModalTrigger,
-    setAuthModalOpen,
-    fetchSubscriptionStatus,
-  ]);
-
-  const handleConfirmExport = useCallback(async () => {
-    if (transcript.length === 0) {
-      setExportErrorMessage('Transcript is still loading. Please try again.');
-      return;
-    }
-
-    const status = await fetchSubscriptionStatus();
-    if (!status) {
-      setExportErrorMessage('Unable to verify your subscription. Please try again.');
-      return;
-    }
-
-    if (status.tier !== 'pro') {
-      setShowExportUpsell(true);
-      setIsExportDialogOpen(false);
-      return;
-    }
-
-    if (!isProSubscriptionActive(status)) {
-      setExportDisableMessage('Your subscription is not active. Visit billing to reactivate and continue exporting transcripts.');
-      return;
-    }
-
-    if (status.usage.totalRemaining <= 0) {
-      setExportDisableMessage('You’ve hit your export limit. Purchase a top-up or wait for your cycle reset.');
-      return;
-    }
-
-    setIsExportingTranscript(true);
-    setExportErrorMessage(null);
-
-    try {
-      const { blob, filename } = createTranscriptExport(transcript, {
-        format: exportFormat,
-        includeSpeakers: includeSpeakers && hasSpeakerData,
-        includeTimestamps: exportFormat === 'srt' ? true : includeTimestamps,
-        videoTitle: videoInfo?.title,
-        videoAuthor: videoInfo?.author,
-        topics,
-      });
-
-      const downloadUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = downloadUrl;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(downloadUrl);
-
-      toast.success('Transcript export started');
-      setIsExportDialogOpen(false);
-      setExportDisableMessage(null);
-      await fetchSubscriptionStatus({ force: true });
-    } catch (error) {
-      console.error('Transcript export failed:', error);
-      const message =
-        error instanceof Error ? error.message : 'Failed to export transcript. Please try again.';
-      setExportErrorMessage(message);
-      toast.error("We couldn't generate that export. Try again in a moment.");
-    } finally {
-      setIsExportingTranscript(false);
-    }
-  }, [
-    transcript,
-    fetchSubscriptionStatus,
-    exportFormat,
-    includeSpeakers,
-    hasSpeakerData,
-    includeTimestamps,
-    videoInfo,
-    topics,
-  ]);
-
-  const handleUpgradeClick = useCallback(() => {
-    router.push('/pricing');
-  }, [router]);
-
-  const exportButtonState = useMemo(() => {
-    if (!videoId || transcript.length === 0) {
-      return {
-        disabled: true,
-        tooltip: 'Transcript is still loading',
-      };
-    }
-
-    if (isExportingTranscript) {
-      return {
-        disabled: true,
-        isLoading: true,
-        tooltip: 'Preparing export…',
-      };
-    }
-
-    if (isCheckingSubscription) {
-      return {
-        disabled: true,
-        isLoading: true,
-        tooltip: 'Checking export availability…',
-      };
-    }
-
-    if (!user) {
-      return {
-        badgeLabel: 'Pro',
-        tooltip: 'Sign in to export transcripts',
-      };
-    }
-
-    if (subscriptionStatus && subscriptionStatus.tier !== 'pro') {
-      return {
-        badgeLabel: 'Pro',
-        tooltip: 'Upgrade to Pro to export transcripts',
-      };
-    }
-
-    if (subscriptionStatus && !isProSubscriptionActive(subscriptionStatus)) {
-      return {
-        badgeLabel: 'Pro',
-        tooltip: 'Reactivate your subscription to export transcripts',
-      };
-    }
-
-    if (subscriptionStatus && subscriptionStatus.usage.totalRemaining <= 0) {
-      return {
-        badgeLabel: 'Pro',
-        tooltip: 'You’ve hit your export limit. Purchase a top-up or wait for reset.',
-      };
-    }
-
-    return {
-      tooltip: 'Export transcript',
-    };
-  }, [
-    videoId,
-    transcript.length,
-    isExportingTranscript,
-    isCheckingSubscription,
-    user,
-    subscriptionStatus,
-  ]);
 
   return (
     <div className="min-h-screen bg-white pt-12 pb-2">
@@ -2070,6 +1813,8 @@ export default function AnalyzePage() {
                   setIsPlayingAll={memoizedSetIsPlayingAll}
                   renderControls={false}
                   onDurationChange={setVideoDuration}
+                  selectedLanguage={selectedLanguage}
+                  onRequestTranslation={handleRequestTranslation}
                 />
                 {(themes.length > 0 || isLoadingThemeTopics || themeError || selectedTheme) && (
                   <div className="flex justify-center">
@@ -2079,6 +1824,8 @@ export default function AnalyzePage() {
                       onSelect={handleThemeSelect}
                       isLoading={isLoadingThemeTopics}
                       error={themeError}
+                      selectedLanguage={selectedLanguage}
+                      onRequestTranslation={handleRequestTranslation}
                     />
                   </div>
                 )}
@@ -2096,6 +1843,8 @@ export default function AnalyzePage() {
                   transcript={transcript}
                   isLoadingThemeTopics={isLoadingThemeTopics}
                   videoId={videoId ?? undefined}
+                  selectedLanguage={selectedLanguage}
+                  onRequestTranslation={handleRequestTranslation}
                 />
               </div>
             </div>
@@ -2129,6 +1878,9 @@ export default function AnalyzePage() {
                   onCancelEditing={handleCancelEditing}
                   isAuthenticated={!!user}
                   onRequestSignIn={promptSignInForNotes}
+                  selectedLanguage={selectedLanguage}
+                  onRequestTranslation={handleRequestTranslation}
+                  onLanguageChange={handleLanguageChange}
                   onRequestExport={handleRequestExport}
                   exportButtonState={exportButtonState}
                 />

@@ -1,12 +1,12 @@
-import { type NextRequest, NextResponse } from 'next/server'
-import { updateSession } from '@/lib/supabase/middleware'
+import { type NextRequest, NextResponse } from 'next/server';
+import { updateSession } from '@/lib/supabase/middleware';
 
 export async function middleware(request: NextRequest) {
   // First, handle Supabase session update
-  const response = await updateSession(request)
+  const response = await updateSession(request);
 
   // Add Content-Security-Policy and other security headers
-  const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
+  const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
 
   // Define CSP directives
   const cspHeader = [
@@ -18,30 +18,33 @@ export async function middleware(request: NextRequest) {
     "connect-src 'self' https://api.supadata.ai https://*.supabase.co https://*.googleapis.com wss://*.supabase.co https://www.youtube.com https://api.stripe.com",
     "media-src 'self' blob: https://www.youtube.com",
     "object-src 'none'",
-    "frame-src https://www.youtube.com https://youtube.com",
+    'frame-src https://www.youtube.com https://youtube.com',
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "upgrade-insecure-requests"
-  ].join('; ')
+    'upgrade-insecure-requests'
+  ].join('; ');
 
   // Apply security headers
-  response.headers.set('Content-Security-Policy', cspHeader)
-  response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-Frame-Options', 'DENY')
-  response.headers.set('X-XSS-Protection', '1; mode=block')
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  response.headers.set('Content-Security-Policy', cspHeader);
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  response.headers.set(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=()'
+  );
 
   // Add HSTS header for production
   if (process.env.NODE_ENV === 'production') {
     response.headers.set(
       'Strict-Transport-Security',
       'max-age=31536000; includeSubDomains'
-    )
+    );
   }
 
-  return response
+  return response;
 }
 
 export const config = {
@@ -53,6 +56,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * Feel free to modify this pattern to include more paths.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
-}
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'
+  ]
+};

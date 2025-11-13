@@ -53,7 +53,7 @@ export default function RootLayout({
                     className="h-7 w-7"
                     priority
                   />
-                  
+
                 </Link>
                 <div className="pointer-events-auto">
                   <UserMenu />
