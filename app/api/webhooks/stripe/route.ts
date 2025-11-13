@@ -9,6 +9,7 @@ import { AuditLogger, AuditAction } from '@/lib/audit-logger';
 import type { ProfilesUpdate } from '@/lib/supabase/types';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const DUPLICATE_EVENT_CODE = '23505';
 
@@ -16,7 +17,7 @@ async function handler(req: NextRequest) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   if (!webhookSecret) {
-    console.error('STRIPE_WEBHOOK_SECRET is not configured');
+    console.error('❌ STRIPE_WEBHOOK_SECRET is not configured');
     return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 });
   }
 
@@ -29,12 +30,16 @@ async function handler(req: NextRequest) {
     const body = await req.text();
     const signature = req.headers.get('stripe-signature');
 
+    console.log(`📨 Webhook request received - Body length: ${body.length} bytes`);
+
     if (!signature) {
-      console.error('Missing stripe-signature header');
+      console.error('❌ Missing stripe-signature header');
       return NextResponse.json({ error: 'Missing signature' }, { status: 400 });
     }
 
+    console.log('🔐 Attempting to verify webhook signature...');
     const event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+    console.log(`✅ Signature verified successfully for event ${event.type}`);
     eventId = event.id;
 
     eventLocked = await lockStripeEvent(event.id, supabase);
@@ -49,18 +54,26 @@ async function handler(req: NextRequest) {
     console.log(`✅ Successfully processed Stripe webhook: ${event.type} (${event.id})`);
     return NextResponse.json({ received: true });
   } catch (error) {
-    console.error('Error processing webhook:', error);
+    console.error('❌ Error processing webhook:', error);
+    console.error('Error details:', error instanceof Error ? {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    } : error);
 
     if (eventLocked && eventId) {
+      console.log(`🔓 Releasing event lock for ${eventId}`);
       await releaseStripeEvent(eventId, supabase);
     }
 
     // If it's a signature validation error, return 400 (don't retry)
     if (error instanceof Error && error.message.includes('signature')) {
+      console.error('❌ Signature validation failed - this indicates a webhook secret mismatch or body tampering');
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
     // For other errors, return 500 so Stripe retries the webhook
+    console.error('❌ Webhook processing failed - Stripe will retry');
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
   }
 }
