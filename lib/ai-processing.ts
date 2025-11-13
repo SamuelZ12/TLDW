@@ -499,6 +499,7 @@ async function runSinglePassTopicGeneration(
       <criterion name="Format">Write each title as a complete sentence or question.</criterion>
       <criterion name="LengthLimit">Keep titles to a maximum of 10 words.</criterion>
       <criterion name="Synthesized">Connect ideas that span multiple moments in the talk.</criterion>
+      <criterion name="TemporalDistribution">Ensure topics are distributed throughout the video timeline. Explicitly consider content from the beginning, middle, and end sections. Avoid clustering all topics in the opening portion—scan the entire duration for valuable insights.</criterion>
     </themeCriteria>
   </step>
   <step name="SelectPassage">
