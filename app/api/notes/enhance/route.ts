@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withSecurity } from "@/lib/security-middleware";
-import { generateWithFallback } from "@/lib/gemini-client";
+import { generateAIResponse } from "@/lib/ai-client";
 import { z } from "zod";
 
 const enhancePayloadSchema = z.object({
@@ -106,12 +106,10 @@ async function handler(req: NextRequest) {
   let cleanedText: string | null = null;
 
   try {
-    const response = await generateWithFallback(prompt, {
-      generationConfig: {
-        temperature: 0.2,
-        topP: 0.8,
-        maxOutputTokens: 512,
-      },
+    const response = await generateAIResponse(prompt, {
+      temperature: 0.2,
+      topP: 0.8,
+      maxOutputTokens: 512,
       timeoutMs: 15000,
     });
 
@@ -119,7 +117,7 @@ async function handler(req: NextRequest) {
       cleanedText = tidyWhitespace(response);
     }
   } catch (error) {
-    console.error("Gemini enhancement failed:", error);
+    console.error("AI enhancement failed:", error);
     cleanedText = null;
   }
 

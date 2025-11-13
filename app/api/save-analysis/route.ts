@@ -4,6 +4,9 @@ import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 import { z } from 'zod';
 import { formatValidationError } from '@/lib/validation';
 
+const DEFAULT_ANALYSIS_MODEL =
+  process.env.AI_DEFAULT_MODEL ?? 'grok-4-fast-non-reasoning';
+
 const saveAnalysisSchema = z.object({
   videoId: z.string().min(1, 'Video ID is required'),
   videoInfo: z.object({
@@ -22,7 +25,7 @@ const saveAnalysisSchema = z.object({
   topics: z.array(z.any()),
   summary: z.string().nullable().optional(),
   suggestedQuestions: z.array(z.string()).nullable().optional(),
-  model: z.string().default('gemini-2.5-flash')
+  model: z.string().default(DEFAULT_ANALYSIS_MODEL)
 });
 
 async function handler(req: NextRequest) {

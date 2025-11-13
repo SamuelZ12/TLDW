@@ -414,7 +414,6 @@ export function AIChat({ transcript, topics, videoId, videoTitle, videoInfo, onC
           topics: sanitizedTopicsForChat,
           videoId,
           chatHistory: messages,
-          model: 'gemini-2.5-flash-lite',
         }),
         signal: controller.signal,
       });

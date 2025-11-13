@@ -11,7 +11,8 @@ import {
   findTextInTranscript,
   TranscriptIndex
 } from '@/lib/quote-matcher';
-import { generateWithFallback } from '@/lib/gemini-client';
+import { generateAIResponse } from '@/lib/ai-client';
+import { getProviderKey } from '@/lib/ai-providers';
 import { topicGenerationSchema } from '@/lib/schemas';
 import { parseTimestampRange } from '@/lib/timestamp-utils';
 import { z } from 'zod';
@@ -23,6 +24,13 @@ interface ParsedTopic {
     text: string;
   };
 }
+
+const DEFAULT_AI_MODEL =
+  process.env.AI_DEFAULT_MODEL ?? 'grok-4-fast-non-reasoning';
+const FAST_MODEL_DEFAULT =
+  process.env.AI_FAST_MODEL ?? DEFAULT_AI_MODEL;
+const PRO_MODEL_DEFAULT =
+  process.env.AI_PRO_MODEL ?? FAST_MODEL_DEFAULT;
 
 interface GenerateTopicsOptions {
   videoInfo?: Partial<VideoInfo>;
@@ -204,6 +212,16 @@ function buildChunkPrompt(
     ? `  <item>Focus exclusively on material that clearly expresses the theme "${theme}". Skip anything unrelated.</item>\n`
     : '';
 
+  // Adapt duration guidance to short chunks (e.g., short videos)
+  const chunkDuration = Math.max(0, Math.round(chunk.end - chunk.start));
+  let durationInstruction =
+    '  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote lasting roughly 45-75 seconds.</item>';
+  if (chunkDuration > 0 && chunkDuration < 45) {
+    durationInstruction = `  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote that fits within this ${chunkDuration}s chunk. It’s OK if the quote is shorter than 45s; pick the single best self-contained passage (the entire chunk is acceptable).</item>`;
+  } else if (chunkDuration > 0 && chunkDuration <= 75) {
+    durationInstruction = `  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote up to ${chunkDuration}s that stands alone.</item>`;
+  }
+
   return `<task>
 <role>You are an expert content strategist reviewing a portion of a video transcript.</role>
 <context>
@@ -213,7 +231,7 @@ Chunk window: ${chunkWindow}
 <goal>Identify up to ${maxCandidates} compelling highlight reel ideas that originate entirely within this transcript slice.</goal>
 <instructions>
   <item>Only use content from this chunk. If nothing stands out, return an empty list.</item>
-  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote lasting of roughly 45-75 seconds.</item>
+${durationInstruction}
   <item>Quote text must match the transcript exactly—no paraphrasing, ellipses, or stitching from multiple places.</item>
   <item>Use absolute timestamps in [MM:SS-MM:SS] format that match the transcript lines.</item>
   <item>Focus on contrarian insights, vivid stories, or data-backed arguments that could stand alone.</item>
@@ -320,9 +338,9 @@ async function reduceCandidateSubset(
   let reduceSelections: Array<{ candidateIndex: number; title: string }> = [];
 
   try {
-    const reduceResponse = await generateWithFallback(reducePrompt, {
+    const reduceResponse = await generateAIResponse(reducePrompt, {
       preferredModel: options.fastModel,
-      generationConfig: { temperature: 0.4 },
+      temperature: 0.4,
       zodSchema: selectionSchema
     });
 
@@ -447,12 +465,26 @@ async function runSinglePassTopicGeneration(
   model: string,
   theme?: string
 ): Promise<ParsedTopic[]> {
+  // Determine overall video duration to adapt duration guidance for short videos
+  const totalDuration =
+    transcript && transcript.length > 0
+      ? transcript[transcript.length - 1].start + transcript[transcript.length - 1].duration
+      : 0;
+  const isVeryShort = totalDuration > 0 && totalDuration < 45;
+  const isShort = totalDuration >= 45 && totalDuration <= 75;
+
   const themeGuidance = theme
     ? `<themeAlignment>
   <criterion name="ThemeRelevance">Every highlight must directly reinforce the theme "${theme}". Discard compelling ideas if they are off-theme.</criterion>
   <criterion name="ThemeDiscipline">If only one passage perfectly embodies "${theme}", return just that one.</criterion>
 </themeAlignment>`
     : '';
+
+  const durationGuidance = isVeryShort
+    ? '<criterion name="Duration">The video is shorter than 45 seconds; choose the best contiguous passage within the available window (it may be <45s, and using the entire video is acceptable).</criterion>'
+    : isShort
+      ? `<criterion name="Duration">Choose a contiguous passage up to ${Math.round(totalDuration)} seconds that stands alone.</criterion>`
+      : '<criterion name="Duration" targetSeconds="60">Choose a contiguous passage around 60 seconds long (aim for 45-75 seconds) so the highlight provides full context.</criterion>';
 
   const prompt = `<task>
 <role>You are an expert content strategist.</role>
@@ -476,7 +508,7 @@ async function runSinglePassTopicGeneration(
       <criterion name="SelfContained">Ensure the passage stands alone. If earlier context is required, expand the selection to include it.</criterion>
       <criterion name="HighSignal">Prefer memorable stories, bold predictions, data points, specific examples, or contrarian thinking.</criterion>
       <criterion name="NoFluff">Exclude unrelated tangents or filler.</criterion>
-      <criterion name="Duration" targetSeconds="60">Choose a contiguous passage around 60 seconds long (aim for 45-75 seconds) so the highlight provides full context.</criterion>
+      ${durationGuidance}
       <criterion name="MostImpactful">Select the single quote that best encapsulates the entire theme by itself.</criterion>
     </passageCriteria>
   </step>
@@ -495,11 +527,9 @@ ${transcriptWithTimestamps}
 </task>`;
 
   try {
-    const response = await generateWithFallback(prompt, {
+    const response = await generateAIResponse(prompt, {
       preferredModel: model,
-      generationConfig: {
-        temperature: 0.7
-      },
+      temperature: 0.7,
       zodSchema: topicGenerationSchema
     });
 
@@ -511,11 +541,14 @@ ${transcriptWithTimestamps}
     try {
       parsedResponse = JSON.parse(response);
     } catch {
+      // Dynamic fallback: if total duration is known and short, use the full video window
+      const fallbackEnd = totalDuration > 0 ? Math.min(60, Math.round(totalDuration)) : 30;
+      const fallbackLabel = isVeryShort || isShort ? 'Full Video' : 'Full Video';
       return [
         {
-          title: 'Full Video',
+          title: fallbackLabel,
           quote: {
-            timestamp: '[00:00-00:30]',
+            timestamp: `[00:00-${formatTime(fallbackEnd)}]`,
             text: fullText.substring(0, 200)
           }
         }
@@ -523,7 +556,7 @@ ${transcriptWithTimestamps}
     }
 
     if (!Array.isArray(parsedResponse)) {
-      console.warn('Invalid response format from Gemini - expected array');
+      console.warn('Invalid response format from AI provider - expected array');
       return [];
     }
 
@@ -688,12 +721,12 @@ async function findExactQuotes(
 /**
  * Generate highlight reel topics from a video transcript using AI
  * @param transcript The video transcript segments
- * @param model The AI model to use (default: gemini-2.5-flash)
+ * @param model The AI model to use (defaults to the configured provider model)
  * @returns Array of topics with segments and quotes
  */
 export async function generateTopicsFromTranscript(
   transcript: TranscriptSegment[],
-  _model: string = 'gemini-2.5-flash',
+  _model: string = DEFAULT_AI_MODEL,
   options: GenerateTopicsOptions = {}
 ): Promise<{
   topics: Topic[];
@@ -704,15 +737,17 @@ export async function generateTopicsFromTranscript(
     videoInfo,
     chunkDurationSeconds = DEFAULT_CHUNK_DURATION_SECONDS,
     chunkOverlapSeconds = DEFAULT_CHUNK_OVERLAP_SECONDS,
-    fastModel = 'gemini-2.5-flash-lite',
+    fastModel = FAST_MODEL_DEFAULT,
     maxTopics = 5,
     theme,
     excludeTopicKeys,
     includeCandidatePool,
     mode = 'smart',
-    proModel = 'gemini-2.5-flash'
+    proModel = PRO_MODEL_DEFAULT
   } = options;
 
+  const providerKey = getProviderKey();
+  const forceFullTranscript = providerKey === 'grok';
   const requestedTopics = Math.max(1, Math.min(maxTopics, 5));
   const isSmartMode = mode === 'smart';
   const fullText = combineTranscript(transcript);
@@ -723,19 +758,22 @@ export async function generateTopicsFromTranscript(
         transcript[transcript.length - 1].duration
       : 0;
   const isShortVideo = videoDurationSeconds <= 30 * 60;
-  const smartModeModel = isShortVideo ? 'gemini-2.5-flash' : proModel;
+  const smartModeModel = isShortVideo ? fastModel : proModel;
 
   let topicsArray: ParsedTopic[] = [];
   let candidateTopics: CandidateTopic[] = [];
   const excludedKeys = excludeTopicKeys ?? new Set<string>();
   let resolvedModel = isSmartMode ? smartModeModel : fastModel;
 
-  if (isSmartMode) {
+  if (isSmartMode || forceFullTranscript) {
+    const singlePassModel = isSmartMode ? smartModeModel : fastModel;
+    resolvedModel = singlePassModel;
+
     const smartTopics = await runSinglePassTopicGeneration(
       transcript,
       transcriptWithTimestamps,
       fullText,
-      smartModeModel,
+      singlePassModel,
       theme
     );
 
@@ -747,13 +785,18 @@ export async function generateTopicsFromTranscript(
       return !excludedKeys.has(key);
     });
 
-    if (topicsArray.length === 0) {
+    if (topicsArray.length === 0 && isSmartMode && !forceFullTranscript) {
       // Fallback to fast pipeline if smart fails to produce topics
       resolvedModel = fastModel;
     }
   }
 
-  if (!isSmartMode && isShortVideo && transcript.length > 0) {
+  if (
+    !forceFullTranscript &&
+    !isSmartMode &&
+    isShortVideo &&
+    transcript.length > 0
+  ) {
     const fullTranscriptTopics = await runSinglePassTopicGeneration(
       transcript,
       transcriptWithTimestamps,
@@ -779,8 +822,11 @@ export async function generateTopicsFromTranscript(
   if (!isSmartMode && isShortVideo && topicsArray.length > 0) {
     shouldRunFastPipeline = false;
   }
+  if (forceFullTranscript) {
+    shouldRunFastPipeline = false;
+  }
 
-  if (shouldRunFastPipeline && transcript.length > 0) {
+  if (!forceFullTranscript && shouldRunFastPipeline && transcript.length > 0) {
     try {
       const chunks = chunkTranscript(
         transcript,
@@ -797,9 +843,9 @@ export async function generateTopicsFromTranscript(
           );
 
           try {
-            const response = await generateWithFallback(chunkPrompt, {
+            const response = await generateAIResponse(chunkPrompt, {
               preferredModel: fastModel,
-              generationConfig: { temperature: 0.6 },
+              temperature: 0.6,
               zodSchema: topicGenerationSchema
             });
 
@@ -1283,7 +1329,7 @@ function promoteDistinctThemes(themes: string[], primaryCount = 3): string[] {
 export async function generateThemesFromTranscript(
   transcript: TranscriptSegment[],
   videoInfo?: Partial<VideoInfo>,
-  model: string = 'gemini-2.5-flash-lite'
+  model: string = FAST_MODEL_DEFAULT
 ): Promise<string[]> {
   if (!transcript || transcript.length === 0) {
     return [];
@@ -1326,9 +1372,9 @@ Now, apply these rules to the following video transcript.
 ${videoInfoBlock ? `${videoInfoBlock}\n\n` : ''}${transcriptWithTimestamps}`;
 
   try {
-    const response = await generateWithFallback(prompt, {
+    const response = await generateAIResponse(prompt, {
       preferredModel: model,
-      generationConfig: { temperature: 0.3 }
+      temperature: 0.3
     });
 
     if (!response) {

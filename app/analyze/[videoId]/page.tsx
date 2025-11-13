@@ -144,6 +144,8 @@ export default function AnalyzePage() {
   const cachedParam = searchParams?.get('cached');
   const cachedParamValue = cachedParam?.toLowerCase();
   const isCachedQuery = cachedParamValue === 'true' || cachedParamValue === '1';
+  const regenParam = searchParams?.get('regen');
+  const forceRegenerate = (regenParam?.toLowerCase() === '1' || regenParam?.toLowerCase() === 'true');
   const authErrorParam = searchParams?.get('auth_error');
   const slugParam = searchParams?.get('slug') ?? null;
   const [pageState, setPageState] = useState<PageState>(() =>
@@ -640,17 +642,18 @@ export default function AnalyzePage() {
         setVideoId(extractedVideoId);
       }
 
-      // Check cache first before fetching transcript/metadata
-      const cacheResponse = await fetch("/api/check-video-cache", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
-      });
+      // Check cache first before fetching transcript/metadata unless forced regeneration
+      if (!forceRegenerate) {
+        const cacheResponse = await fetch("/api/check-video-cache", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url })
+        });
 
-      if (cacheResponse.ok) {
-        const cacheData = await cacheResponse.json();
+        if (cacheResponse.ok) {
+          const cacheData = await cacheResponse.json();
 
-        if (cacheData.cached) {
+          if (cacheData.cached) {
           // For cached videos, we're already in LOADING_CACHED state if isCached was true
           // Otherwise, set it now
           setPageState('LOADING_CACHED');
@@ -726,9 +729,9 @@ export default function AnalyzePage() {
                   videoId: extractedVideoId,
                   videoInfo: cacheData.videoInfo,
                   transcript: sanitizedTranscript,
-                  model: 'gemini-2.5-flash',
                   includeCandidatePool: true,
-                  mode: selectedMode
+                  mode: selectedMode,
+                  forceRegenerate: false
                 }),
               });
 
@@ -807,6 +810,7 @@ export default function AnalyzePage() {
           }
 
           return; // Exit early - no need to fetch anything else
+          }
         }
       }
 
@@ -960,8 +964,8 @@ export default function AnalyzePage() {
           videoId: extractedVideoId,
           videoInfo: fetchedVideoInfo,
           transcript: normalizedTranscriptData,
-          model: 'gemini-2.5-flash',
-          mode: selectedMode
+          mode: selectedMode,
+          forceRegenerate
         }),
         signal: topicsController.signal,
       }).catch(err => {
@@ -1135,8 +1139,7 @@ export default function AnalyzePage() {
               },
               transcript: normalizedTranscriptData,
               topics: generatedTopics,
-              summary: generatedTakeaways,
-              model: 'gemini-2.5-flash'
+              summary: generatedTakeaways
             }),
           });
 
@@ -1441,7 +1444,6 @@ export default function AnalyzePage() {
             videoId,
             videoInfo,
             transcript,
-            model: 'gemini-2.5-flash',
             theme: normalizedTheme,
             excludeTopicKeys: exclusionKeys,
             mode
