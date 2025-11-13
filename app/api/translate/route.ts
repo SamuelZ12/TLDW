@@ -3,7 +3,6 @@ import { withSecurity } from '@/lib/security-middleware';
 import { RATE_LIMITS, RateLimiter, rateLimitResponse } from '@/lib/rate-limiter';
 import { getTranslationClient } from '@/lib/translation';
 import { createClient } from '@/lib/supabase/server';
-import { getUserSubscriptionStatus } from '@/lib/subscription-manager';
 import { z } from 'zod';
 
 const translateBatchRequestSchema = z.object({
@@ -11,25 +10,7 @@ const translateBatchRequestSchema = z.object({
   targetLanguage: z.string().default('zh-CN')
 });
 
-// Optional in-process cache for subscription access to reduce DB roundtrips
-const SUBSCRIPTION_TTL_MS = 30_000; // 30s
-const proAccessCache = new Map<string, { value: boolean; expires: number }>();
-
-async function getHasProAccess(userId: string, supabase: any) {
-  const now = Date.now();
-  const cached = proAccessCache.get(userId);
-  if (cached && cached.expires > now) return cached.value;
-
-  const subscription = await getUserSubscriptionStatus(userId, { client: supabase });
-  const hasProAccess =
-    subscription?.tier === 'pro' &&
-    (subscription.status === 'active' ||
-      subscription.status === 'trialing' ||
-      subscription.status === 'past_due');
-
-  proAccessCache.set(userId, { value: !!hasProAccess, expires: now + SUBSCRIPTION_TTL_MS });
-  return hasProAccess;
-}
+// Note: Translation requires authentication, but is available to both Free and Pro users.
 
 async function handler(request: NextRequest) {
   let requestBody: unknown;
@@ -46,17 +27,8 @@ async function handler(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { error: 'Translation is a Pro feature. Sign in and upgrade to use it.' },
-        { status: 403 }
-      );
-    }
-
-    // Cache subscription lookup briefly to avoid repeated DB reads
-    const hasProAccess = await getHasProAccess(user.id, supabase);
-    if (!hasProAccess) {
-      return NextResponse.json(
-        { error: 'Translation is available on Pro. Upgrade to enable it.' },
-        { status: 403 }
+        { error: 'Authentication required' },
+        { status: 401 }
       );
     }
 

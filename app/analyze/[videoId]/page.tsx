@@ -18,7 +18,7 @@ import { fetchNotes, saveNote } from "@/lib/notes-client";
 import { EditingNote } from "@/components/notes-panel";
 import { useModePreference } from "@/lib/hooks/use-mode-preference";
 import { useTranslation } from "@/lib/hooks/use-translation";
-import { useSubscription, isProSubscriptionActive } from "@/lib/hooks/use-subscription";
+import { useSubscription } from "@/lib/hooks/use-subscription";
 import { useTranscriptExport } from "@/lib/hooks/use-transcript-export";
 
 // Page state for better UX
@@ -294,12 +294,7 @@ export default function AnalyzePage() {
     }
   }, [user, subscriptionStatus, isCheckingSubscription, fetchSubscriptionStatus]);
 
-  // Allow translation for signed-in users while status loads; enforce once known
-  const canUseTranslation = useMemo(() => {
-    if (!user) return false;
-    if (!subscriptionStatus) return true; // optimistic until we know
-    return isProSubscriptionActive(subscriptionStatus);
-  }, [user, subscriptionStatus]);
+  // Translation is available to all authenticated users (Free + Pro)
 
   const hasSpeakerData = useMemo(() => hasSpeakerMetadata(transcript), [transcript]);
 
@@ -1893,20 +1888,12 @@ export default function AnalyzePage() {
                   onSaveEditingNote={handleSaveEditingNote}
                   onCancelEditing={handleCancelEditing}
                   isAuthenticated={!!user}
-                  onRequestSignIn={promptSignInForNotes}
+                  onRequestSignIn={handleAuthRequired}
                   selectedLanguage={selectedLanguage}
                   onRequestTranslation={handleRequestTranslation}
                   onLanguageChange={handleLanguageChange}
                   onRequestExport={handleRequestExport}
                   exportButtonState={exportButtonState}
-                  canUseTranslation={canUseTranslation}
-                  onUpgradeToPro={() => {
-                    if (!user) {
-                      handleAuthRequired();
-                      return;
-                    }
-                    handleUpgradeClick();
-                  }}
                 />
               </div>
             </div>

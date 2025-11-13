@@ -18,7 +18,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 
 const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', nativeName: 'English' },
@@ -63,8 +62,6 @@ interface RightColumnTabsProps {
     badgeLabel?: string;
     isLoading?: boolean;
   };
-  canUseTranslation?: boolean;
-  onUpgradeToPro?: () => void;
 }
 
 export interface RightColumnTabsHandle {
@@ -99,8 +96,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   onLanguageChange,
   onRequestExport,
   exportButtonState,
-  canUseTranslation = true,
-  onUpgradeToPro,
+  
 }, ref) => {
   const [activeTab, setActiveTab] = useState<"transcript" | "chat" | "notes">("transcript");
   const [languageSearch, setLanguageSearch] = useState("");
@@ -180,12 +176,9 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
               </DropdownMenuTrigger>
             </div>
             <DropdownMenuContent side="bottom" align="start" sideOffset={4} alignOffset={-200} className="w-[260px]">
-              {!canUseTranslation && (
+              {!isAuthenticated && (
                 <div className="px-3 py-2 border-b">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-medium">Translate</div>
-                    <Badge variant="secondary" className="h-5 text-[10px]">Pro</Badge>
-                  </div>
+                  <div className="text-xs font-medium">Sign in to translate</div>
                   <div className="mt-1 text-[11px] text-muted-foreground">
                     Translate transcript and topics into 9 languages.
                   </div>
@@ -194,10 +187,10 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
                     className="mt-2 h-7 text-xs w-full"
                     onClick={(e) => {
                       e.preventDefault();
-                      onUpgradeToPro?.();
+                      onRequestSignIn?.();
                     }}
                   >
-                    Upgrade to Pro
+                    Sign in
                   </Button>
                 </div>
               )}
@@ -223,13 +216,13 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
                       className={cn(
                         "text-xs cursor-pointer",
                         isOriginalLanguage && "cursor-default",
-                        !canUseTranslation && !isOriginalLanguage && "opacity-50"
+                        !isAuthenticated && !isOriginalLanguage && "opacity-50"
                       )}
-                      disabled={isOriginalLanguage || (!canUseTranslation && !isOriginalLanguage)}
+                      disabled={isOriginalLanguage || (!isAuthenticated && !isOriginalLanguage)}
                       onClick={(e) => {
-                        if (!canUseTranslation && !isOriginalLanguage) {
+                        if (!isAuthenticated && !isOriginalLanguage) {
                           e.preventDefault();
-                          onUpgradeToPro?.();
+                          onRequestSignIn?.();
                           return;
                         }
                         // Toggle: if clicking the currently selected language, deselect it

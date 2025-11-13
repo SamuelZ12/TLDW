@@ -40,13 +40,13 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
     'AI highlight reels',
     'Chat with transcripts',
     'Save notes',
+    'Transcript translation',
   ]
 
   const proFeatures = [
     '100 videos / month',
     'Everything from basic',
     'Export transcripts',
-    'Transcript translation',
   ]
 
   const heroDescription = (() => {
@@ -151,6 +151,7 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
                 '/enhance.svg',
                 '/Pen_On_Doc.svg',
                 '/Select_Text.svg',
+                '/Languages.svg',
               ]}
             />
           </CardContent>
@@ -209,7 +210,6 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
                 '/Video_On_Video.svg',
                 '/Creator_Rewards.svg',
                 '/Arrow_In_Right.svg',
-                '/Languages.svg',
               ]}
               footer={
                 <li key="topup">
