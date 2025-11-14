@@ -92,7 +92,7 @@ export function NoteEditor({ selectedText, onSave }: NoteEditorProps) {
       <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.17em] text-muted-foreground/80 mb-1">
         <span>Selected Snippet</span>
         {hasEnhanced && !isEnhancing && (
-          <span className="flex items-center gap-1 text-emerald-600 font-medium normal-case">
+          <span className="flex items-center gap-1 text-emerald-600 font-medium normal-case tracking-[0.05em]">
             <Check className="w-3 h-3" />
             Cleaned
           </span>
@@ -100,9 +100,14 @@ export function NoteEditor({ selectedText, onSave }: NoteEditorProps) {
       </div>
 
       <div className="border-l-2 border-primary/40 bg-white/60 pl-3 pr-3 py-2 rounded-r mb-3">
-        <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap break-words">
-          {quoteText}
-        </p>
+        <Textarea
+          value={quoteText}
+          onChange={(e) => setQuoteText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Edit the snippet before saving"
+          className="resize-none border-none bg-transparent px-0 py-0 text-sm text-foreground/90 leading-relaxed focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-none whitespace-pre-wrap break-words min-h-[72px]"
+          aria-label="Selected snippet editor"
+        />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
