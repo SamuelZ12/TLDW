@@ -20,11 +20,12 @@ interface PricingContentProps {
   isAuthenticated: boolean
   tier: SubscriptionTier | 'anonymous'
   status: SubscriptionStatus
+  cancelAtPeriodEnd: boolean
 }
 
 type BillingPeriod = 'monthly' | 'annual'
 
-export default function PricingContent({ isAuthenticated, tier, status }: PricingContentProps) {
+export default function PricingContent({ isAuthenticated, tier, status, cancelAtPeriodEnd }: PricingContentProps) {
   const router = useRouter()
   const [pendingAction, setPendingAction] = useState<'subscription' | 'topup' | 'portal' | null>(null)
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>('annual')
@@ -32,6 +33,7 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
   const currentTier: SubscriptionTier | 'anonymous' = tier
   const isPro = currentTier === 'pro'
   const isFreeUser = currentTier === 'free'
+  const isCanceled = status === 'canceled' || cancelAtPeriodEnd
 
   const freeFeatures = [
     '5 videos / month',
@@ -42,7 +44,7 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
 
   const proFeatures = [
     '100 videos / month',
-    'Everything from Basic',
+    'Everything from basic',
     'Export transcripts',
     'Transcript translation',
   ]
@@ -121,24 +123,27 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
   return (
     <div className="space-y-12">
       <div className="space-y-3 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-[2.5rem]">Plan</h1>
-        <p className="mx-auto max-w-xl text-sm text-muted-foreground sm:text-base">{heroDescription}</p>
+        <h1 className="text-[24px] font-bold">Plan</h1>
+        <p className="mx-auto max-w-[494px] text-[14px] text-[#787878]">{heroDescription}</p>
       </div>
 
-      <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-11 md:grid-cols-2">
-        <Card className="relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[32px] border border-border/60 bg-background/80 shadow-sm backdrop-blur">
-          <CardHeader className="px-6 py-4">
-            <div className="rounded-[24px] bg-muted/60 p-6 text-left">
-              <div className="space-y-4">
-                <p className="text-sm font-medium text-muted-foreground mb-12">Basic</p>
-                <h2 className="text-4xl font-semibold">Free</h2>
-                <p className="text-xs text-muted-foreground">
+      <div className="mx-auto flex w-full flex-col items-center gap-[44px] md:flex-row md:items-start md:justify-center">
+        <Card
+          className="relative flex w-full flex-col overflow-hidden rounded-[32px] border border-border/60 bg-background/80 !gap-2 !pt-4 !pb-2 backdrop-blur md:h-[420px] md:w-[298px]"
+          style={{ boxShadow: '2px 11px 40.4px 0 rgba(0, 0, 0, 0.06)' }}
+        >
+          <CardHeader className="!px-4 !pt-0 !pb-1">
+            <div className="rounded-[24px] bg-[#f7f7f7] px-4 pt-3 pb-4 text-left">
+              <div className="flex flex-col">
+                <p className="text-[16px] font-medium text-black mb-12">Basic</p>
+                <h2 className="text-[32px] font-semibold mb-0">Free</h2>
+                <p className="text-[11px] text-muted-foreground mt-0">
                   Try TLDW for free, no card required
                 </p>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="flex-1 px-10 py-4">
+          <CardContent className="flex-1 px-8 pt-0 pb-4">
             <PlanFeaturesList
               features={freeFeatures}
               icons={[
@@ -149,16 +154,17 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
               ]}
             />
           </CardContent>
-          <CardFooter className="flex flex-col gap-2 px-6 py-4">
+          <CardFooter className="mt-auto flex flex-col gap-2 px-4 pb-2 pt-0">
             <Button
               onClick={isAuthenticated ? undefined : handleAuthRedirect}
               disabled={isAuthenticated}
               variant={isFreeUser ? 'secondary' : 'outline'}
               size="lg"
               className={cn(
-                'w-full rounded-full h-14',
-                isAuthenticated && 'cursor-not-allowed opacity-80',
-                isFreeUser && 'bg-muted text-muted-foreground'
+                'w-full rounded-full h-[42px] text-[14px] font-semibold shadow-none',
+                isAuthenticated && 'cursor-not-allowed',
+                isFreeUser && 'bg-[#e2e2e2]/80 text-foreground hover:bg-[#e2e2e2]/80',
+                isAuthenticated && !isFreeUser && 'bg-[#f0f0f0] text-foreground hover:bg-[#f0f0f0]'
               )}
             >
               {isAuthenticated ? (isFreeUser ? 'Current plan' : 'Included with Pro') : 'Create free account'}
@@ -166,36 +172,37 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
           </CardFooter>
         </Card>
 
-        <Card className="relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-[32px] border border-transparent bg-white shadow-xl shadow-primary/20">
-          <CardHeader className="px-6 py-4">
-            <div className="w-full min-w-0 rounded-[24px] bg-[linear-gradient(to_bottom_right,rgba(233,211,250,0.3),rgba(203,252,255,0.3),rgba(203,227,255,0.3))] p-6 text-left shadow-sm ring-1 ring-white/60 backdrop-blur-sm">
-              <div className="flex w-full items-start justify-between gap-6">
-                <div className="space-y-4 min-w-0 flex-1">
-                  <p className="text-sm font-medium text-muted-foreground mb-12">Pro</p>
-                  <div className="flex items-baseline gap-2 whitespace-nowrap">
-                    {billingPeriod === 'annual' && (
-                      <span className="text-4xl font-semibold text-muted-foreground line-through">
-                        $10
-                      </span>
-                    )}
-                    <span className="text-4xl font-semibold">
-                      {billingPeriod === 'annual' ? '$8.33' : '$10'}
-                    </span>
-                    <span className="text-base text-muted-foreground">
-                      / month
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground whitespace-nowrap">
-                    {billingPeriod === 'annual' ? 'Billed annually, get 2 months free' : 'Cancel anytime'}
-                  </p>
-                </div>
-                <div className="flex-shrink-0">
+        <Card
+          className="relative flex w-full flex-col overflow-hidden rounded-[32px] border border-border/60 bg-background/80 !gap-2 !pt-4 !pb-2 backdrop-blur md:h-[420px] md:w-[298px]"
+          style={{ boxShadow: '2px 11px 40.4px 0 rgba(0, 0, 0, 0.06)' }}
+        >
+          <CardHeader className="!px-4 !pt-0 !pb-1">
+            <div className="relative w-full rounded-[24px] bg-[linear-gradient(to_bottom_right,rgba(233,211,250,0.3),rgba(203,252,255,0.3),rgba(203,227,255,0.3))] pl-4 pr-2 pt-2 pb-4 text-left ring-1 ring-white/60 backdrop-blur-sm">
+              <div className="flex flex-col">
+                <div className="mb-10 flex items-center justify-between gap-3">
+                  <p className="text-[16px] font-medium text-black">Pro</p>
                   <BillingToggle value={billingPeriod} onChange={setBillingPeriod} />
                 </div>
+                <div className="flex items-baseline gap-2 whitespace-nowrap mb-0">
+                  {billingPeriod === 'annual' && (
+                    <span className="text-[32px] font-semibold text-muted-foreground line-through">
+                      $10
+                    </span>
+                  )}
+                  <span className="text-[32px] font-semibold">
+                    {billingPeriod === 'annual' ? '$8.33' : '$10'}
+                  </span>
+                  <span className="text-[14px] text-muted-foreground">
+                    / month
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground whitespace-nowrap mt-0">
+                  {billingPeriod === 'annual' ? 'Billed annually, get 2 months free' : 'Cancel anytime'}
+                </p>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="flex-1 px-10 py-4">
+          <CardContent className="flex-1 px-8 pt-0 pb-4">
             <PlanFeaturesList
               features={proFeatures}
               icons={[
@@ -230,12 +237,12 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
               }
             />
           </CardContent>
-          <CardFooter className="flex flex-col gap-2 px-6 py-4">
+          <CardFooter className="mt-auto flex flex-col gap-2 px-4 pb-2 pt-0">
             <Button
-              onClick={isPro ? handlePortal : () => handleUpgrade(billingPeriod)}
+              onClick={isPro && !isCanceled ? handlePortal : () => handleUpgrade(billingPeriod)}
               disabled={pendingAction !== null}
               size="lg"
-              className="w-full rounded-full h-14"
+              className="w-full rounded-full h-[42px] text-[14px] font-semibold shadow-none"
             >
               {pendingAction === 'subscription' || pendingAction === 'portal' ? (
                 <>
@@ -243,7 +250,7 @@ export default function PricingContent({ isAuthenticated, tier, status }: Pricin
                   Redirecting...
                 </>
               ) : (
-                isPro ? (status === 'past_due' ? 'Update payment method' : 'Manage billing') : 'Upgrade'
+                isPro && !isCanceled ? (status === 'past_due' ? 'Update payment method' : 'Manage billing') : 'Upgrade'
               )}
             </Button>
           </CardFooter>
@@ -263,7 +270,7 @@ function PlanFeaturesList({
   footer?: ReactNode
 }) {
   return (
-    <ul className="space-y-3 text-sm">
+    <ul className="space-y-[10px] text-[12px] font-medium">
       {features.map((feature, index) => {
         const icon = icons?.[index]
         return (
@@ -307,8 +314,8 @@ function BillingToggle({
         type="button"
         onClick={() => onChange('annual')}
         className={cn(
-          'text-xs font-medium transition',
-          isAnnual ? 'text-foreground' : 'text-muted-foreground'
+          'text-[8px] font-medium transition uppercase',
+          isAnnual ? 'text-muted-foreground/80' : 'text-muted-foreground/50'
         )}
         aria-pressed={isAnnual}
       >

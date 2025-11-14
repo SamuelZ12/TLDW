@@ -105,4 +105,4 @@ async function handler(req: NextRequest) {
   }
 }
 
-export const GET = withSecurity(handler, SECURITY_PRESETS.AUTHENTICATED);
+export const GET = withSecurity(handler, SECURITY_PRESETS.AUTHENTICATED_READ_ONLY);

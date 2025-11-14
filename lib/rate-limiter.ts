@@ -250,7 +250,6 @@ export const RATE_LIMITS = {
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: 5 // 5 login attempts per 15 minutes
   },
-
   // Translation operations
   ANON_TRANSLATION: {
     windowMs: 60 * 1000, // 1 minute
@@ -259,6 +258,11 @@ export const RATE_LIMITS = {
   AUTH_TRANSLATION: {
     windowMs: 60 * 1000, // 1 minute
     maxRequests: 30 // 30 API calls per minute for authenticated users
+  },
+  // Read-only endpoints (status checks, etc.)
+  READ_ONLY: {
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 100 // 100 requests per minute
   }
 };
 
