@@ -22,13 +22,8 @@ import { Input } from "@/components/ui/input";
 const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', nativeName: 'English' },
   { code: 'zh-CN', name: 'Chinese, Simplified', nativeName: '简体中文' },
-  { code: 'zh-TW', name: 'Chinese, Traditional', nativeName: '繁體中文' },
   { code: 'ja', name: 'Japanese', nativeName: '日本語' },
-  { code: 'ko', name: 'Korean', nativeName: '한국어' },
-  { code: 'fr', name: 'French', nativeName: 'Français' },
-  { code: 'de', name: 'German', nativeName: 'Deutsch' },
   { code: 'es', name: 'Spanish', nativeName: 'Español' },
-  { code: 'pt', name: 'Portuguese', nativeName: 'Português' },
 ] as const;
 
 interface RightColumnTabsProps {
@@ -96,7 +91,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   onLanguageChange,
   onRequestExport,
   exportButtonState,
-  
+
 }, ref) => {
   const [activeTab, setActiveTab] = useState<"transcript" | "chat" | "notes">("transcript");
   const [languageSearch, setLanguageSearch] = useState("");
