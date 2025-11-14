@@ -117,7 +117,10 @@ async function handler(request: NextRequest) {
 
     // Build language instruction if targetLanguage is provided
     const languageInstruction = targetLanguage
-      ? `\n<languageRequirement>IMPORTANT: You MUST respond in ${getLanguageName(targetLanguage)}. All text in the "answer" field must be in ${getLanguageName(targetLanguage)}.</languageRequirement>\n`
+      ? (() => {
+          const langName = getLanguageName(targetLanguage);
+          return `\n<languageRequirement>IMPORTANT: You MUST respond in ${langName}. All text in the "answer" field must be in ${langName}.</languageRequirement>\n`;
+        })()
       : '';
 
     const prompt = `<task>

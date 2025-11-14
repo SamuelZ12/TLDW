@@ -4,7 +4,7 @@
 export const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', nativeName: 'English' },
   { code: 'zh-CN', name: 'Simplified Chinese', nativeName: '简体中文' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本语' },
+  { code: 'ja', name: 'Japanese', nativeName: '日本語' },
   { code: 'es', name: 'Spanish', nativeName: 'Español' }
 ] as const;
 

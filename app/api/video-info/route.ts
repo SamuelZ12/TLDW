@@ -43,42 +43,51 @@ async function handler(request: NextRequest) {
     // Try Supadata API first for richer metadata including description
     const apiKey = process.env.SUPADATA_API_KEY;
 
-    // if (apiKey) {
-    //   try {
-    //     const supadataResponse = await fetch(`https://api.supadata.ai/v1/youtube/video?id=${videoId}`, {
-    //       method: 'GET',
-    //       headers: {
-    //         'x-api-key': apiKey,
-    //         'Content-Type': 'application/json'
-    //       }
-    //     });
+    if (apiKey) {
+      try {
+        const supadataResponse = await fetch(
+          `https://api.supadata.ai/v1/youtube/video?id=${videoId}`,
+          {
+            method: 'GET',
+            headers: {
+              'x-api-key': apiKey,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
 
-    //     if (supadataResponse.ok) {
-    //       const supadataData = await supadataResponse.json();
+        if (supadataResponse.ok) {
+          const supadataData = await supadataResponse.json();
 
-    //       // Extract video metadata from Supadata response
-    //       // Ensure duration is always a number (default to 0 if not available)
-    //       const duration = typeof supadataData.duration === 'number' ? supadataData.duration : 0;
+          // Extract video metadata from Supadata response
+          // Ensure duration is always a number (default to 0 if not available)
+          const duration =
+            typeof supadataData.duration === 'number'
+              ? supadataData.duration
+              : 0;
 
-    //       return NextResponse.json({
-    //         videoId,
-    //         title: supadataData.title || 'YouTube Video',
-    //         author: supadataData.channel?.name || supadataData.author || 'Unknown',
-    //         thumbnail: supadataData.thumbnail || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-    //         duration,
-    //         description: supadataData.description || undefined,
-    //         tags: supadataData.tags || supadataData.keywords || undefined
-    //       });
-    //     }
-    //   } catch (supadataError) {
-    //     // Fall through to oEmbed if Supadata fails
-    //     console.error('[VIDEO-INFO] Supadata API error:', {
-    //       error: supadataError,
-    //       message: (supadataError as Error).message,
-    //       stack: (supadataError as Error).stack
-    //     });
-    //   }
-    // }
+          return NextResponse.json({
+            videoId,
+            title: supadataData.title || 'YouTube Video',
+            author:
+              supadataData.channel?.name || supadataData.author || 'Unknown',
+            thumbnail:
+              supadataData.thumbnail ||
+              `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+            duration,
+            description: supadataData.description || undefined,
+            tags: supadataData.tags || supadataData.keywords || undefined
+          });
+        }
+      } catch (supadataError) {
+        // Fall through to oEmbed if Supadata fails
+        console.error('[VIDEO-INFO] Supadata API error:', {
+          error: supadataError,
+          message: (supadataError as Error).message,
+          stack: (supadataError as Error).stack
+        });
+      }
+    }
 
     // Fallback to YouTube oEmbed API (no API key required)
     try {

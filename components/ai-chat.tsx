@@ -235,6 +235,8 @@ export function AIChat({
       return;
     }
 
+    let isCancelled = false;
+
     // Translate all suggested questions
     const translateQuestions = async () => {
       const translated = await Promise.all(
@@ -248,10 +250,16 @@ export function AIChat({
           }
         })
       );
-      setTranslatedSuggestedQuestions(translated);
+      if (!isCancelled) {
+        setTranslatedSuggestedQuestions(translated);
+      }
     };
 
     void translateQuestions();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [suggestedQuestions, selectedLanguage, onRequestTranslation, videoId]);
 
   // Use translated questions for display
@@ -265,23 +273,33 @@ export function AIChat({
       return;
     }
 
+    let isCancelled = false;
+
     const translatePresetLabels = async () => {
       try {
         const [keyTakeawaysTranslated, topQuotesTranslated] = await Promise.all([
           onRequestTranslation(KEY_TAKEAWAYS_LABEL, `chat-preset-keytakeaways-${selectedLanguage}`),
           onRequestTranslation(TOP_QUOTES_LABEL, `chat-preset-topquotes-${selectedLanguage}`)
         ]);
-        setTranslatedKeyTakeawaysLabel(keyTakeawaysTranslated);
-        setTranslatedTopQuotesLabel(topQuotesTranslated);
+        if (!isCancelled) {
+          setTranslatedKeyTakeawaysLabel(keyTakeawaysTranslated);
+          setTranslatedTopQuotesLabel(topQuotesTranslated);
+        }
       } catch (error) {
         console.error('Failed to translate preset labels:', error);
-        // Fallback to original
-        setTranslatedKeyTakeawaysLabel(KEY_TAKEAWAYS_LABEL);
-        setTranslatedTopQuotesLabel(TOP_QUOTES_LABEL);
+        if (!isCancelled) {
+          // Fallback to original
+          setTranslatedKeyTakeawaysLabel(KEY_TAKEAWAYS_LABEL);
+          setTranslatedTopQuotesLabel(TOP_QUOTES_LABEL);
+        }
       }
     };
 
     void translatePresetLabels();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [selectedLanguage, onRequestTranslation]);
 
   // Translate follow-up questions when they change or language changes
@@ -290,6 +308,8 @@ export function AIChat({
       setTranslatedFollowUpQuestions(followUpQuestions);
       return;
     }
+
+    let isCancelled = false;
 
     const translateFollowUps = async () => {
       const translated = await Promise.all(
@@ -303,10 +323,16 @@ export function AIChat({
           }
         })
       );
-      setTranslatedFollowUpQuestions(translated);
+      if (!isCancelled) {
+        setTranslatedFollowUpQuestions(translated);
+      }
     };
 
     void translateFollowUps();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [followUpQuestions, selectedLanguage, onRequestTranslation, videoId]);
 
   // Use translated follow-up questions for display
@@ -950,7 +976,18 @@ export function AIChat({
     }
 
     // Get the original question (in English) at this index
-    const originalQuestion = suggestedQuestions[index] || displayedQuestion;
+    const originalQuestion = suggestedQuestions[index];
+
+    if (!originalQuestion) {
+      console.warn('Question index out of bounds, using displayed question as fallback');
+      // Fallback to displayed question if index is invalid
+      sendMessage({
+        prompt: displayedQuestion,
+        display: displayedQuestion,
+        skipTracking: true,
+      });
+      return;
+    }
 
     setSuggestedQuestions(prev => prev.filter((_, i) => i !== index));
     dismissedQuestionsRef.current.add(originalQuestion);
@@ -968,7 +1005,18 @@ export function AIChat({
     }
 
     // Get the original question (in English) at this index
-    const originalQuestion = followUpQuestions[index] || displayedQuestion;
+    const originalQuestion = followUpQuestions[index];
+
+    if (!originalQuestion) {
+      console.warn('Follow-up question index out of bounds, using displayed question as fallback');
+      // Fallback to displayed question if index is invalid
+      sendMessage({
+        prompt: displayedQuestion,
+        display: displayedQuestion,
+        skipTracking: true,
+      });
+      return;
+    }
 
     setFollowUpQuestions(prev => {
       const next = prev.filter((_, i) => i !== index);

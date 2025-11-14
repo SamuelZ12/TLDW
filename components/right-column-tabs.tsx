@@ -171,7 +171,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
                 <div className="px-3 py-2 border-b">
                   <div className="text-xs font-medium">Sign in to translate</div>
                   <div className="mt-1 text-[11px] text-muted-foreground">
-                    Translate transcript and topics into 9 languages.
+                    Translate transcript and topics into 4 languages.
                   </div>
                   <Button
                     size="sm"
