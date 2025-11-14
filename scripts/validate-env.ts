@@ -55,9 +55,6 @@ function validateRequiredEnvVars(): ValidationResult {
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
 
-    // Gemini AI
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-
     // Supadata (transcript fetching)
     SUPADATA_API_KEY: process.env.SUPADATA_API_KEY,
 
@@ -76,15 +73,39 @@ function validateRequiredEnvVars(): ValidationResult {
     }
   }
 
-  // Optional but recommended variables
   const recommended = {
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    AI_PROVIDER: process.env.AI_PROVIDER ?? process.env.NEXT_PUBLIC_AI_PROVIDER,
+    AI_DEFAULT_MODEL: process.env.AI_DEFAULT_MODEL ?? process.env.NEXT_PUBLIC_AI_MODEL,
   };
 
   for (const [key, value] of Object.entries(recommended)) {
     if (!value || value.trim() === '') {
       warnings.push(`Missing recommended environment variable: ${key}`);
     }
+  }
+
+  const preferredProvider =
+    process.env.AI_PROVIDER ?? process.env.NEXT_PUBLIC_AI_PROVIDER ?? 'grok';
+  const hasGrokKey = !!process.env.XAI_API_KEY?.trim();
+  const hasGeminiKey = !!process.env.GEMINI_API_KEY?.trim();
+
+  if (!hasGrokKey && !hasGeminiKey) {
+    errors.push(
+      'Missing AI provider key: set XAI_API_KEY for Grok or GEMINI_API_KEY for Gemini.'
+    );
+  }
+
+  if (preferredProvider === 'grok' && !hasGrokKey) {
+    errors.push(
+      'AI_PROVIDER is set to "grok" but XAI_API_KEY is missing.'
+    );
+  }
+
+  if (preferredProvider === 'gemini' && !hasGeminiKey) {
+    errors.push(
+      'AI_PROVIDER is set to "gemini" but GEMINI_API_KEY is missing.'
+    );
   }
 
   // Validate Stripe key formats

@@ -22,8 +22,13 @@ import { Input } from "@/components/ui/input";
 const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', nativeName: 'English' },
   { code: 'zh-CN', name: 'Chinese, Simplified', nativeName: '简体中文' },
+  { code: 'zh-TW', name: 'Chinese, Traditional', nativeName: '繁體中文' },
   { code: 'ja', name: 'Japanese', nativeName: '日本語' },
+  { code: 'ko', name: 'Korean', nativeName: '한국어' },
+  { code: 'fr', name: 'French', nativeName: 'Français' },
+  { code: 'de', name: 'German', nativeName: 'Deutsch' },
   { code: 'es', name: 'Spanish', nativeName: 'Español' },
+  { code: 'pt', name: 'Portuguese', nativeName: 'Português' },
 ] as const;
 
 interface RightColumnTabsProps {
@@ -91,6 +96,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   onLanguageChange,
   onRequestExport,
   exportButtonState,
+  
 }, ref) => {
   const [activeTab, setActiveTab] = useState<"transcript" | "chat" | "notes">("transcript");
   const [languageSearch, setLanguageSearch] = useState("");
@@ -169,7 +175,25 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
                 </Button>
               </DropdownMenuTrigger>
             </div>
-            <DropdownMenuContent side="bottom" align="start" sideOffset={4} alignOffset={-200} className="w-[240px]">
+            <DropdownMenuContent side="bottom" align="start" sideOffset={4} alignOffset={-200} className="w-[260px]">
+              {!isAuthenticated && (
+                <div className="px-3 py-2 border-b">
+                  <div className="text-xs font-medium">Sign in to translate</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    Translate transcript and topics into 9 languages.
+                  </div>
+                  <Button
+                    size="sm"
+                    className="mt-2 h-7 text-xs w-full"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onRequestSignIn?.();
+                    }}
+                  >
+                    Sign in
+                  </Button>
+                </div>
+              )}
               <div className="px-2 py-1.5">
                 <div className="relative">
                   <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
@@ -191,10 +215,16 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
                       key={lang.code}
                       className={cn(
                         "text-xs cursor-pointer",
-                        isOriginalLanguage && "cursor-default"
+                        isOriginalLanguage && "cursor-default",
+                        !isAuthenticated && !isOriginalLanguage && "opacity-50"
                       )}
-                      disabled={isOriginalLanguage}
+                      disabled={isOriginalLanguage || (!isAuthenticated && !isOriginalLanguage)}
                       onClick={(e) => {
+                        if (!isAuthenticated && !isOriginalLanguage) {
+                          e.preventDefault();
+                          onRequestSignIn?.();
+                          return;
+                        }
                         // Toggle: if clicking the currently selected language, deselect it
                         if (lang.code === currentLanguageCode && selectedLanguage !== null) {
                           onLanguageChange?.(null);

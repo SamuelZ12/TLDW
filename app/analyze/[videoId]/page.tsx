@@ -144,6 +144,8 @@ export default function AnalyzePage() {
   const cachedParam = searchParams?.get('cached');
   const cachedParamValue = cachedParam?.toLowerCase();
   const isCachedQuery = cachedParamValue === 'true' || cachedParamValue === '1';
+  const regenParam = searchParams?.get('regen');
+  const forceRegenerate = (regenParam?.toLowerCase() === '1' || regenParam?.toLowerCase() === 'true');
   const authErrorParam = searchParams?.get('auth_error');
   const slugParam = searchParams?.get('slug') ?? null;
   const [pageState, setPageState] = useState<PageState>(() =>
@@ -167,6 +169,15 @@ export default function AnalyzePage() {
   const [themeTopicsMap, setThemeTopicsMap] = useState<Record<string, Topic[]>>({});
   const [themeCandidateMap, setThemeCandidateMap] = useState<Record<string, TopicCandidate[]>>({});
   const [usedTopicKeys, setUsedTopicKeys] = useState<Set<string>>(new Set());
+  const baseTopicKeySet = useMemo(() => {
+    const keys = new Set<string>();
+    baseTopics.forEach((topic) => {
+      if (topic.quote?.timestamp && topic.quote.text) {
+        keys.add(`${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`);
+      }
+    });
+    return keys;
+  }, [baseTopics]);
   const [isLoadingThemeTopics, setIsLoadingThemeTopics] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
@@ -284,6 +295,17 @@ export default function AnalyzePage() {
     user,
     onAuthRequired: handleAuthRequired,
   });
+
+  // Ensure we fetch subscription status early so Pro users aren't blocked
+  useEffect(() => {
+    if (user && !subscriptionStatus && !isCheckingSubscription) {
+      fetchSubscriptionStatus().catch((err) => {
+        console.error('Failed to prefetch subscription status:', err);
+      });
+    }
+  }, [user, subscriptionStatus, isCheckingSubscription, fetchSubscriptionStatus]);
+
+  // Translation is available to all authenticated users (Free + Pro)
 
   const hasSpeakerData = useMemo(() => hasSpeakerMetadata(transcript), [transcript]);
 
@@ -629,17 +651,18 @@ export default function AnalyzePage() {
         setVideoId(extractedVideoId);
       }
 
-      // Check cache first before fetching transcript/metadata
-      const cacheResponse = await fetch("/api/check-video-cache", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
-      });
+      // Check cache first before fetching transcript/metadata unless forced regeneration
+      if (!forceRegenerate) {
+        const cacheResponse = await fetch("/api/check-video-cache", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url })
+        });
 
-      if (cacheResponse.ok) {
-        const cacheData = await cacheResponse.json();
+        if (cacheResponse.ok) {
+          const cacheData = await cacheResponse.json();
 
-        if (cacheData.cached) {
+          if (cacheData.cached) {
           // For cached videos, we're already in LOADING_CACHED state if isCached was true
           // Otherwise, set it now
           setPageState('LOADING_CACHED');
@@ -715,9 +738,9 @@ export default function AnalyzePage() {
                   videoId: extractedVideoId,
                   videoInfo: cacheData.videoInfo,
                   transcript: sanitizedTranscript,
-                  model: 'gemini-2.5-flash',
                   includeCandidatePool: true,
-                  mode: selectedMode
+                  mode: selectedMode,
+                  forceRegenerate: false
                 }),
               });
 
@@ -796,6 +819,7 @@ export default function AnalyzePage() {
           }
 
           return; // Exit early - no need to fetch anything else
+          }
         }
       }
 
@@ -949,8 +973,8 @@ export default function AnalyzePage() {
           videoId: extractedVideoId,
           videoInfo: fetchedVideoInfo,
           transcript: normalizedTranscriptData,
-          model: 'gemini-2.5-flash',
-          mode: selectedMode
+          mode: selectedMode,
+          forceRegenerate
         }),
         signal: topicsController.signal,
       }).catch(err => {
@@ -1124,8 +1148,7 @@ export default function AnalyzePage() {
               },
               transcript: normalizedTranscriptData,
               topics: generatedTopics,
-              summary: generatedTakeaways,
-              model: 'gemini-2.5-flash'
+              summary: generatedTakeaways
             }),
           });
 
@@ -1358,11 +1381,7 @@ export default function AnalyzePage() {
       setPlayAllIndex(0);
       setIsLoadingThemeTopics(false);
       activeThemeRequestIdRef.current = null;
-      setUsedTopicKeys(new Set(
-        baseTopics
-          .filter((topic): topic is Topic & { quote: { timestamp: string; text: string } } => !!topic.quote?.timestamp && !!topic.quote.text)
-          .map(topic => `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`)
-      ));
+      setUsedTopicKeys(new Set(baseTopicKeySet));
     };
 
     if (!themeLabel) {
@@ -1420,7 +1439,7 @@ export default function AnalyzePage() {
       setIsLoadingThemeTopics(true);
       const requestKey = `theme-topics:${normalizedTheme}:${requestId}`;
       const controller = abortManager.current.createController(requestKey);
-      const exclusionKeys = Array.from(usedTopicKeys).map((key) => key.slice(0, 500));
+      const exclusionKeys = Array.from(baseTopicKeySet).map((key) => key.slice(0, 500));
 
       try {
         const response = await fetch("/api/video-analysis", {
@@ -1430,7 +1449,6 @@ export default function AnalyzePage() {
             videoId,
             videoInfo,
             transcript,
-            model: 'gemini-2.5-flash',
             theme: normalizedTheme,
             excludeTopicKeys: exclusionKeys,
             mode
@@ -1445,6 +1463,12 @@ export default function AnalyzePage() {
         }
 
         const data = await response.json();
+
+        // Check if the API returned an error (e.g., no content found for theme)
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
         const hydratedThemeTopics = hydrateTopicsWithTranscript(Array.isArray(data.topics) ? data.topics : [], transcript);
         const candidatePool = Array.isArray(data.topicCandidates) ? data.topicCandidates : undefined;
         setThemeCandidateMap(prev => ({
@@ -1526,6 +1550,7 @@ export default function AnalyzePage() {
     transcript,
     selectedTheme,
     baseTopics,
+    baseTopicKeySet,
     themeTopicsMap,
     usedTopicKeys,
     mode,
@@ -1877,7 +1902,7 @@ export default function AnalyzePage() {
                   onSaveEditingNote={handleSaveEditingNote}
                   onCancelEditing={handleCancelEditing}
                   isAuthenticated={!!user}
-                  onRequestSignIn={promptSignInForNotes}
+                  onRequestSignIn={handleAuthRequired}
                   selectedLanguage={selectedLanguage}
                   onRequestTranslation={handleRequestTranslation}
                   onLanguageChange={handleLanguageChange}

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ModeSelector } from "@/components/mode-selector";
+import { isGrokProviderOnClient } from "@/lib/ai-providers/client-config";
 import type { TopicGenerationMode } from "@/lib/types";
 
 interface UrlInputProps {
@@ -29,9 +30,13 @@ export function UrlInput({
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [isFocused, setIsFocused] = useState(false);
-  const showModeSelector = typeof onModeChange === "function";
+  const forceSmartMode = isGrokProviderOnClient();
+  const showModeSelector =
+    !forceSmartMode && typeof onModeChange === "function";
   const showFeelingLucky = typeof onFeelingLucky === "function";
-  const modeValue: TopicGenerationMode = mode ?? "fast";
+  const modeValue: TopicGenerationMode = forceSmartMode
+    ? "smart"
+    : mode ?? "fast";
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

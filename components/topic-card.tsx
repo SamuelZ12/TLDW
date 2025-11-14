@@ -26,8 +26,10 @@ export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic,
     const translationEnabled = selectedLanguage !== null;
     if (translationEnabled && !translatedTitle && !isLoadingTranslation && onRequestTranslation) {
       setIsLoadingTranslation(true);
-      // Include language in cache key to allow caching per language
-      const cacheKey = `${topic.id}:${selectedLanguage}`;
+      // Cache key MUST include the source text, not the ephemeral topic id
+      // Topic ids like "topic-0" are reused across theme changes which caused
+      // collisions and stale translations bleeding across themes.
+      const cacheKey = `topic-title:${selectedLanguage}:${topic.title}`;
       onRequestTranslation(topic.title, cacheKey)
         .then(translation => {
           setTranslatedTitle(translation);
@@ -46,7 +48,14 @@ export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic,
     setTranslatedTitle(topic.translatedTitle || null);
     setIsLoadingTranslation(false);
   }, [selectedLanguage, topic.translatedTitle]);
-  
+
+  // Also clear translation state when the topic content changes (e.g., switching themes)
+  // This ensures we don't show a stale translation from a previous theme for a reused topic id.
+  useEffect(() => {
+    setTranslatedTitle(topic.translatedTitle || null);
+    setIsLoadingTranslation(false);
+  }, [topic.title]);
+
   const handleClick = () => {
     onClick();
     // Automatically play the topic when clicked

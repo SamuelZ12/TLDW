@@ -253,11 +253,11 @@ export const RATE_LIMITS = {
   // Translation operations
   ANON_TRANSLATION: {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 10 // 10 API calls per minute for anonymous users
+    maxRequests: 100 // 100 API calls per minute for anonymous users (Google allows unlimited)
   },
   AUTH_TRANSLATION: {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 30 // 30 API calls per minute for authenticated users
+    maxRequests: 500 // 500 API calls per minute for authenticated users (Google allows unlimited)
   },
   // Read-only endpoints (status checks, etc.)
   READ_ONLY: {

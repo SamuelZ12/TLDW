@@ -78,6 +78,18 @@ async function handler(req: NextRequest) {
           }
         );
 
+        // If no topics were generated for the theme, it means the AI couldn't find relevant content
+        if (themedTopics.length === 0) {
+          console.log(`[video-analysis] No content found for theme: "${theme}"`);
+          return NextResponse.json({
+            topics: [],
+            theme,
+            cached: false,
+            topicCandidates: undefined,
+            error: `No content found for theme: "${theme}"`
+          });
+        }
+
         return NextResponse.json({
           topics: themedTopics,
           theme,

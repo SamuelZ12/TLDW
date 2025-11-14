@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TranscriptSegment, VideoInfo } from '@/lib/types';
 import { withSecurity } from '@/lib/security-middleware';
 import { RATE_LIMITS } from '@/lib/rate-limiter';
-import { generateWithFallback } from '@/lib/gemini-client';
+import { generateAIResponse } from '@/lib/ai-client';
 import { topQuotesSchema } from '@/lib/schemas';
 import { formatTranscriptWithTimestamps, formatVideoInfoBlock } from '@/lib/prompts/takeaways';
 
@@ -58,11 +58,9 @@ async function handler(request: NextRequest) {
 
     const prompt = buildTopQuotesPrompt(transcript as TranscriptSegment[], videoInfo as Partial<VideoInfo>);
 
-    const response = await generateWithFallback(prompt, {
+    const response = await generateAIResponse(prompt, {
       zodSchema: topQuotesSchema,
-      generationConfig: {
-        temperature: 0.4
-      }
+      temperature: 0.4
     });
 
     const parsed = JSON.parse(response);

@@ -174,7 +174,7 @@ export function VideoProgressBar({
 
             return (
               <TopicCard
-                key={topic.id}
+                key={`${topic.id}:${topic.title}`}
                 topic={topic}
                 isSelected={isSelected}
                 onClick={() => onTopicSelect?.(topic)}

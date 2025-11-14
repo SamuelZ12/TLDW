@@ -11,14 +11,33 @@ export class GoogleTranslateClient implements TranslationProvider {
 
     this.client = new Translate.Translate({
       key: apiKey,
-      projectId: 'tldw-translation' // This can be any string for API key auth
+      projectId: 'tldw-translation', // This can be any string for API key auth
     });
   }
 
-  async translateBatch(
-    texts: string[],
-    targetLanguage: string
-  ): Promise<string[]> {
+  async translate(text: string, targetLanguage: string): Promise<string> {
+    if (!text || text.trim() === '') {
+      return text;
+    }
+
+    try {
+      const [translation] = await this.client.translate(text, {
+        to: targetLanguage,
+        format: 'text',
+      });
+
+      return translation || text;
+    } catch (error) {
+      const translationError: TranslationError = new Error(
+        `Translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+      translationError.code = 'TRANSLATION_FAILED';
+      translationError.details = error;
+      throw translationError;
+    }
+  }
+
+  async translateBatch(texts: string[], targetLanguage: string): Promise<string[]> {
     if (texts.length === 0) {
       return [];
     }
@@ -41,7 +60,7 @@ export class GoogleTranslateClient implements TranslationProvider {
     try {
       const [translations] = await this.client.translate(nonEmptyTexts, {
         to: targetLanguage,
-        format: 'text'
+        format: 'text',
       });
 
       // Reconstruct the full array with translations in the correct positions
@@ -54,9 +73,7 @@ export class GoogleTranslateClient implements TranslationProvider {
       return result;
     } catch (error) {
       const translationError: TranslationError = new Error(
-        `Batch translation failed: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`
+        `Batch translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
       translationError.code = 'BATCH_TRANSLATION_FAILED';
       translationError.details = error;

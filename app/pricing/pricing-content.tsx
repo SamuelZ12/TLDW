@@ -40,13 +40,13 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
     'AI highlight reels',
     'Chat with transcripts',
     'Save notes',
+    'Transcript translation',
   ]
 
   const proFeatures = [
     '100 videos / month',
     'Everything from basic',
     'Export transcripts',
-    'Transcript translation',
   ]
 
   const heroDescription = (() => {
@@ -133,9 +133,9 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
           style={{ boxShadow: '2px 11px 40.4px 0 rgba(0, 0, 0, 0.06)' }}
         >
           <CardHeader className="!px-4 !pt-0 !pb-1">
-            <div className="rounded-[24px] bg-[#f7f7f7] px-4 pt-3 pb-4 text-left">
+            <div className="rounded-[24px] bg-[#f7f7f7] px-4 pt-2 pb-4 text-left">
               <div className="flex flex-col">
-                <p className="text-[16px] font-medium text-black mb-12">Basic</p>
+                <p className="text-[16px] font-medium text-black mb-10">Basic</p>
                 <h2 className="text-[32px] font-semibold mb-0">Free</h2>
                 <p className="text-[11px] text-muted-foreground mt-0">
                   Try TLDW for free, no card required
@@ -151,6 +151,7 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
                 '/enhance.svg',
                 '/Pen_On_Doc.svg',
                 '/Select_Text.svg',
+                '/Languages.svg',
               ]}
             />
           </CardContent>
@@ -209,7 +210,6 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
                 '/Video_On_Video.svg',
                 '/Creator_Rewards.svg',
                 '/Arrow_In_Right.svg',
-                '/Languages.svg',
               ]}
               footer={
                 <li key="topup">

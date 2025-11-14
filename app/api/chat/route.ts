@@ -7,7 +7,7 @@ import { RateLimiter, RATE_LIMITS, rateLimitResponse } from '@/lib/rate-limiter'
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { withSecurity } from '@/lib/security-middleware';
-import { generateWithFallback } from '@/lib/gemini-client';
+import { generateAIResponse } from '@/lib/ai-client';
 import { chatResponseSchema } from '@/lib/schemas';
 
 function formatTranscriptForContext(segments: TranscriptSegment[]): string {
@@ -160,15 +160,13 @@ ${message}
     let response = '';
 
     try {
-      response = await generateWithFallback(prompt, {
-        generationConfig: {
-          temperature: 0.6,
-          maxOutputTokens: Math.min(1024, maxOutputTokens),
-        },
+      response = await generateAIResponse(prompt, {
+        temperature: 0.6,
+        maxOutputTokens: Math.min(1024, maxOutputTokens),
         zodSchema: chatResponseSchema
       });
 
-      console.log('=== GEMINI RAW RESPONSE ===');
+      console.log('=== AI RAW RESPONSE ===');
       console.log('Response length:', response.length);
       console.log('Raw response:', response);
       console.log('=== END RAW RESPONSE ===');
