@@ -55,7 +55,7 @@ export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic,
     setTranslatedTitle(topic.translatedTitle || null);
     setIsLoadingTranslation(false);
   }, [topic.title]);
-  
+
   const handleClick = () => {
     onClick();
     // Automatically play the topic when clicked
