@@ -221,6 +221,21 @@ export function TranscriptViewer({
     }
   }, [scrollToElement]);
 
+  const handleSelectionStateChange = useCallback((hasSelection: boolean) => {
+    if (!hasSelection) {
+      return;
+    }
+
+    if (autoScroll) {
+      setAutoScroll(false);
+    }
+    setShowScrollToCurrentButton(true);
+    lastUserScrollTime.current = Date.now();
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = null;
+    }
+  }, [autoScroll]);
 
   // Scroll to first highlighted segment
   useEffect(() => {
@@ -577,6 +592,7 @@ export function TranscriptViewer({
                   source: 'transcript'
                 });
               }}
+              onSelectionChange={handleSelectionStateChange}
               getMetadata={(range) => {
                 const metadata: NoteMetadata = {};
                 const startNode = range.startContainer.parentElement;
@@ -603,7 +619,7 @@ export function TranscriptViewer({
                 return metadata;
               }}
               source="transcript"
-            />
+            >
             {transcript.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 No transcript available
@@ -731,6 +747,7 @@ export function TranscriptViewer({
                 });
               })()
             )}
+            </SelectionActions>
           </div>
         </ScrollArea>
       </div>
