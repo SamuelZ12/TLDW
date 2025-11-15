@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateTopicsRequestSchema, formatValidationError } from '@/lib/validation';
+import {
+  generateTopicsRequestSchema,
+  formatValidationError
+} from '@/lib/validation';
 import { z } from 'zod';
 import { withSecurity } from '@/lib/security-middleware';
-import { RATE_LIMITS } from '@/lib/rate-limiter';
 import { generateTopicsFromTranscript } from '@/lib/ai-processing';
 
 async function handler(request: NextRequest) {
@@ -26,15 +28,26 @@ async function handler(request: NextRequest) {
       throw error;
     }
 
-    const { transcript, model, includeCandidatePool, excludeTopicKeys, videoInfo, mode } = validatedData;
+    const {
+      transcript,
+      model,
+      includeCandidatePool,
+      excludeTopicKeys,
+      videoInfo,
+      mode
+    } = validatedData;
 
     // Use the shared function to generate topics
-    const { topics, candidates } = await generateTopicsFromTranscript(transcript, model, {
-      videoInfo,
-      includeCandidatePool,
-      excludeTopicKeys: new Set(excludeTopicKeys ?? []),
-      mode
-    });
+    const { topics, candidates } = await generateTopicsFromTranscript(
+      transcript,
+      model,
+      {
+        videoInfo,
+        includeCandidatePool,
+        excludeTopicKeys: new Set(excludeTopicKeys ?? []),
+        mode
+      }
+    );
 
     return NextResponse.json({
       topics,

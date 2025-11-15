@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TranscriptSegment } from '@/lib/types';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
-import { generateWithFallback } from '@/lib/gemini-client';
+import { generateAIResponse } from '@/lib/ai-client';
 import { quickPreviewSchema } from '@/lib/schemas';
 
 function buildFallbackPreview(options: {
@@ -108,10 +108,8 @@ ${trimmedPreview}
     let preview: string | undefined;
 
     try {
-      const response = await generateWithFallback(prompt, {
-        generationConfig: {
-          temperature: 0.7
-        },
+      const response = await generateAIResponse(prompt, {
+        temperature: 0.7,
         zodSchema: quickPreviewSchema
       });
       if (response) {

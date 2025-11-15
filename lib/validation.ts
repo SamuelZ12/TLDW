@@ -79,8 +79,15 @@ export const topicSchema = z.object({
   autoPlay: z.boolean().optional()
 });
 
+const DEFAULT_AI_VALIDATION_MODEL =
+  process.env.AI_DEFAULT_MODEL ?? 'grok-4-fast-non-reasoning';
+
 // Model selection validation
-export const modelSchema = z.enum(['gemini-2.5-flash', 'gemini-2.0-flash-thinking', 'gemini-2.5-pro']);
+export const modelSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .default(DEFAULT_AI_VALIDATION_MODEL);
 
 export const topicGenerationModeSchema = z.enum(['smart', 'fast']);
 
@@ -107,7 +114,7 @@ export const videoAnalysisRequestSchema = z.object({
   videoId: youtubeIdSchema,
   videoInfo: videoInfoSchema,
   transcript: transcriptSchema,
-  model: modelSchema.default('gemini-2.5-flash'),
+  model: modelSchema,
   mode: topicGenerationModeSchema.optional(),
   forceRegenerate: z.boolean().default(false),
   theme: z.string().min(1).max(80).optional(),
@@ -136,7 +143,8 @@ export const chatRequestSchema = z.object({
     content: z.string(),
     citations: z.any().optional(),
     timestamp: z.any().optional()
-  })).max(50).optional()
+  })).max(50).optional(),
+  targetLanguage: z.string().min(2).max(10).optional()
 });
 
 export const toggleFavoriteRequestSchema = z.object({

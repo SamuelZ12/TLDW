@@ -7,8 +7,9 @@ import { RateLimiter, RATE_LIMITS, rateLimitResponse } from '@/lib/rate-limiter'
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { withSecurity } from '@/lib/security-middleware';
-import { generateWithFallback } from '@/lib/gemini-client';
+import { generateAIResponse } from '@/lib/ai-client';
 import { chatResponseSchema } from '@/lib/schemas';
+import { getLanguageName } from '@/lib/language-utils';
 
 function formatTranscriptForContext(segments: TranscriptSegment[]): string {
   return segments.map(s => {
@@ -90,7 +91,7 @@ async function handler(request: NextRequest) {
       throw error;
     }
 
-    const { message, transcript, topics, chatHistory } = validatedData;
+    const { message, transcript, topics, chatHistory, targetLanguage } = validatedData;
 
     // Check rate limiting
     const supabase = await createClient();
@@ -114,8 +115,16 @@ async function handler(request: NextRequest) {
       `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
     ).join('\n\n') || '';
 
+    // Build language instruction if targetLanguage is provided
+    const languageInstruction = targetLanguage
+      ? (() => {
+          const langName = getLanguageName(targetLanguage);
+          return `\n<languageRequirement>IMPORTANT: You MUST respond in ${langName}. All text in the "answer" field must be in ${langName}.</languageRequirement>\n`;
+        })()
+      : '';
+
     const prompt = `<task>
-<role>You are an expert AI assistant for video transcripts. Prefer the provided transcript when the user asks about the video, but answer general knowledge questions directly.</role>
+<role>You are an expert AI assistant for video transcripts. Prefer the provided transcript when the user asks about the video, but answer general knowledge questions directly.</role>${languageInstruction}
 <context>
 <videoTopics>
 ${topicsContext || 'None provided'}
@@ -160,15 +169,13 @@ ${message}
     let response = '';
 
     try {
-      response = await generateWithFallback(prompt, {
-        generationConfig: {
-          temperature: 0.6,
-          maxOutputTokens: Math.min(1024, maxOutputTokens),
-        },
+      response = await generateAIResponse(prompt, {
+        temperature: 0.6,
+        maxOutputTokens: Math.min(1024, maxOutputTokens),
         zodSchema: chatResponseSchema
       });
 
-      console.log('=== GEMINI RAW RESPONSE ===');
+      console.log('=== AI RAW RESPONSE ===');
       console.log('Response length:', response.length);
       console.log('Raw response:', response);
       console.log('=== END RAW RESPONSE ===');
