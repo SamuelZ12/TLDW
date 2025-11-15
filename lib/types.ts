@@ -24,6 +24,8 @@ export interface Topic {
     endCharOffset?: number;
     // Whether the text includes complete sentences
     hasCompleteSentences?: boolean;
+    // Confidence score for fuzzy matching (0-1 range)
+    confidence?: number;
   }[];
   keywords?: string[]; // Optional for backward compatibility
   translatedKeywords?: string[]; // Optional translated keywords
