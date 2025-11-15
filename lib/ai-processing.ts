@@ -217,7 +217,7 @@ function buildChunkPrompt(
   let durationInstruction =
     '  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote lasting roughly 45-75 seconds.</item>';
   if (chunkDuration > 0 && chunkDuration < 45) {
-    durationInstruction = `  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote that fits within this ${chunkDuration}s chunk. It’s OK if the quote is shorter than 45s; pick the single best self-contained passage (the entire chunk is acceptable).</item>`;
+    durationInstruction = `  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote that fits within this ${chunkDuration}s chunk. It's OK if the quote is shorter than 45s; pick the single best self-contained passage (the entire chunk is acceptable).</item>`;
   } else if (chunkDuration > 0 && chunkDuration <= 75) {
     durationInstruction = `  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote up to ${chunkDuration}s that stands alone.</item>`;
   }
