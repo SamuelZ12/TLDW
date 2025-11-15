@@ -3,6 +3,7 @@ import { TranscriptSegment } from '@/lib/types';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 import { generateAIResponse } from '@/lib/ai-client';
 import { quickPreviewSchema } from '@/lib/schemas';
+import { safeJsonParse } from '@/lib/json-utils';
 
 function buildFallbackPreview(options: {
   videoTitle?: string;
@@ -113,7 +114,7 @@ ${trimmedPreview}
         zodSchema: quickPreviewSchema
       });
       if (response) {
-        const parsed = quickPreviewSchema.parse(JSON.parse(response));
+        const parsed = quickPreviewSchema.parse(safeJsonParse(response));
         preview = parsed.overview.trim();
       }
     } catch (aiError: any) {

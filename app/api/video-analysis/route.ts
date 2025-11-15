@@ -14,7 +14,7 @@ import {
 import { hasUnlimitedVideoAllowance } from '@/lib/access-control';
 import {
   canGenerateVideo,
-  consumeVideoCredit,
+  consumeVideoCreditAtomic,
   type GenerationDecision
 } from '@/lib/subscription-manager';
 import { NO_CREDITS_USED_MESSAGE } from '@/lib/no-credits-message';
@@ -277,13 +277,12 @@ async function handler(req: NextRequest) {
       generationDecision?.subscription &&
       generationDecision.stats
     ) {
-      const consumeResult = await consumeVideoCredit({
+      const consumeResult = await consumeVideoCreditAtomic({
         userId: user.id,
         youtubeId: videoId,
         subscription: generationDecision.subscription,
         statsSnapshot: generationDecision.stats,
-        counted: true,
-        client: supabase
+        counted: true
       });
 
       if (!consumeResult.success) {

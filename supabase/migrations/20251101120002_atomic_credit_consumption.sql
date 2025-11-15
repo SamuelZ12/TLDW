@@ -117,8 +117,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION consume_video_credit_atomically IS
-  'Atomically checks credit availability and consumes credit in single transaction. ' ||
-  'Prevents race conditions by locking profile row during check-and-consume operation.';
+  'Atomically checks credit availability and consumes credit in single transaction. Prevents race conditions by locking profile row during check-and-consume operation.';
 
 -- Grant execute permissions
 GRANT EXECUTE ON FUNCTION consume_video_credit_atomically TO authenticated;
@@ -184,8 +183,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION check_video_generation_allowed IS
-  'Read-only check of credit availability without consuming credits. ' ||
-  'Use for pre-flight checks and UI display.';
+  'Read-only check of credit availability without consuming credits. Use for pre-flight checks and UI display.';
 
 -- Grant execute permissions
 GRANT EXECUTE ON FUNCTION check_video_generation_allowed TO authenticated;
