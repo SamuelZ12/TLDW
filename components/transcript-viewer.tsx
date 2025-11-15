@@ -480,7 +480,6 @@ export function TranscriptViewer({
                 source: 'transcript'
               });
             }}
-            onSelectionChange={handleSelectionStateChange}
             getMetadata={(range) => {
               const metadata: NoteMetadata = {};
               const startNode = range.startContainer.parentElement;
@@ -507,90 +506,89 @@ export function TranscriptViewer({
               return metadata;
             }}
             source="transcript"
-          >
-          {transcript.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              No transcript available
-            </div>
-          ) : (
-            (() => {
-              // Calculate current segment index once for all segments
-              const currentSegmentIndex = getCurrentSegmentIndex();
-              
-              return transcript.map((segment, index) => {
-                const highlightedText = getHighlightedText(segment, index);
-                const isCurrent = index === currentSegmentIndex;
-                getSegmentTopic(segment);
-                
-                const hasHighlight = highlightedText !== null;
+      />
+      {transcript.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          No transcript available
+        </div>
+      ) : (
+        (() => {
+          // Calculate current segment index once for all segments
+          const currentSegmentIndex = getCurrentSegmentIndex();
+          
+          return transcript.map((segment, index) => {
+            const highlightedText = getHighlightedText(segment, index);
+            const isCurrent = index === currentSegmentIndex;
+            getSegmentTopic(segment);
+            
+            const hasHighlight = highlightedText !== null;
 
-                return (
-                  <div
-                    key={index}
-                    data-segment-index={index}
-                    ref={(el) => {
-                      // Store refs properly
-                      if (el) {
-                        if (hasHighlight && !highlightedRefs.current.includes(el)) {
-                          highlightedRefs.current.push(el);
-                        }
-                        if (isCurrent) {
-                          currentSegmentRef.current = el;
-                        }
-                      }
-                    }}
-                    className={cn(
-                      "group relative px-2.5 py-1.5 rounded-xl transition-all duration-200"
-                    )}
-                  >
-                    {/* Transcript text with partial highlighting */}
-                    <p 
-                      className={cn(
-                        "text-sm leading-relaxed",
-                        isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
-                      )}
-                    >
-                      {highlightedText ? (
-                        highlightedText.highlightedParts.map((part, partIndex) => {
-                          const isCitation = 'isCitation' in part && part.isCitation;
-                          
-                          return (
-                            <span
-                              key={partIndex}
-                              className={part.highlighted ? "text-foreground" : ""}
-                              style={
-                                part.highlighted
-                                  ? isCitation || selectedTopic?.isCitationReel
-                                  ? {
-                                      backgroundColor: 'hsl(48, 100%, 85%)',
-                                      padding: '1px 3px',
-                                      borderRadius: '3px',
-                                      boxShadow: '0 0 0 1px hsl(48, 100%, 50%, 0.3)',
-                                    }
-                                    : selectedTopicColor
-                                    ? {
-                                        backgroundColor: `hsl(${selectedTopicColor} / 0.2)`,
-                                        padding: '0 2px',
-                                        borderRadius: '2px',
-                                      }
-                                    : undefined
-                                  : undefined
-                              }
-                            >
-                              {part.text}
-                            </span>
-                          );
-                        })
-                      ) : (
-                        segment.text
-                      )}
-                    </p>
-                  </div>
-                );
-              });
-            })()
-          )}
-          </SelectionActions>
+            return (
+              <div
+                key={index}
+                data-segment-index={index}
+                ref={(el) => {
+                  // Store refs properly
+                  if (el) {
+                    if (hasHighlight && !highlightedRefs.current.includes(el)) {
+                      highlightedRefs.current.push(el);
+                    }
+                    if (isCurrent) {
+                      currentSegmentRef.current = el;
+                    }
+                  }
+                }}
+                className={cn(
+                  "group relative px-2.5 py-1.5 rounded-xl transition-all duration-200"
+                )}
+              >
+                {/* Transcript text with partial highlighting */}
+                <p 
+                  className={cn(
+                    "text-sm leading-relaxed",
+                    isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
+                  )}
+                >
+                  {highlightedText ? (
+                    highlightedText.highlightedParts.map((part, partIndex) => {
+                      const isCitation = 'isCitation' in part && part.isCitation;
+                      
+                      return (
+                        <span
+                          key={partIndex}
+                          className={part.highlighted ? "text-foreground" : ""}
+                          style={
+                            part.highlighted
+                              ? isCitation || selectedTopic?.isCitationReel
+                              ? {
+                                  backgroundColor: 'hsl(48, 100%, 85%)',
+                                  padding: '1px 3px',
+                                  borderRadius: '3px',
+                                  boxShadow: '0 0 0 1px hsl(48, 100%, 50%, 0.3)',
+                                }
+                                : selectedTopicColor
+                                ? {
+                                    backgroundColor: `hsl(${selectedTopicColor} / 0.2)`,
+                                    padding: '0 2px',
+                                    borderRadius: '2px',
+                                  }
+                                : undefined
+                              : undefined
+                          }
+                        >
+                          {part.text}
+                        </span>
+                      );
+                    })
+                  ) : (
+                    segment.text
+                  )}
+                </p>
+              </div>
+            );
+          });
+        })()
+      )}
         </div>
       </ScrollArea>
     </div>
