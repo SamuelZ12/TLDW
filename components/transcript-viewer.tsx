@@ -160,21 +160,6 @@ export function TranscriptViewer({
     }
   }, [scrollToElement]);
 
-  const handleSelectionStateChange = useCallback((hasSelection: boolean) => {
-    if (!hasSelection) {
-      return;
-    }
-
-    if (autoScroll) {
-      setAutoScroll(false);
-    }
-    setShowScrollToCurrentButton(true);
-    lastUserScrollTime.current = Date.now();
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = null;
-    }
-  }, [autoScroll]);
 
   // Scroll to first highlighted segment
   useEffect(() => {

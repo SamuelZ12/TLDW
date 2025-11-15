@@ -59,7 +59,7 @@ COMMENT ON COLUMN public.profiles.topup_credits IS 'One-time purchase credits fo
 -- Purpose: Cached video analysis data with AI-generated content
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.video_analyses (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     youtube_id text UNIQUE NOT NULL,
     title text NOT NULL,
     author text,
@@ -85,7 +85,7 @@ COMMENT ON COLUMN public.video_analyses.suggested_questions IS 'AI-generated dis
 -- Purpose: User video history and favorites
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.user_videos (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     video_id uuid NOT NULL REFERENCES public.video_analyses(id) ON DELETE CASCADE,
     accessed_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -101,7 +101,7 @@ COMMENT ON TABLE public.user_videos IS 'User video history and favorites';
 -- Purpose: User notes on videos with source context
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.user_notes (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     video_id uuid NOT NULL REFERENCES public.video_analyses(id) ON DELETE CASCADE,
     source text NOT NULL,
@@ -121,7 +121,7 @@ COMMENT ON COLUMN public.user_notes.metadata IS 'Additional context about note o
 -- Purpose: Rate limiting tracking for API endpoints
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.rate_limits (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     key text NOT NULL,
     identifier text NOT NULL,
     timestamp timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -135,7 +135,7 @@ COMMENT ON TABLE public.rate_limits IS 'Rate limiting tracking for API endpoints
 -- Purpose: Video generation tracking for subscription limits
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.video_generations (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
     identifier text NOT NULL,
     youtube_id text NOT NULL,
@@ -153,7 +153,7 @@ COMMENT ON COLUMN public.video_generations.counted_toward_limit IS 'Whether this
 -- Purpose: Security audit trail
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.audit_logs (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
     action text NOT NULL,
     resource_type text,
@@ -171,7 +171,7 @@ COMMENT ON TABLE public.audit_logs IS 'Security audit trail for tracking importa
 -- Purpose: One-time credit purchase tracking
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.topup_purchases (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     stripe_payment_intent_id text UNIQUE NOT NULL,
     credits_purchased integer NOT NULL,
