@@ -46,7 +46,6 @@ function respondWithGeminiError(error: GeminiGenerationError) {
   );
 }
 
-
 async function handler(request: NextRequest) {
   try {
     // Parse and validate request body

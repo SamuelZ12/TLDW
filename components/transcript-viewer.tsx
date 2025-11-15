@@ -522,7 +522,7 @@ export function TranscriptViewer({
               return metadata;
             }}
             source="transcript"
-          />
+          >
           {transcript.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground text-sm">
               No transcript available
@@ -539,7 +539,7 @@ export function TranscriptViewer({
                 
                 const hasHighlight = highlightedText !== null;
 
-            return (
+                return (
                   <div
                     key={index}
                     data-segment-index={index}
@@ -600,12 +600,12 @@ export function TranscriptViewer({
                         segment.text
                       )}
                     </p>
-
                   </div>
-            );
-          });
+                );
+              });
             })()
           )}
+          </SelectionActions>
         </div>
       </ScrollArea>
     </div>
