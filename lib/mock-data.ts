@@ -65,3 +65,7 @@ export function getMockTranscript(videoId: string) {
 export function shouldUseMockData(): boolean {
   return process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 }
+
+export function shouldUseMockVideoInfo(): boolean {
+  return process.env.NEXT_PUBLIC_USE_MOCK_VIDEO_INFO === 'true';
+}
