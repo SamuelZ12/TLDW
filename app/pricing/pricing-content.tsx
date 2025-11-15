@@ -40,7 +40,6 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
     'AI highlight reels',
     'Chat with transcripts',
     'Save notes',
-    'Transcript translation',
   ]
 
   const proFeatures = [
@@ -151,7 +150,6 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
                 '/enhance.svg',
                 '/Pen_On_Doc.svg',
                 '/Select_Text.svg',
-                '/Languages.svg',
               ]}
             />
           </CardContent>
