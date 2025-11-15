@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ModeSelector } from "@/components/mode-selector";
-import { isGrokProviderOnClient } from "@/lib/ai-providers/client-config";
 import type { TopicGenerationMode } from "@/lib/types";
 
 interface UrlInputWithBrandingProps {
@@ -24,12 +23,8 @@ export function UrlInputWithBranding({ onSubmit, isLoading = false, initialUrl, 
   const [url, setUrl] = useState(() => initialUrl ?? "");
   const [error, setError] = useState("");
   const [isFocused, setIsFocused] = useState(false);
-  const forceSmartMode = isGrokProviderOnClient();
-  const showModeSelector =
-    !forceSmartMode && typeof onModeChange === "function";
-  const modeValue: TopicGenerationMode = forceSmartMode
-    ? "smart"
-    : mode ?? "fast";
+  const showModeSelector = typeof onModeChange === "function";
+  const modeValue: TopicGenerationMode = mode ?? "fast";
 
   useEffect(() => {
     if (initialUrl === undefined) return;

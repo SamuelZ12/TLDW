@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { resolveAppUrl } from '@/lib/utils'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
@@ -7,7 +6,7 @@ export async function GET(request: Request) {
   const code = requestUrl.searchParams.get('code')
   const error = requestUrl.searchParams.get('error')
   const errorDescription = requestUrl.searchParams.get('error_description')
-  const origin = resolveAppUrl(requestUrl.origin)
+  const origin = process.env.NEXT_PUBLIC_APP_URL || requestUrl.origin
 
   // Handle OAuth errors
   if (error) {

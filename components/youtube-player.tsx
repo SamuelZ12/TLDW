@@ -24,8 +24,6 @@ interface YouTubePlayerProps {
   setIsPlayingAll?: (playing: boolean) => void;
   renderControls?: boolean;
   onDurationChange?: (duration: number) => void;
-  selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
 }
 
 export function YouTubePlayer({
@@ -46,8 +44,6 @@ export function YouTubePlayer({
   setIsPlayingAll,
   renderControls = true,
   onDurationChange,
-  selectedLanguage = null,
-  onRequestTranslation,
 }: YouTubePlayerProps) {
   const playerRef = useRef<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -60,16 +56,16 @@ export function YouTubePlayer({
   const isPlayingAllRef = useRef(false);
   const playAllIndexRef = useRef(0);
   const topicsRef = useRef<Topic[]>([]);
-
+  
   // Keep refs in sync with state
   useEffect(() => {
     isPlayingAllRef.current = isPlayingAll;
   }, [isPlayingAll]);
-
+  
   useEffect(() => {
     playAllIndexRef.current = playAllIndex;
   }, [playAllIndex]);
-
+  
   useEffect(() => {
     topicsRef.current = topics;
   }, [topics]);
@@ -344,17 +340,17 @@ export function YouTubePlayer({
 
     // Don't set up monitoring during play-all mode (handled by time update logic)
     if (isPlayingAll) return;
-
+    
     // Handle citation reels with multiple segments
     if (selectedTopic.isCitationReel && selectedTopic.segments.length > 0) {
       const monitoringInterval = setInterval(() => {
         if (!playerRef.current?.getCurrentTime) return;
-
+        
         const currentTime = playerRef.current.getCurrentTime();
         const currentSegment = selectedTopic.segments[citationReelSegmentIndex];
-
+        
         if (!currentSegment) return;
-
+        
         // Check if we've reached the end of the current segment
         if (currentTime >= currentSegment.end) {
           // Check if there are more segments to play
@@ -363,22 +359,22 @@ export function YouTubePlayer({
             const nextIndex = citationReelSegmentIndex + 1;
             setCitationReelSegmentIndex(nextIndex);
             const nextSegment = selectedTopic.segments[nextIndex];
-
+            
             // Seek to the start of the next segment
             playerRef.current.seekTo(nextSegment.start, true);
           } else {
             // This was the last segment, pause the video
             playerRef.current.pauseVideo();
-
+            
             // Clear the monitoring interval
             clearInterval(monitoringInterval);
-
+            
             // Reset the segment index for next playback
             setCitationReelSegmentIndex(0);
           }
         }
       }, 100); // Check every 100ms
-
+      
       // Clean up on unmount or when dependencies change
       return () => {
         clearInterval(monitoringInterval);
@@ -388,12 +384,12 @@ export function YouTubePlayer({
 
   const playTopic = (topic: Topic) => {
     if (!playerRef.current || !topic || topic.segments.length === 0) return;
-
+    
     // If clicking a topic manually, exit play all mode
     if (isPlayingAll) {
       setIsPlayingAll?.(false);
     }
-
+    
     // Seek to the start of the single segment and play
     const segment = topic.segments[0];
     playerRef.current.seekTo(segment.start, true);
@@ -417,7 +413,7 @@ export function YouTubePlayer({
             className="absolute top-0 left-0 w-full h-full"
           />
         </div>
-
+      
         {renderControls && (
           <div className="p-3 bg-background border-t flex-shrink-0">
             {videoDuration > 0 && (
@@ -431,8 +427,6 @@ export function YouTubePlayer({
                 onPlayTopic={playTopic}
                 transcript={transcript}
                 videoId={videoId}
-                selectedLanguage={selectedLanguage}
-                onRequestTranslation={onRequestTranslation}
               />
             )}
 

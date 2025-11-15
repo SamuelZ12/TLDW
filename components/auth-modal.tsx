@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { resolveAppUrl } from '@/lib/utils'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,40 +26,22 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const supabase = createClient()
-  const appUrl = resolveAppUrl(typeof window !== 'undefined' ? window.location.origin : undefined)
 
   const handleSignUp = async () => {
     setLoading(true)
     setError(null)
 
-    const redirectUrl = `${appUrl}/auth/callback`
-    console.log('🔐 Starting signup process...')
-    console.log('📧 Email:', email)
-    console.log('🔗 Redirect URL:', redirectUrl)
-    console.log('🌐 NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL)
-    console.log('🧭 Resolved App URL:', appUrl)
-
-    const response = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: redirectUrl,
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`,
       },
     })
 
-    console.log('📨 Full Supabase signup response:', JSON.stringify(response, null, 2))
-    console.log('✅ User object:', response.data?.user)
-    console.log('📬 Session object:', response.data?.session)
-    console.log('❌ Error:', response.error)
-
-    if (response.error) {
-      console.error('❌ Signup error:', response.error.message)
-      setError(response.error.message)
+    if (error) {
+      setError(error.message)
     } else {
-      console.log('✅ Signup successful! User ID:', response.data?.user?.id)
-      console.log('📧 Email confirmation sent to:', response.data?.user?.email)
-      console.log('⚠️ Email confirmed?:', response.data?.user?.email_confirmed_at)
-      console.log('ℹ️ Identities:', response.data?.user?.identities)
       setSuccess(true)
     }
 
@@ -111,7 +92,7 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${appUrl}/auth/callback`,
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`,
       },
     })
 
@@ -127,11 +108,10 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
       case 'generation-limit':
         return {
           title: 'Sign up to continue',
-          description: 'You\'ve used your anonymous allowance. Create a free account to unlock monthly credits.',
+          description: 'You\'ve used today\'s free analysis! Create a free account to keep going.',
           benefits: [
-            '5 video analyses every 30 days',
-            'Save videos, notes, and highlights across devices',
-            'Upgrade anytime for 100 videos/month + Top-Up credits',
+            '5 video generations per day',
+            'Save analyzed videos, notes, and highlights',
           ],
           showBenefitsCard: true,
         }

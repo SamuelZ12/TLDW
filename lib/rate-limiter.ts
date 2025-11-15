@@ -1,8 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
-import type { SubscriptionTier } from '@/lib/subscription-manager';
-import crypto from 'crypto';
 import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 interface RateLimitConfig {
   windowMs: number; // Time window in milliseconds
@@ -22,9 +21,7 @@ export class RateLimiter {
     if (customId) return customId;
 
     const supabase = await createClient();
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
 
     if (user) {
       return `user:${user.id}`;
@@ -35,6 +32,7 @@ export class RateLimiter {
     const forwardedFor = headersList.get('x-forwarded-for');
     const realIp = headersList.get('x-real-ip');
     const ip = forwardedFor?.split(',')[0] || realIp || 'unknown';
+
 
     // Hash the IP for privacy
     const hash = crypto.createHash('sha256').update(ip).digest('hex');
@@ -162,11 +160,13 @@ export class RateLimiter {
       }
 
       // Record this request
-      const { error: insertError } = await supabase.from('rate_limits').insert({
-        key: rateLimitKey,
-        timestamp: new Date(now).toISOString(),
-        identifier
-      });
+      const { error: insertError } = await supabase
+        .from('rate_limits')
+        .insert({
+          key: rateLimitKey,
+          timestamp: new Date(now).toISOString(),
+          identifier
+        });
 
       if (insertError) {
         console.error('Failed to insert rate limit record:', insertError);
@@ -195,7 +195,10 @@ export class RateLimiter {
     const rateLimitKey = `ratelimit:${key}:${id}`;
 
     const supabase = await createClient();
-    await supabase.from('rate_limits').delete().eq('key', rateLimitKey);
+    await supabase
+      .from('rate_limits')
+      .delete()
+      .eq('key', rateLimitKey);
   }
 }
 
@@ -211,7 +214,7 @@ export const RATE_LIMITS = {
     maxRequests: 10 // 10 messages per minute
   },
 
-  // Authenticated users (legacy - kept for backwards compatibility)
+  // Authenticated users
   AUTH_GENERATION: {
     windowMs: 60 * 60 * 1000, // 1 hour
     maxRequests: 20 // 20 generations per hour
@@ -225,20 +228,6 @@ export const RATE_LIMITS = {
     maxRequests: 30 // 30 messages per minute
   },
 
-  // Subscription tier video generation limits (rolling 30-day window)
-  VIDEO_GENERATION_FREE_UNREGISTERED: {
-    windowMs: 30 * 24 * 60 * 60 * 1000, // 30 days
-    maxRequests: 1 // 1 video per 30 days for anonymous users
-  },
-  VIDEO_GENERATION_FREE_REGISTERED: {
-    windowMs: 30 * 24 * 60 * 60 * 1000, // 30 days
-    maxRequests: 5 // 5 videos per 30 days for free registered users
-  },
-  VIDEO_GENERATION_PRO: {
-    windowMs: 30 * 24 * 60 * 60 * 1000, // 30 days
-    maxRequests: 100 // 100 videos per 30 days for Pro subscribers
-  },
-
   // General API endpoints
   API_GENERAL: {
     windowMs: 60 * 1000, // 1 minute
@@ -249,27 +238,11 @@ export const RATE_LIMITS = {
   AUTH_ATTEMPT: {
     windowMs: 15 * 60 * 1000, // 15 minutes
     maxRequests: 5 // 5 login attempts per 15 minutes
-  },
-  // Translation operations
-  ANON_TRANSLATION: {
-    windowMs: 60 * 1000, // 1 minute
-    maxRequests: 100 // 100 API calls per minute for anonymous users (Google allows unlimited)
-  },
-  AUTH_TRANSLATION: {
-    windowMs: 60 * 1000, // 1 minute
-    maxRequests: 500 // 500 API calls per minute for authenticated users (Google allows unlimited)
-  },
-  // Read-only endpoints (status checks, etc.)
-  READ_ONLY: {
-    windowMs: 60 * 1000, // 1 minute
-    maxRequests: 100 // 100 requests per minute
   }
 };
 
 // Helper function for API responses
-export function rateLimitResponse(
-  result: RateLimitResult
-): NextResponse | null {
+export function rateLimitResponse(result: RateLimitResult): NextResponse | null {
   const headers: HeadersInit = {
     'X-RateLimit-Remaining': result.remaining.toString(),
     'X-RateLimit-Reset': result.resetAt.toISOString()
@@ -293,17 +266,4 @@ export function rateLimitResponse(
   }
 
   return null; // Request allowed
-}
-
-export function getPlanLimiter(
-  tier: SubscriptionTier | 'anonymous'
-): RateLimitConfig {
-  switch (tier) {
-    case 'pro':
-      return RATE_LIMITS.VIDEO_GENERATION_PRO;
-    case 'free':
-      return RATE_LIMITS.VIDEO_GENERATION_FREE_REGISTERED;
-    default:
-      return RATE_LIMITS.VIDEO_GENERATION_FREE_UNREGISTERED;
-  }
 }

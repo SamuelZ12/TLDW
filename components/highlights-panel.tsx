@@ -21,8 +21,6 @@ interface HighlightsPanelProps {
   transcript?: TranscriptSegment[];
   isLoadingThemeTopics?: boolean;
   videoId?: string;
-  selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
 }
 
 export function HighlightsPanel({
@@ -39,8 +37,6 @@ export function HighlightsPanel({
   transcript = [],
   isLoadingThemeTopics = false,
   videoId,
-  selectedLanguage = null,
-  onRequestTranslation,
 }: HighlightsPanelProps) {
   return (
     <Card className="overflow-hidden p-0 border-0 relative">
@@ -59,8 +55,6 @@ export function HighlightsPanel({
           transcript={transcript}
           isLoadingThemeTopics={isLoadingThemeTopics}
           videoId={videoId}
-          selectedLanguage={selectedLanguage}
-          onRequestTranslation={onRequestTranslation}
         />
 
         <div className="mt-3 flex items-center justify-between">

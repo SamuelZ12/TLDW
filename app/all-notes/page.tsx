@@ -354,7 +354,7 @@ export default function AllNotesPage() {
                   className="overflow-hidden border-border/60 shadow-none hover:shadow-lg transition-shadow duration-200"
                 >
                   {/* Video Header Section */}
-                  <Link href={video?.slug ? `/v/${video.slug}` : `/analyze/${videoId}`} className="block group">
+                  <Link href={`/analyze/${videoId}`} className="block group">
                     <div className="flex gap-4 p-4 hover:bg-muted/10 transition-colors">
                       {video?.thumbnailUrl && (
                         <div className="relative w-28 h-[70px] flex-shrink-0 rounded-md overflow-hidden bg-muted shadow-sm">

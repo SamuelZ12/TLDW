@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TranscriptSegment, VideoInfo } from '@/lib/types';
 import { withSecurity } from '@/lib/security-middleware';
 import { RATE_LIMITS } from '@/lib/rate-limiter';
-import { generateAIResponse } from '@/lib/ai-client';
+import { generateWithFallback } from '@/lib/gemini-client';
 import { summaryTakeawaysSchema } from '@/lib/schemas';
 import { normalizeTimestampSources } from '@/lib/timestamp-normalization';
 import { buildTakeawaysPrompt } from '@/lib/prompts/takeaways';
@@ -152,8 +152,10 @@ async function handler(request: NextRequest) {
     let response: string;
 
     try {
-      response = await generateAIResponse(prompt, {
-        temperature: 0.6,
+      response = await generateWithFallback(prompt, {
+        generationConfig: {
+          temperature: 0.6
+        },
         zodSchema: summaryTakeawaysSchema
       });
     } catch (error) {

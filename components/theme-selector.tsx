@@ -12,8 +12,6 @@ interface ThemeSelectorProps {
   onSelect: (theme: string | null) => void;
   isLoading?: boolean;
   error?: string | null;
-  selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
 }
 
 export function ThemeSelector({
@@ -22,16 +20,12 @@ export function ThemeSelector({
   onSelect,
   isLoading = false,
   error = null,
-  selectedLanguage = null,
-  onRequestTranslation,
 }: ThemeSelectorProps) {
   const [customThemes, setCustomThemes] = useState<string[]>([]);
   const baseThemes = useMemo(() => themes.slice(0, 3), [themes]);
   const displayThemes = useMemo(() => {
     const additionalThemes = customThemes.filter((theme) => !baseThemes.includes(theme));
-    const result = [...baseThemes, ...additionalThemes];
-    console.log('[ThemeSelector] displayThemes computed:', result);
-    return result;
+    return [...baseThemes, ...additionalThemes];
   }, [baseThemes, customThemes]);
   const hasThemes = displayThemes.length > 0;
   const isOverallSelected = selectedTheme === null;
@@ -42,10 +36,6 @@ export function ThemeSelector({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showLeftScroll, setShowLeftScroll] = useState(false);
   const [showRightScroll, setShowRightScroll] = useState(false);
-  const [loadingTranslations, setLoadingTranslations] = useState<Set<string>>(new Set());
-  const [translatedThemes, setTranslatedThemes] = useState<Map<string, string>>(new Map());
-  const [yourTopicLabel, setYourTopicLabel] = useState("Your Topic");
-  const [overallHighlightsLabel, setOverallHighlightsLabel] = useState("Overall highlights");
 
   const trimmedValue = customThemeInput.trim();
   const isSubmitDisabled = trimmedValue.length === 0 || isLoading;
@@ -64,106 +54,6 @@ export function ThemeSelector({
       });
     }
   }, [baseThemes, selectedTheme]);
-
-  useEffect(() => {
-    setLoadingTranslations(new Set());
-    setTranslatedThemes(new Map());
-
-    setYourTopicLabel("Your Topic");
-    setOverallHighlightsLabel("Overall highlights");
-  }, [selectedLanguage]);
-
-  // Translate static labels
-  useEffect(() => {
-    const translationEnabled = selectedLanguage !== null;
-    if (!translationEnabled || !onRequestTranslation) {
-      console.log('[ThemeSelector] Static labels: translation disabled or no handler');
-      return;
-    }
-
-    console.log('[ThemeSelector] Requesting static label translations for language:', selectedLanguage);
-
-    // Translate "Your Topic"
-    onRequestTranslation("Your Topic", `ui_label:your_topic:${selectedLanguage}`)
-      .then(translation => {
-        console.log('[ThemeSelector] "Your Topic" translated to:', translation);
-        setYourTopicLabel(translation);
-      })
-      .catch((error) => {
-        console.error('[ThemeSelector] Failed to translate "Your Topic":', error);
-        setYourTopicLabel("Your Topic");
-      });
-
-    // Translate "Overall highlights"
-    onRequestTranslation("Overall highlights", `ui_label:overall_highlights:${selectedLanguage}`)
-      .then(translation => {
-        console.log('[ThemeSelector] "Overall highlights" translated to:', translation);
-        setOverallHighlightsLabel(translation);
-      })
-      .catch((error) => {
-        console.error('[ThemeSelector] Failed to translate "Overall highlights":', error);
-        setOverallHighlightsLabel("Overall highlights");
-      });
-  }, [selectedLanguage, onRequestTranslation]);
-
-  // Request translation for a theme (TranslationBatcher handles caching)
-  const requestTranslation = async (theme: string) => {
-    const translationEnabled = selectedLanguage !== null;
-
-    if (!onRequestTranslation || !translationEnabled) {
-      return;
-    }
-
-    if (loadingTranslations.has(theme)) {
-      return;
-    }
-
-    setLoadingTranslations((prev) => new Set(prev).add(theme));
-
-    try {
-      const cacheKey = `theme:${theme}:${selectedLanguage}`;
-      const translation = await onRequestTranslation(theme, cacheKey);
-      setTranslatedThemes((prev) => new Map(prev).set(theme, translation));
-    } catch (error) {
-      console.error(`[ThemeSelector] Translation failed for theme "${theme}":`, error);
-    } finally {
-      setLoadingTranslations((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(theme);
-        return newSet;
-      });
-    }
-  };
-
-  // Get display text for a theme (translated or original)
-  const getThemeDisplayText = (theme: string): string => {
-    const translationEnabled = selectedLanguage !== null;
-    if (!translationEnabled) {
-      return theme;
-    }
-
-    const isLoading = loadingTranslations.has(theme);
-    if (isLoading) {
-      return "Translating...";
-    }
-
-    const translation = translatedThemes.get(theme);
-    const result = translation || theme;
-
-    return result;
-  };
-
-  // Request translations for visible themes
-  useEffect(() => {
-    const translationEnabled = selectedLanguage !== null;
-
-    if (translationEnabled && onRequestTranslation) {
-      displayThemes.forEach((theme) => {
-        requestTranslation(theme);
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayThemes, selectedLanguage, onRequestTranslation]);
 
   const buttonClasses = (isActive: boolean, forceInactive = false) =>
     cn(
@@ -229,7 +119,7 @@ export function ThemeSelector({
       const { scrollWidth, clientWidth, scrollLeft } = scrollContainerRef.current;
       const canScrollLeft = scrollLeft > 0;
       const canScrollRight = scrollLeft < scrollWidth - clientWidth - 1; // -1 for rounding
-
+      
       setShowLeftScroll(canScrollLeft);
       setShowRightScroll(canScrollRight);
     }
@@ -262,12 +152,12 @@ export function ThemeSelector({
   useEffect(() => {
     checkScrollNeeded();
     window.addEventListener("resize", checkScrollNeeded);
-
+    
     const scrollContainer = scrollContainerRef.current;
     if (scrollContainer) {
       scrollContainer.addEventListener("scroll", checkScrollNeeded);
     }
-
+    
     return () => {
       window.removeEventListener("resize", checkScrollNeeded);
       if (scrollContainer) {
@@ -292,7 +182,7 @@ export function ThemeSelector({
           disabled={isLoading}
         >
           <Plus className="h-3.5 w-3.5" />
-          {yourTopicLabel}
+          Your Topic
         </Button>
 
         {/* Scrollable container for theme buttons - always rendered */}
@@ -311,7 +201,7 @@ export function ThemeSelector({
             onClick={() => onSelect(null)}
             tabIndex={showCustomInput ? -1 : 0}
           >
-            {overallHighlightsLabel}
+            Overall highlights
           </Button>
           {hasThemes && displayThemes.map((theme) => (
             <Button
@@ -322,17 +212,17 @@ export function ThemeSelector({
               onClick={() => onSelect(selectedTheme === theme ? null : theme)}
               tabIndex={showCustomInput ? -1 : 0}
             >
-              {getThemeDisplayText(theme)}
+              {theme}
             </Button>
           ))}
         </div>
-
+        
         {/* Combined scroll button - absolutely positioned on right edge */}
         {(showLeftScroll || showRightScroll) && !showCustomInput && (
           <div className="absolute right-0 top-0 flex items-center z-[5]">
             {/* Gradient fade overlay */}
             <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-r from-transparent via-background/50 to-background pointer-events-none" />
-
+            
             {/* Combined scroll button */}
             <div className="relative flex items-center justify-center flex-shrink-0 backdrop-blur-sm bg-white rounded-full p-0.5 shadow-[-1px_4px_21.8px_0_rgba(0,0,0,0.25)]">
               <Button
@@ -371,7 +261,7 @@ export function ThemeSelector({
               >
                 <X className="h-4 w-4" />
               </Button>
-
+              
               {/* Form with expanded textbox and inline arrow button */}
               <form className="relative" onSubmit={handleSubmit}>
                 <Input

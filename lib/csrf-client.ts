@@ -85,29 +85,20 @@ export async function fetchWithCSRF(
 
   // If we get a 403 with CSRF error, try to refresh token and retry once
   if (response.status === 403) {
-    // Clone response before consuming body to preserve it for caller
-    const clonedResponse = response.clone();
-    const data = await clonedResponse.json().catch(() => null);
-
+    const data = await response.json().catch(() => null);
     if (data?.error?.includes('CSRF')) {
-      // Check if we've already retried (prevent infinite loops)
-      const retryCount = (options as any).__csrfRetryCount || 0;
+      clearCSRFToken();
+      const newToken = await getCSRFToken();
 
-      if (retryCount < 1) {
-        clearCSRFToken();
-        const newToken = await getCSRFToken();
+      const headers = options.headers as Record<string, string> | undefined;
+      if (newToken && !headers?.['X-CSRF-Token']) {
+        options.headers = {
+          ...headers,
+          'X-CSRF-Token': newToken
+        };
 
-        if (newToken) {
-          // Update options with new token and increment retry counter
-          options.headers = {
-            ...options.headers,
-            'X-CSRF-Token': newToken
-          };
-          (options as any).__csrfRetryCount = retryCount + 1;
-
-          // Retry with recursive call to maintain proper token handling
-          return fetchWithCSRF(url, options);
-        }
+        // Retry the request once with new token
+        return fetch(url, options);
       }
     }
   }

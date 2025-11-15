@@ -18,7 +18,6 @@ interface NoteWithVideoRow {
     author: string;
     thumbnail_url: string;
     duration: number;
-    slug: string | null;
   } | null;
 }
 
@@ -39,7 +38,6 @@ function mapNoteWithVideo(row: NoteWithVideoRow) {
       author: row.video_analyses.author,
       thumbnailUrl: row.video_analyses.thumbnail_url,
       duration: row.video_analyses.duration,
-      slug: row.video_analyses.slug,
     } : null,
   };
 }
@@ -64,8 +62,7 @@ async function handler(req: NextRequest) {
             title,
             author,
             thumbnail_url,
-            duration,
-            slug
+            duration
           )
         `)
         .eq('user_id', user.id)

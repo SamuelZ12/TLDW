@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TranscriptSegment, Topic } from '@/lib/types';
 import { withSecurity } from '@/lib/security-middleware';
 import { RATE_LIMITS } from '@/lib/rate-limiter';
-import { generateAIResponse } from '@/lib/ai-client';
+import { generateWithFallback } from '@/lib/gemini-client';
 import { suggestedQuestionsSchema } from '@/lib/schemas';
 import { buildSuggestedQuestionFallbacks } from '@/lib/suggested-question-fallback';
 
@@ -99,8 +99,10 @@ ${fullTranscript}
     let response = '';
 
     try {
-      response = await generateAIResponse(prompt, {
-        temperature: 0.6,
+      response = await generateWithFallback(prompt, {
+        generationConfig: {
+          temperature: 0.6,
+        },
         zodSchema: suggestedQuestionsSchema
       });
     } catch {

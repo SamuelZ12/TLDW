@@ -19,7 +19,6 @@ interface VideoAnalysis {
   thumbnail_url: string;
   topics: any;
   created_at: string;
-  slug: string | null;
 }
 
 interface UserVideo {
@@ -145,7 +144,7 @@ export function VideoGrid({ videos }: VideoGridProps) {
         {filteredVideos.map((userVideo) => (
           <Link
             key={userVideo.id}
-            href={userVideo.video.slug ? `/v/${userVideo.video.slug}` : `/analyze/${userVideo.video.youtube_id}?cached=true`}
+            href={`/analyze/${userVideo.video.youtube_id}?cached=true`}
             className="group cursor-pointer"
           >
             <div className="rounded-lg overflow-hidden border bg-card hover:shadow-lg transition-shadow duration-200">

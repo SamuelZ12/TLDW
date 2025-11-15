@@ -36,42 +36,6 @@ async function handler(req: NextRequest) {
       .single();
 
     if (cachedVideo && cachedVideo.topics) {
-      let ownedByCurrentUser = false;
-
-      if (user?.id) {
-        if (cachedVideo.user_id && cachedVideo.user_id === user.id) {
-          ownedByCurrentUser = true;
-        } else {
-          const ownershipQuery = supabase
-            .from('video_generations')
-            .select('id')
-            .eq('user_id', user.id)
-            .limit(1);
-
-          const orConditions: string[] = [];
-
-          if (cachedVideo.id) {
-            orConditions.push(`video_id.eq.${cachedVideo.id}`);
-          }
-          if (videoId) {
-            orConditions.push(`youtube_id.eq.${videoId}`);
-          }
-
-          if (orConditions.length > 0) {
-            ownershipQuery.or(orConditions.join(','));
-          }
-
-          const { data: generationLink, error: generationError } = await ownershipQuery.maybeSingle();
-
-          if (generationError) {
-            console.error('Failed to check video generations ownership:', generationError);
-          }
-
-          if (generationLink) {
-            ownedByCurrentUser = true;
-          }
-        }
-      }
       // If user is logged in, track their access to this video
       if (user) {
         await supabase
@@ -99,8 +63,7 @@ async function handler(req: NextRequest) {
         },
         summary: cachedVideo.summary,
         suggestedQuestions: cachedVideo.suggested_questions,
-        cacheDate: cachedVideo.created_at,
-        ownedByCurrentUser
+        cacheDate: cachedVideo.created_at
       });
     }
 

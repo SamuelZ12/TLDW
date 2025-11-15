@@ -6,14 +6,9 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint .",
-    "validate-env": "tsx scripts/validate-env.ts",
-    "stripe:smoke": "node scripts/stripe-smoke.mjs",
-    "stripe:setup-portal": "tsx scripts/setup-stripe-portal.ts",
-    "stripe:create-prices": "tsx scripts/create-new-prices.ts"
+    "lint": "eslint ."
   },
   "dependencies": {
-    "@google-cloud/translate": "^9.2.1",
     "@google/generative-ai": "^0.24.1",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -26,10 +21,8 @@
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slider": "^1.3.6",
     "@radix-ui/react-slot": "^1.2.3",
-    "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
-    "@stripe/stripe-js": "^8.2.0",
     "@supabase/postgrest-js": "^2.75.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.57.4",
@@ -47,7 +40,6 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
-    "stripe": "^19.2.0",
     "tailwind-merge": "^3.3.1",
     "zod": "^4.1.9"
   },
@@ -59,7 +51,6 @@
     "eslint": "^9.37.0",
     "eslint-config-next": "^15.5.6",
     "tailwindcss": "^4",
-    "tsx": "^4.19.0",
     "tw-animate-css": "^1.3.7",
     "typescript": "^5"
   }

@@ -107,26 +107,9 @@ interface AIChatProps {
   cachedSuggestedQuestions?: string[] | null;
   onSaveNote?: (payload: { text: string; source: NoteSource; sourceId?: string | null; metadata?: NoteMetadata | null }) => Promise<void>;
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
-  selectedLanguage?: string | null;
-  translationCache?: Map<string, string>;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
 }
 
-export function AIChat({
-  transcript,
-  topics,
-  videoId,
-  videoTitle,
-  videoInfo,
-  onCitationClick,
-  onTimestampClick,
-  cachedSuggestedQuestions,
-  onSaveNote,
-  onTakeNoteFromSelection,
-  selectedLanguage,
-  translationCache,
-  onRequestTranslation
-}: AIChatProps) {
+export function AIChat({ transcript, topics, videoId, videoTitle, videoInfo, onCitationClick, onTimestampClick, cachedSuggestedQuestions, onSaveNote, onTakeNoteFromSelection }: AIChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -136,11 +119,6 @@ export function AIChat({
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [followUpAnchorId, setFollowUpAnchorId] = useState<string | null>(null);
   const [askedQuestions, setAskedQuestions] = useState<Set<string>>(new Set());
-
-  // Translation state for preset and follow-up questions
-  const [translatedKeyTakeawaysLabel, setTranslatedKeyTakeawaysLabel] = useState(KEY_TAKEAWAYS_LABEL);
-  const [translatedTopQuotesLabel, setTranslatedTopQuotesLabel] = useState(TOP_QUOTES_LABEL);
-  const [translatedFollowUpQuestions, setTranslatedFollowUpQuestions] = useState<string[]>([]);
   const chatMessagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
@@ -225,118 +203,6 @@ export function AIChat({
       return topic;
     });
   }, [topics]);
-
-  // Translate suggested questions when language changes
-  const [translatedSuggestedQuestions, setTranslatedSuggestedQuestions] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!selectedLanguage || !onRequestTranslation || suggestedQuestions.length === 0) {
-      setTranslatedSuggestedQuestions(suggestedQuestions);
-      return;
-    }
-
-    let isCancelled = false;
-
-    // Translate all suggested questions
-    const translateQuestions = async () => {
-      const translated = await Promise.all(
-        suggestedQuestions.map(async (question, index) => {
-          const cacheKey = `chat-suggested-question-${videoId}-${selectedLanguage}-${index}-${question}`;
-          try {
-            return await onRequestTranslation(question, cacheKey);
-          } catch (error) {
-            console.error('Failed to translate suggested question:', error);
-            return question; // Fallback to original on error
-          }
-        })
-      );
-      if (!isCancelled) {
-        setTranslatedSuggestedQuestions(translated);
-      }
-    };
-
-    void translateQuestions();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [suggestedQuestions, selectedLanguage, onRequestTranslation, videoId]);
-
-  // Use translated questions for display
-  const displayedSuggestedQuestions = selectedLanguage ? translatedSuggestedQuestions : suggestedQuestions;
-
-  // Translate preset question labels when language changes
-  useEffect(() => {
-    if (!selectedLanguage || !onRequestTranslation) {
-      setTranslatedKeyTakeawaysLabel(KEY_TAKEAWAYS_LABEL);
-      setTranslatedTopQuotesLabel(TOP_QUOTES_LABEL);
-      return;
-    }
-
-    let isCancelled = false;
-
-    const translatePresetLabels = async () => {
-      try {
-        const [keyTakeawaysTranslated, topQuotesTranslated] = await Promise.all([
-          onRequestTranslation(KEY_TAKEAWAYS_LABEL, `chat-preset-keytakeaways-${selectedLanguage}`),
-          onRequestTranslation(TOP_QUOTES_LABEL, `chat-preset-topquotes-${selectedLanguage}`)
-        ]);
-        if (!isCancelled) {
-          setTranslatedKeyTakeawaysLabel(keyTakeawaysTranslated);
-          setTranslatedTopQuotesLabel(topQuotesTranslated);
-        }
-      } catch (error) {
-        console.error('Failed to translate preset labels:', error);
-        if (!isCancelled) {
-          // Fallback to original
-          setTranslatedKeyTakeawaysLabel(KEY_TAKEAWAYS_LABEL);
-          setTranslatedTopQuotesLabel(TOP_QUOTES_LABEL);
-        }
-      }
-    };
-
-    void translatePresetLabels();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [selectedLanguage, onRequestTranslation]);
-
-  // Translate follow-up questions when they change or language changes
-  useEffect(() => {
-    if (!selectedLanguage || !onRequestTranslation || followUpQuestions.length === 0) {
-      setTranslatedFollowUpQuestions(followUpQuestions);
-      return;
-    }
-
-    let isCancelled = false;
-
-    const translateFollowUps = async () => {
-      const translated = await Promise.all(
-        followUpQuestions.map(async (question, index) => {
-          const cacheKey = `chat-followup-${videoId}-${selectedLanguage}-${index}-${question}`;
-          try {
-            return await onRequestTranslation(question, cacheKey);
-          } catch (error) {
-            console.error('Failed to translate follow-up question:', error);
-            return question;
-          }
-        })
-      );
-      if (!isCancelled) {
-        setTranslatedFollowUpQuestions(translated);
-      }
-    };
-
-    void translateFollowUps();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [followUpQuestions, selectedLanguage, onRequestTranslation, videoId]);
-
-  // Use translated follow-up questions for display
-  const displayedFollowUpQuestions = selectedLanguage ? translatedFollowUpQuestions : followUpQuestions;
 
   const fetchSuggestedQuestions = useCallback(async () => {
     setLoadingQuestions(true);
@@ -539,19 +405,17 @@ export function AIChat({
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-      const requestBody = {
-        message: promptText,
-        transcript,
-        topics: sanitizedTopicsForChat,
-        videoId,
-        chatHistory: messages,
-        ...(selectedLanguage && { targetLanguage: selectedLanguage }),
-      };
-
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          message: promptText,
+          transcript,
+          topics: sanitizedTopicsForChat,
+          videoId,
+          chatHistory: messages,
+          model: 'gemini-2.5-flash-lite',
+        }),
         signal: controller.signal,
       });
 
@@ -683,7 +547,7 @@ export function AIChat({
         }
       }
     }
-  }, [input, isLoading, messages, transcript, sanitizedTopicsForChat, videoId, requestFollowUpQuestions, selectedLanguage]);
+  }, [input, isLoading, messages, transcript, sanitizedTopicsForChat, videoId, requestFollowUpQuestions]);
 
   const executeKeyTakeaways = useCallback(
     async ({ skipUserMessage = false }: { skipUserMessage?: boolean } = {}) => {
@@ -970,54 +834,23 @@ export function AIChat({
     };
   }, [sendMessage, videoTitle]);
 
-  const handleSuggestedQuestionClick = useCallback((displayedQuestion: string, index: number) => {
+  const handleSuggestedQuestionClick = useCallback((question: string, index: number) => {
     if (isLoading) {
       return;
     }
-
-    // Get the original question (in English) at this index
-    const originalQuestion = suggestedQuestions[index];
-
-    if (!originalQuestion) {
-      console.warn('Question index out of bounds, using displayed question as fallback');
-      // Fallback to displayed question if index is invalid
-      sendMessage({
-        prompt: displayedQuestion,
-        display: displayedQuestion,
-        skipTracking: true,
-      });
-      return;
-    }
-
     setSuggestedQuestions(prev => prev.filter((_, i) => i !== index));
-    dismissedQuestionsRef.current.add(originalQuestion);
-
+    dismissedQuestionsRef.current.add(question);
     sendMessage({
-      prompt: originalQuestion, // Send original English question to API
-      display: displayedQuestion, // Show translated question to user
+      prompt: question,
+      display: question,
       skipTracking: true,
     });
-  }, [isLoading, sendMessage, suggestedQuestions]);
+  }, [isLoading, sendMessage]);
 
-  const handleFollowUpQuestionClick = useCallback((displayedQuestion: string, index: number) => {
+  const handleFollowUpQuestionClick = useCallback((question: string, index: number) => {
     if (isLoading) {
       return;
     }
-
-    // Get the original question (in English) at this index
-    const originalQuestion = followUpQuestions[index];
-
-    if (!originalQuestion) {
-      console.warn('Follow-up question index out of bounds, using displayed question as fallback');
-      // Fallback to displayed question if index is invalid
-      sendMessage({
-        prompt: displayedQuestion,
-        display: displayedQuestion,
-        skipTracking: true,
-      });
-      return;
-    }
-
     setFollowUpQuestions(prev => {
       const next = prev.filter((_, i) => i !== index);
       if (next.length === 0) {
@@ -1025,13 +858,13 @@ export function AIChat({
       }
       return next;
     });
-    dismissedQuestionsRef.current.add(originalQuestion);
+    dismissedQuestionsRef.current.add(question);
     sendMessage({
-      prompt: originalQuestion, // Send original English question to API
-      display: displayedQuestion, // Show translated question to user
+      prompt: question,
+      display: question,
       skipTracking: true,
     });
-  }, [isLoading, sendMessage, followUpQuestions]);
+  }, [isLoading, sendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -1093,7 +926,7 @@ export function AIChat({
                   disabled={isLoading || transcript.length === 0}
                   className="self-end w-fit max-w-full sm:max-w-[80%] h-auto justify-start text-left whitespace-normal break-words leading-snug py-2 px-4 transition-colors hover:bg-neutral-100"
                 >
-                  {translatedKeyTakeawaysLabel}
+                  {KEY_TAKEAWAYS_LABEL}
                 </Button>
               )}
               {!hasAskedTopQuotes && (
@@ -1104,11 +937,11 @@ export function AIChat({
                   disabled={isLoading || transcript.length === 0}
                   className="self-end w-fit max-w-full sm:max-w-[80%] h-auto justify-start text-left whitespace-normal break-words leading-snug py-2 px-4 transition-colors hover:bg-neutral-100"
                 >
-                  {translatedTopQuotesLabel}
+                  {TOP_QUOTES_LABEL}
                 </Button>
               )}
               <SuggestedQuestions
-                questions={displayedSuggestedQuestions}
+                questions={suggestedQuestions}
                 onQuestionClick={handleSuggestedQuestionClick}
                 isLoading={loadingQuestions}
                 isChatLoading={isLoading}
@@ -1148,7 +981,7 @@ export function AIChat({
                     {showFollowUps && (
                       <div className="mt-3">
                         <SuggestedQuestions
-                          questions={displayedFollowUpQuestions}
+                          questions={followUpQuestions}
                           onQuestionClick={handleFollowUpQuestionClick}
                           isLoading={loadingFollowUps}
                           isChatLoading={isLoading}

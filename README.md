@@ -4,13 +4,13 @@ TLDW turns long-form YouTube videos into a structured learning workspace. Paste 
 
 ## Overview
 
-The project is a Next.js 15 + React 19 application that wraps xAI’s Grok 4 Fast models (with optional Gemini adapters) and Supadata transcripts with a polished UX. Supabase provides authentication, persistence, rate limiting, and profile preferences. The experience is optimized for fast iteration using Turbopack, Tailwind CSS v4, and shadcn/ui components.
+The project is a Next.js 15 + React 19 application that wraps Google Gemini 2.5 models and Supadata transcripts with a polished UX. Supabase provides authentication, persistence, rate limiting, and profile preferences. The experience is optimized for fast iteration using Turbopack, Tailwind CSS v4, and shadcn/ui components.
 
 ## Feature Highlights
 
 - AI highlight reels with Smart (quality) and Fast (speed) generation modes, Play All playback, and theme-based re-generation.
-- AI-powered quick preview, structured summary, suggested questions, and memorable quotes surfaced in parallel.
-- AI chat grounded in the transcript with structured JSON responses, timestamp citations, and fallbacks when the provider rate-limits.
+- Gemini-powered quick preview, structured summary, suggested questions, and memorable quotes surfaced in parallel.
+- AI chat grounded in the transcript with structured JSON responses, timestamp citations, and fallbacks when Gemini rate-limits.
 - Transcript viewer that stays in sync with the YouTube player; click any sentence to jump or capture the quote.
 - Personal notes workspace with transcript, chat, and takeaway sources plus an `/all-notes` dashboard for cross-video review.
 - Authenticated library pages for saved analyses, favorites, generation limits, and Supabase-backed profile preferences.
@@ -21,7 +21,7 @@ The project is a Next.js 15 + React 19 application that wraps xAI’s Grok 4 Fas
 
 - Frontend stack: Next.js 15 App Router, React 19, TypeScript, Tailwind CSS v4, shadcn/ui, lucide-react, sonner toasts.
 - Backend runtime: Next.js serverless route handlers with `withSecurity` middleware for CSRF, input validation (Zod), and rate caps.
-- AI pipeline: `lib/ai-processing.ts` and `lib/ai-client.ts` orchestrate provider-agnostic prompts, structured output schemas, fallback handling, and transcript chunking via `lib/ai-providers/`.
+- AI pipeline: `lib/ai-processing.ts` and `lib/gemini-client.ts` orchestrate Gemini 2.5 models with structured output schemas, cascading fallbacks, and transcript chunking.
 - Transcript & metadata: Supadata API delivers transcripts; lightweight YouTube oEmbed calls pull thumbnails and titles.
 - Persistence: Supabase stores `video_analyses`, `user_videos` (history + favorites), `user_notes`, `profiles` (topic generation mode, profile data), and `rate_limits`.
 - Authentication: Supabase Auth with session refresh in `middleware.ts`; `AuthModal` drives sign-up prompts when limits are hit.
@@ -39,7 +39,7 @@ The project is a Next.js 15 + React 19 application that wraps xAI’s Grok 4 Fas
 
 - Video ingestion: `/api/video-info`, `/api/transcript`, `/api/check-video-cache`, `/api/video-analysis`, `/api/save-analysis`, `/api/update-video-analysis`, `/api/link-video`.
 - AI generation: `/api/generate-topics`, `/api/generate-summary`, `/api/quick-preview`, `/api/suggested-questions`, `/api/top-quotes`.
-- Conversational tools: `/api/chat` (provider-agnostic chat with citations) and `/api/check-limit` for pre-flight rate checks.
+- Conversational tools: `/api/chat` (Gemini chat with citations) and `/api/check-limit` for pre-flight rate checks.
 - User data: `/api/notes`, `/api/notes/all`, `/api/toggle-favorite`.
 - Security utilities: `/api/csrf-token` and the shared `withSecurity` middleware (allowed methods, rate limits, CSRF validation).
 
@@ -66,9 +66,8 @@ The project is a Next.js 15 + React 19 application that wraps xAI’s Grok 4 Fas
 ├── contexts/
 │   └── auth-context.tsx        # Supabase auth provider
 ├── lib/
-│   ├── ai-client.ts            # Provider-agnostic AI entry point
-│   ├── ai-processing.ts        # Prompt building, transcript chunking, candidate pooling
-│   ├── ai-providers/           # Grok & Gemini adapters + registry
+│   ├── ai-processing.ts        # Gemini prompts, transcript chunking, candidate pooling
+│   ├── gemini-client.ts        # Model cascade + structured output handling
 │   ├── notes-client.ts         # CSRF-protected note helpers
 │   ├── rate-limiter.ts         # Supabase-backed request limiting
 │   ├── security-middleware.ts  # Common security wrapper for route handlers
@@ -88,7 +87,7 @@ The project is a Next.js 15 + React 19 application that wraps xAI’s Grok 4 Fas
 
 - Node.js 18+ (Next.js 15 requires 18.18 or newer)
 - `npm` (repo uses package-lock.json), though `pnpm` or `yarn` also work
-- Supabase project (Auth + Postgres) and API keys for Supadata & at least one AI provider (xAI Grok recommended, Gemini optional)
+- Supabase project (Auth + Postgres) and API keys for Supadata & Google Gemini
 
 ### 1. Clone & Install
 
@@ -104,21 +103,14 @@ Create `.env.local` in the repo root:
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `XAI_API_KEY` | yes* | xAI Grok API key (`grok-4-fast-non-reasoning` by default) |
-| `GEMINI_API_KEY` | optional* | Google Gemini API key (enable if `AI_PROVIDER=gemini`) |
+| `GEMINI_API_KEY` | yes | Google Gemini API key (2.5 models) |
 | `SUPADATA_API_KEY` | yes | Supadata transcript API key |
 | `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Supabase anonymous key |
 | `CSRF_SALT` | yes | Long random string used to sign CSRF tokens |
-| `AI_PROVIDER` | optional | `grok` (default) or `gemini`; determines which adapter is used |
-| `AI_DEFAULT_MODEL` | optional | Override provider default model (e.g., `grok-4-fast-non-reasoning`) |
-| `NEXT_PUBLIC_AI_MODEL` | optional | Client-side override for display/config hints |
 | `NEXT_PUBLIC_APP_URL` | optional | Canonical app URL (defaults to `http://localhost:3000`) |
-| `NEXT_PUBLIC_ENABLE_TRANSLATION_SELECTOR` | optional | Set to `true` to show the transcript translation dropdown (hidden otherwise) |
 | `YOUTUBE_API_KEY` | optional | Enables additional metadata when available |
 | `UNLIMITED_VIDEO_USERS` | optional | Comma-separated emails or user IDs allowed to bypass daily limits |
-
-<sup>\*</sup> At least one provider key (`XAI_API_KEY` or `GEMINI_API_KEY`) must be present. Set `AI_PROVIDER` if you prefer Gemini; otherwise Grok is used.
 
 > Generate a unique `CSRF_SALT` (e.g., `openssl rand -base64 32`). `UNLIMITED_VIDEO_USERS` entries are normalized to lowercase.
 
@@ -136,7 +128,7 @@ npm run dev        # starts Next.js with Turbopack on http://localhost:3000
 npm run lint       # optional: run lint checks (ESLint v9)
 ```
 
-The dev server reaches out to Supadata and your configured AI provider(s) directly, so make sure those API keys have local allowlists if your project settings restrict origins.
+The dev server reaches out to Gemini and Supadata directly, so make sure those API keys have local allowlists if your project settings restrict origins.
 
 ## Developer Notes
 

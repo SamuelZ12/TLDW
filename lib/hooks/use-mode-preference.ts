@@ -4,11 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import type { TopicGenerationMode } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
-import { isGrokProviderOnClient } from "@/lib/ai-providers/client-config";
 
 const STORAGE_KEY = "tldw-mode-preference";
-const FORCE_SMART_MODE = isGrokProviderOnClient();
-const DEFAULT_MODE: TopicGenerationMode = FORCE_SMART_MODE ? "smart" : "fast";
+const DEFAULT_MODE: TopicGenerationMode = "fast";
 
 /**
  * Custom hook for managing topic generation mode preference
@@ -18,16 +16,10 @@ const DEFAULT_MODE: TopicGenerationMode = FORCE_SMART_MODE ? "smart" : "fast";
 export function useModePreference() {
   const { user } = useAuth();
   const [mode, setMode] = useState<TopicGenerationMode>(DEFAULT_MODE);
-  const [isLoading, setIsLoading] = useState(!FORCE_SMART_MODE);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Load initial preference
   useEffect(() => {
-    if (FORCE_SMART_MODE) {
-      setMode("smart");
-      setIsLoading(false);
-      return;
-    }
-
     const loadPreference = async () => {
       if (user) {
         // Fetch from database for authenticated users
@@ -70,11 +62,6 @@ export function useModePreference() {
   // Update preference
   const updateMode = useCallback(
     async (newMode: TopicGenerationMode) => {
-      if (FORCE_SMART_MODE) {
-        setMode("smart");
-        return;
-      }
-
       setMode(newMode);
 
       if (user) {
