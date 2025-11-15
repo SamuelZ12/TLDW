@@ -143,7 +143,8 @@ export const chatRequestSchema = z.object({
     content: z.string(),
     citations: z.any().optional(),
     timestamp: z.any().optional()
-  })).max(50).optional()
+  })).max(50).optional(),
+  targetLanguage: z.string().min(2).max(10).optional()
 });
 
 export const toggleFavoriteRequestSchema = z.object({

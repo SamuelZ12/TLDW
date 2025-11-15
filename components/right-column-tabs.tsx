@@ -18,13 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-
-const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: 'English', nativeName: 'English' },
-  { code: 'zh-CN', name: 'Chinese, Simplified', nativeName: '简体中文' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本語' },
-  { code: 'es', name: 'Spanish', nativeName: 'Español' },
-] as const;
+import { SUPPORTED_LANGUAGES } from "@/lib/language-utils";
 
 interface RightColumnTabsProps {
   transcript: TranscriptSegment[];
@@ -48,6 +42,7 @@ interface RightColumnTabsProps {
   isAuthenticated?: boolean;
   onRequestSignIn?: () => void;
   selectedLanguage?: string | null;
+  translationCache?: Map<string, string>;
   onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
   onLanguageChange?: (languageCode: string | null) => void;
   onRequestExport?: () => void;
@@ -87,6 +82,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   isAuthenticated,
   onRequestSignIn,
   selectedLanguage = null,
+  translationCache,
   onRequestTranslation,
   onLanguageChange,
   onRequestExport,
@@ -175,7 +171,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
                 <div className="px-3 py-2 border-b">
                   <div className="text-xs font-medium">Sign in to translate</div>
                   <div className="mt-1 text-[11px] text-muted-foreground">
-                    Translate transcript and topics into 9 languages.
+                    Translate transcript and topics into 4 languages.
                   </div>
                   <Button
                     size="sm"
@@ -311,6 +307,9 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
             cachedSuggestedQuestions={cachedSuggestedQuestions}
             onSaveNote={onSaveNote}
             onTakeNoteFromSelection={onTakeNoteFromSelection}
+            selectedLanguage={selectedLanguage}
+            translationCache={translationCache}
+            onRequestTranslation={onRequestTranslation}
           />
         </div>
         <div className={cn("absolute inset-0", activeTab !== "notes" && "hidden")}
