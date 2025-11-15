@@ -85,7 +85,7 @@ interface NotesPanelProps {
   notes?: Note[];
   onDeleteNote?: (noteId: string) => Promise<void>;
   editingNote?: EditingNote | null;
-  onSaveEditingNote?: (noteText: string) => void;
+  onSaveEditingNote?: (payload: { noteText: string; selectedText: string }) => void;
   onCancelEditing?: () => void;
   isAuthenticated?: boolean;
   onSignInClick?: () => void;

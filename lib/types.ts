@@ -2,17 +2,21 @@ export interface TranscriptSegment {
   text: string;
   start: number;
   duration: number;
+  translatedText?: string; // Optional translated text for the segment
 }
 
 export interface Topic {
   id: string;
   title: string;
+  translatedTitle?: string; // Optional translated title
   description?: string;
+  translatedDescription?: string; // Optional translated description
   duration: number;
   segments: {
     start: number;
     end: number;
     text: string;
+    translatedText?: string; // Optional translated text for the segment
     startSegmentIdx?: number;
     endSegmentIdx?: number;
     // Character offsets within the start/end segments for precise highlighting
@@ -22,9 +26,11 @@ export interface Topic {
     hasCompleteSentences?: boolean;
   }[];
   keywords?: string[]; // Optional for backward compatibility
+  translatedKeywords?: string[]; // Optional translated keywords
   quote?: {
     timestamp: string;
     text: string;
+    translatedText?: string; // Optional translated quote
   };
   isCitationReel?: boolean; // Flag to identify citation playback reels
   autoPlay?: boolean; // Flag to indicate auto-play when topic is selected
@@ -33,9 +39,11 @@ export interface Topic {
 export interface TopicCandidate {
   key: string;
   title: string;
+  translatedTitle?: string; // Optional translated title
   quote: {
     timestamp: string;
     text: string;
+    translatedText?: string; // Optional translated quote
   };
 }
 
@@ -107,6 +115,7 @@ export interface NoteWithVideo extends Note {
     author: string;
     thumbnailUrl: string;
     duration: number;
+    slug?: string | null;
   } | null;
 }
 
@@ -130,4 +139,11 @@ export interface PlaybackCommand {
   segment?: TranscriptSegment;
   citations?: Citation[];
   autoPlay?: boolean;
+}
+
+// Translation state for client-side management
+export interface TranslationState {
+  enabled: boolean;
+  targetLanguage: string;
+  cache: Map<string, string>; // Cache for translated text
 }

@@ -23,6 +23,7 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [pendingVideoId, setPendingVideoId] = useState<string | null>(null);
+  const [isFeelingLucky, setIsFeelingLucky] = useState(false);
   const authPromptHandled = useRef(false);
   const { mode, setMode } = useModePreference();
 
@@ -116,6 +117,55 @@ function HomeContent() {
     [router]
   );
 
+  const handleFeelingLucky = useCallback(async () => {
+    if (isFeelingLucky) {
+      return;
+    }
+
+    setIsFeelingLucky(true);
+    try {
+      const response = await fetch("/api/random-video");
+      let data: { youtubeId?: string; url?: string | null; error?: string } | null = null;
+
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok || !data) {
+        const message =
+          typeof data?.error === "string" && data.error.trim().length > 0
+            ? data.error
+            : "Failed to load a sample video. Please try again.";
+        throw new Error(message);
+      }
+
+      if (!data.youtubeId) {
+        throw new Error("No sample video is available right now. Please try again.");
+      }
+
+      const params = new URLSearchParams();
+      params.set("cached", "true");
+      params.set("source", "lucky");
+
+      if (data.url) {
+        params.set("url", data.url);
+      }
+
+      router.push(`/analyze/${data.youtubeId}?${params.toString()}`);
+    } catch (error) {
+      console.error("Failed to load random analyzed video:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to load a sample video. Please try again."
+      );
+    } finally {
+      setIsFeelingLucky(false);
+    }
+  }, [isFeelingLucky, router]);
+
   return (
     <>
       <div className="flex min-h-screen items-center justify-center bg-white">
@@ -129,12 +179,18 @@ function HomeContent() {
             </p>
           </header>
           <div className="flex w-full flex-col items-center gap-9">
-            <UrlInput onSubmit={handleSubmit} mode={mode} onModeChange={setMode} />
+            <UrlInput
+              onSubmit={handleSubmit}
+              mode={mode}
+              onModeChange={setMode}
+              onFeelingLucky={handleFeelingLucky}
+              isFeelingLucky={isFeelingLucky}
+            />
 
             <Card className="relative flex w-[425px] max-w-full flex-col gap-2.5 overflow-hidden rounded-[22px] border border-[#f0f1f1] bg-white p-6 text-left shadow-[2px_11px_40.4px_rgba(0,0,0,0.06)]">
               <div className="relative z-10 flex flex-col gap-2.5">
                 <h3 className="text-[14px] font-medium leading-[15px] text-[#5c5c5c]">
-                  Jump to top insights immediately
+                  Skip to the good parts
                 </h3>
                 <p className="max-w-[60%] text-[14px] leading-[1.5] text-[#8d8d8d]">
                   Paste a link, and we&apos;ll generate highlight reels for you. Consume a 1-hour video in 5 minutes.

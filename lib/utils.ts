@@ -11,6 +11,22 @@ export function extractVideoId(url: string): string | null {
   return match ? match[1] : null;
 }
 
+export function buildVideoSlug(title: string | null | undefined, videoId: string | null | undefined): string {
+  if (!videoId) {
+    return '';
+  }
+
+  const normalizedTitle = (title ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+
+  const slugBase = normalizedTitle || 'video';
+  return `${slugBase}-${videoId}`;
+}
+
 export function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
@@ -99,3 +115,49 @@ export function getTopicHSLColor(index: number, videoId?: string): string {
 
 // Re-export parseTimestamp from timestamp-utils for backward compatibility
 export { parseTimestamp } from './timestamp-utils';
+
+function safeParseHost(url: string | undefined) {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveAppUrl(fallbackOrigin?: string) {
+  // Check if we're in a Vercel preview deployment
+  const isVercelPreview = process.env.VERCEL_ENV === 'preview';
+  const vercelUrl = process.env.VERCEL_URL;
+
+  // In preview environments, prioritize fallbackOrigin or Vercel URL
+  if (isVercelPreview) {
+    if (fallbackOrigin) return fallbackOrigin;
+    if (vercelUrl) return `https://${vercelUrl}`;
+  }
+
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL;
+
+  if (!configuredUrl) {
+    if (fallbackOrigin) return fallbackOrigin;
+    if (vercelUrl) return `https://${vercelUrl}`;
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin;
+    }
+    return '';
+  }
+
+  const configuredHost = safeParseHost(configuredUrl);
+
+  if (!fallbackOrigin) {
+    return configuredUrl;
+  }
+
+  const fallbackHost = safeParseHost(fallbackOrigin);
+
+  if (configuredHost && fallbackHost && configuredHost !== fallbackHost) {
+    return fallbackOrigin;
+  }
+
+  return configuredUrl;
+}
