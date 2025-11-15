@@ -619,7 +619,7 @@ export function TranscriptViewer({
                 return metadata;
               }}
               source="transcript"
-            >
+            />
             {transcript.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 No transcript available
@@ -747,7 +747,6 @@ export function TranscriptViewer({
                 });
               })()
             )}
-            </SelectionActions>
           </div>
         </ScrollArea>
       </div>
