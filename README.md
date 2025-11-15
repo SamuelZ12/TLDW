@@ -114,6 +114,7 @@ Create `.env.local` in the repo root:
 | `AI_DEFAULT_MODEL` | optional | Override provider default model (e.g., `grok-4-fast-non-reasoning`) |
 | `NEXT_PUBLIC_AI_MODEL` | optional | Client-side override for display/config hints |
 | `NEXT_PUBLIC_APP_URL` | optional | Canonical app URL (defaults to `http://localhost:3000`) |
+| `NEXT_PUBLIC_ENABLE_TRANSLATION_SELECTOR` | optional | Set to `true` to show the transcript translation dropdown (hidden otherwise) |
 | `YOUTUBE_API_KEY` | optional | Enables additional metadata when available |
 | `UNLIMITED_VIDEO_USERS` | optional | Comma-separated emails or user IDs allowed to bypass daily limits |
 
