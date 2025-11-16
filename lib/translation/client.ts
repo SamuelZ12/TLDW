@@ -10,28 +10,14 @@ type TranslationProviderType = 'google' | 'llm' | 'mock';
 /**
  * Get or create the singleton translation client based on environment configuration
  *
- * Provider selection (in order of precedence):
- * 1. NEXT_PUBLIC_USE_MOCK_TRANSLATION=true → Mock client (for testing)
- * 2. TRANSLATION_PROVIDER env var → 'google' | 'llm' | 'mock'
- * 3. Error if no provider is configured
- *
  * Environment variables:
- * - TRANSLATION_PROVIDER: Required (unless using mock). Values: 'google', 'llm', 'mock'
+ * - TRANSLATION_PROVIDER: Required. Values: 'google', 'llm', 'mock'
  * - GOOGLE_TRANSLATE_API_KEY: Required when TRANSLATION_PROVIDER='google'
  * - TRANSLATION_LLM_TEMPERATURE: Optional, default 0.3 (when using 'llm')
  * - For LLM provider: Uses current AI_PROVIDER (Gemini/Grok) from ai-client
  */
 export function getTranslationClient(): TranslationProvider {
   if (!translationClient) {
-    // Legacy: Use mock translation for local development when enabled
-    const useMockTranslation = process.env.NEXT_PUBLIC_USE_MOCK_TRANSLATION === 'true';
-
-    if (useMockTranslation) {
-      console.log('[TRANSLATION] Using mock translation client (NEXT_PUBLIC_USE_MOCK_TRANSLATION=true)');
-      translationClient = new MockTranslateClient();
-      return translationClient;
-    }
-
     // Get provider from environment variable
     const provider = process.env.TRANSLATION_PROVIDER as TranslationProviderType | undefined;
 
@@ -83,20 +69,4 @@ export function getTranslationClient(): TranslationProvider {
   }
 
   return translationClient;
-}
-
-/**
- * Create a new Google Translate client (legacy, for backward compatibility)
- * @deprecated Use getTranslationClient() instead
- */
-export function createTranslationClient(apiKey: string): TranslationProvider {
-  return new GoogleTranslateClient(apiKey);
-}
-
-/**
- * Reset the singleton client (useful for testing)
- * @internal
- */
-export function resetTranslationClient(): void {
-  translationClient = null;
 }

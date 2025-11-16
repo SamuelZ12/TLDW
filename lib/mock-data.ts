@@ -2,7 +2,7 @@
  * Mock video data for local development when Supadata API is unavailable
  * Enable by setting NEXT_PUBLIC_USE_MOCK_DATA=true in .env.local
  *
- * Note: This is separate from mock translation (NEXT_PUBLIC_USE_MOCK_TRANSLATION)
+ * Note: This is separate from mock translation (TRANSLATION_PROVIDER='mock')
  * You can mix and match: use real video data with mock translation, or vice versa
  */
 
