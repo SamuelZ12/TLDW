@@ -99,7 +99,7 @@ export function NoteEditor({ selectedText, onSave }: NoteEditorProps) {
         )}
       </div>
 
-      <div className="border-l-2 border-primary/40 bg-white/60 pl-3 pr-3 py-2 rounded-r mb-3">
+      <div className="border-l-2 border-primary/40 bg-white/60 pl-3 pr-3 py-2 mb-3">
         <Textarea
           value={quoteText}
           onChange={(e) => setQuoteText(e.target.value)}

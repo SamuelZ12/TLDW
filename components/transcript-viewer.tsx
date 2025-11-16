@@ -54,6 +54,7 @@ export function TranscriptViewer({
   const [showScrollToCurrentButton, setShowScrollToCurrentButton] = useState(false);
   const lastUserScrollTime = useRef<number>(0);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const manualModeRef = useRef(false);
   const [translationsCache, setTranslationsCache] = useState<Map<number, string>>(new Map());
   const [loadingTranslations, setLoadingTranslations] = useState<Set<number>>(new Set());
   const [translationErrors, setTranslationErrors] = useState<Set<number>>(new Set());
@@ -164,6 +165,10 @@ export function TranscriptViewer({
   // Detect user scroll and temporarily disable auto-scroll with debouncing
   const handleUserScroll = useCallback(() => {
     const now = Date.now();
+    if (manualModeRef.current) {
+      lastUserScrollTime.current = now;
+      return;
+    }
     // Only consider it user scroll if enough time has passed since last programmatic scroll
     if (now - lastUserScrollTime.current > 300) {
       if (autoScroll) {
@@ -177,8 +182,13 @@ export function TranscriptViewer({
 
         // Re-enable auto-scroll after 8 seconds of inactivity for better UX
         scrollTimeoutRef.current = setTimeout(() => {
+          if (manualModeRef.current) {
+            scrollTimeoutRef.current = null;
+            return;
+          }
           setAutoScroll(true);
           setShowScrollToCurrentButton(false);
+          scrollTimeoutRef.current = null;
         }, 8000);
       }
     }
@@ -211,13 +221,16 @@ export function TranscriptViewer({
   }, []);
 
   const jumpToCurrent = useCallback(() => {
+    manualModeRef.current = false;
+    setAutoScroll(true);
+    setShowScrollToCurrentButton(false);
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = null;
+    }
+
     if (currentSegmentRef.current) {
-      setAutoScroll(true);
-      setShowScrollToCurrentButton(false);
       scrollToElement(currentSegmentRef.current);
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
     }
   }, [scrollToElement]);
 
@@ -477,8 +490,15 @@ export function TranscriptViewer({
                 variant={autoScroll ? "default" : "outline"}
                 size="sm"
                 onClick={() => {
-                  setAutoScroll(!autoScroll);
-                  if (!autoScroll) {
+                  if (autoScroll) {
+                    manualModeRef.current = true;
+                    setAutoScroll(false);
+                    if (scrollTimeoutRef.current) {
+                      clearTimeout(scrollTimeoutRef.current);
+                      scrollTimeoutRef.current = null;
+                    }
+                  } else {
+                    manualModeRef.current = false;
                     setShowScrollToCurrentButton(false);
                     jumpToCurrent();
                   }
