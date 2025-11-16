@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ArrowUp, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { TranslationRequestHandler } from "@/lib/types";
 
 interface ThemeSelectorProps {
   themes: string[];
@@ -13,7 +14,7 @@ interface ThemeSelectorProps {
   isLoading?: boolean;
   error?: string | null;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 export function ThemeSelector({
@@ -30,7 +31,6 @@ export function ThemeSelector({
   const displayThemes = useMemo(() => {
     const additionalThemes = customThemes.filter((theme) => !baseThemes.includes(theme));
     const result = [...baseThemes, ...additionalThemes];
-    console.log('[ThemeSelector] displayThemes computed:', result);
     return result;
   }, [baseThemes, customThemes]);
   const hasThemes = displayThemes.length > 0;
@@ -77,16 +77,12 @@ export function ThemeSelector({
   useEffect(() => {
     const translationEnabled = selectedLanguage !== null;
     if (!translationEnabled || !onRequestTranslation) {
-      console.log('[ThemeSelector] Static labels: translation disabled or no handler');
       return;
     }
 
-    console.log('[ThemeSelector] Requesting static label translations for language:', selectedLanguage);
-
     // Translate "Your Topic"
-    onRequestTranslation("Your Topic", `ui_label:your_topic:${selectedLanguage}`)
+    onRequestTranslation("Your Topic", `ui_label:your_topic:${selectedLanguage}`, 'topic')
       .then(translation => {
-        console.log('[ThemeSelector] "Your Topic" translated to:', translation);
         setYourTopicLabel(translation);
       })
       .catch((error) => {
@@ -95,9 +91,8 @@ export function ThemeSelector({
       });
 
     // Translate "Overall highlights"
-    onRequestTranslation("Overall highlights", `ui_label:overall_highlights:${selectedLanguage}`)
+    onRequestTranslation("Overall highlights", `ui_label:overall_highlights:${selectedLanguage}`, 'topic')
       .then(translation => {
-        console.log('[ThemeSelector] "Overall highlights" translated to:', translation);
         setOverallHighlightsLabel(translation);
       })
       .catch((error) => {
@@ -122,7 +117,7 @@ export function ThemeSelector({
 
     try {
       const cacheKey = `theme:${theme}:${selectedLanguage}`;
-      const translation = await onRequestTranslation(theme, cacheKey);
+      const translation = await onRequestTranslation(theme, cacheKey, 'topic');
       setTranslatedThemes((prev) => new Map(prev).set(theme, translation));
     } catch (error) {
       console.error(`[ThemeSelector] Translation failed for theme "${theme}":`, error);

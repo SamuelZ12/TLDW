@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractVideoId } from '@/lib/utils';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
-import { shouldUseMockData, getMockVideoInfo } from '@/lib/mock-data';
+import { getMockVideoInfo, shouldUseMockVideoInfo } from '@/lib/mock-data';
 
 async function handler(request: NextRequest) {
   try {
@@ -24,9 +24,9 @@ async function handler(request: NextRequest) {
     }
 
     // Use mock data if enabled (for development when Supadata is rate-limited)
-    if (shouldUseMockData()) {
+    if (shouldUseMockVideoInfo()) {
       console.log(
-        '[VIDEO-INFO] Using mock data (NEXT_PUBLIC_USE_MOCK_DATA=true)'
+        '[VIDEO-INFO] Using mock data (NEXT_PUBLIC_USE_MOCK_VIDEO_INFO=true)'
       );
       const mockData = getMockVideoInfo(videoId);
       return NextResponse.json({

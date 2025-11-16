@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { TranscriptSegment, Topic, Citation } from "@/lib/types";
+import { TranscriptSegment, Topic, Citation, TranslationRequestHandler } from "@/lib/types";
 import { getTopicHSLColor, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -22,7 +22,7 @@ interface TranscriptViewerProps {
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
   videoId?: string;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
   onRequestExport?: () => void;
   exportButtonState?: {
     tooltip?: string;
@@ -86,7 +86,7 @@ export function TranscriptViewer({
     try {
       // Include language in cache key to allow caching per language
       const cacheKey = `transcript:${segmentIndex}:${selectedLanguage}`;
-      const translation = await onRequestTranslation(segment.text, cacheKey);
+      const translation = await onRequestTranslation(segment.text, cacheKey, 'transcript');
       setTranslationsCache(prev => new Map(prev).set(segmentIndex, translation));
     } catch (error) {
       console.error('Translation failed for segment', segmentIndex, error);

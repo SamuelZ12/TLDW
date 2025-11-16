@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Topic } from "@/lib/types";
+import { Topic, TranslationRequestHandler } from "@/lib/types";
 import { formatDuration, getTopicHSLColor } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +13,7 @@ interface TopicCardProps {
   onPlayTopic?: () => void;
   videoId?: string;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, topicId: string) => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic, videoId, selectedLanguage = null, onRequestTranslation }: TopicCardProps) {
@@ -30,7 +30,7 @@ export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic,
       // Topic ids like "topic-0" are reused across theme changes which caused
       // collisions and stale translations bleeding across themes.
       const cacheKey = `topic-title:${selectedLanguage}:${topic.title}`;
-      onRequestTranslation(topic.title, cacheKey)
+      onRequestTranslation(topic.title, cacheKey, 'topic')
         .then(translation => {
           setTranslatedTitle(translation);
         })
