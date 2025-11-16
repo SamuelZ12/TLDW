@@ -53,8 +53,10 @@ export function useTranslation() {
     // Build translation context from video info
     const context: TranslationContext | undefined = scenario ? {
       scenario,
-      videoTitle: videoInfo?.title,
-      topicKeywords: videoInfo?.tags,
+      videoTitle: videoInfo?.title ?? undefined,
+      topicKeywords: Array.isArray(videoInfo?.tags) && videoInfo.tags.length > 0
+        ? videoInfo.tags
+        : undefined,
     } : undefined;
 
     const translation = await translationBatcherRef.current.translate(

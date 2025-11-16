@@ -11,7 +11,7 @@ const translationContextSchema = z.object({
   videoTitle: z.string().optional(),
   topicKeywords: z.array(z.string()).optional(),
   preserveFormatting: z.boolean().optional(),
-}).optional();
+}).optional() satisfies z.ZodType<TranslationContext | undefined>;
 
 const translateBatchRequestSchema = z.object({
   texts: z.array(z.string()),
