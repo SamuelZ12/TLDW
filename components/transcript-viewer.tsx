@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { TranscriptSegment, Topic, Citation } from "@/lib/types";
+import { TranscriptSegment, Topic, Citation, TranslationRequestHandler } from "@/lib/types";
 import { getTopicHSLColor, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -22,7 +22,7 @@ interface TranscriptViewerProps {
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
   videoId?: string;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
   onRequestExport?: () => void;
   exportButtonState?: {
     tooltip?: string;

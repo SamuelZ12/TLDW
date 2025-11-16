@@ -149,3 +149,13 @@ export interface TranslationState {
   targetLanguage: string;
   cache: Map<string, string>; // Cache for translated text
 }
+
+// Translation scenario types
+export type TranslationScenario = 'transcript' | 'chat' | 'topic' | 'general';
+
+// Translation request handler function signature
+export type TranslationRequestHandler = (
+  text: string,
+  cacheKey: string,
+  scenario?: TranslationScenario
+) => Promise<string>;

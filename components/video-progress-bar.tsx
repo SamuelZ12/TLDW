@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { Topic, TranscriptSegment } from "@/lib/types";
+import { Topic, TranscriptSegment, TranslationRequestHandler } from "@/lib/types";
 import { getTopicHSLColor } from "@/lib/utils";
 import { TopicCard } from "@/components/topic-card";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,7 @@ interface VideoProgressBarProps {
   isLoadingThemeTopics?: boolean;
   videoId?: string;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 export function VideoProgressBar({

@@ -6,7 +6,7 @@ import { AIChat } from "@/components/ai-chat";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Languages, MessageSquare, PenLine, ChevronDown, CheckCircle2, Search, Circle } from "lucide-react";
-import { TranscriptSegment, Topic, Citation, Note, NoteSource, NoteMetadata, VideoInfo } from "@/lib/types";
+import { TranscriptSegment, Topic, Citation, Note, NoteSource, NoteMetadata, VideoInfo, TranslationRequestHandler } from "@/lib/types";
 import { SelectionActionPayload } from "@/components/selection-actions";
 import { NotesPanel, EditingNote } from "@/components/notes-panel";
 import { cn } from "@/lib/utils";
@@ -52,7 +52,7 @@ interface RightColumnTabsProps {
   onRequestSignIn?: () => void;
   selectedLanguage?: string | null;
   translationCache?: Map<string, string>;
-  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
   onLanguageChange?: (languageCode: string | null) => void;
   onRequestExport?: () => void;
   exportButtonState?: {

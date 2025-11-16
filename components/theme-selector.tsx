@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ArrowUp, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { TranslationRequestHandler } from "@/lib/types";
 
 interface ThemeSelectorProps {
   themes: string[];
@@ -13,7 +14,7 @@ interface ThemeSelectorProps {
   isLoading?: boolean;
   error?: string | null;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 export function ThemeSelector({

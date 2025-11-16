@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Topic, TranscriptSegment, PlaybackCommand, Citation } from "@/lib/types";
+import { Topic, TranscriptSegment, PlaybackCommand, Citation, TranslationRequestHandler } from "@/lib/types";
 import { formatDuration } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { VideoProgressBar } from "@/components/video-progress-bar";
@@ -25,7 +25,7 @@ interface YouTubePlayerProps {
   renderControls?: boolean;
   onDurationChange?: (duration: number) => void;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 export function YouTubePlayer({

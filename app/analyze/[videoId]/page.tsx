@@ -10,7 +10,7 @@ import { LoadingTips } from "@/components/loading-tips";
 import { VideoSkeleton } from "@/components/video-skeleton";
 import Link from "next/link";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { Topic, TranscriptSegment, VideoInfo, Citation, PlaybackCommand, Note, NoteSource, NoteMetadata, TopicCandidate, TopicGenerationMode } from "@/lib/types";
+import { Topic, TranscriptSegment, VideoInfo, Citation, PlaybackCommand, Note, NoteSource, NoteMetadata, TopicCandidate, TopicGenerationMode, TranslationRequestHandler } from "@/lib/types";
 import { normalizeWhitespace } from "@/lib/quote-matcher";
 import { hydrateTopicsWithTranscript, normalizeTranscript } from "@/lib/topic-utils";
 import { SelectionActionPayload, EXPLAIN_SELECTION_EVENT } from "@/components/selection-actions";
@@ -229,8 +229,8 @@ export default function AnalyzePage() {
   } = useTranslation();
 
   // Create unified translation handler with videoInfo context
-  const translateWithContext = useCallback(
-    (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => {
+  const translateWithContext: TranslationRequestHandler = useCallback(
+    (text: string, cacheKey: string, scenario?) => {
       return handleRequestTranslation(text, cacheKey, scenario, videoInfo);
     },
     [handleRequestTranslation, videoInfo]

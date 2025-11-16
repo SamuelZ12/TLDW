@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Topic } from "@/lib/types";
+import { Topic, TranslationRequestHandler } from "@/lib/types";
 import { formatDuration, getTopicHSLColor } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +13,7 @@ interface TopicCardProps {
   onPlayTopic?: () => void;
   videoId?: string;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic, videoId, selectedLanguage = null, onRequestTranslation }: TopicCardProps) {
