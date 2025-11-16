@@ -1,6 +1,6 @@
 "use client";
 
-import { Topic, TranscriptSegment } from "@/lib/types";
+import { Topic, TranscriptSegment, TranslationRequestHandler } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { VideoProgressBar } from "@/components/video-progress-bar";
@@ -22,7 +22,7 @@ interface HighlightsPanelProps {
   isLoadingThemeTopics?: boolean;
   videoId?: string;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 export function HighlightsPanel({

@@ -1,32 +1,27 @@
-import { GoogleTranslateClient } from './google-translate-client';
-import { MockTranslateClient } from './mock-translate-client';
+import { LLMTranslateClient } from './llm-translate-client';
 import type { TranslationProvider } from './types';
 
 let translationClient: TranslationProvider | null = null;
 
+/**
+ * Get or create the singleton LLM translation client
+ *
+ * Environment variables:
+ * - TRANSLATION_LLM_TEMPERATURE: Optional, default 0.3
+ * - Uses current AI_PROVIDER (Gemini/Grok) from ai-client
+ */
 export function getTranslationClient(): TranslationProvider {
   if (!translationClient) {
-    // Use mock translation for local development when enabled
-    const useMockTranslation = process.env.NEXT_PUBLIC_USE_MOCK_TRANSLATION === 'true';
+    const temperature = process.env.TRANSLATION_LLM_TEMPERATURE
+      ? parseFloat(process.env.TRANSLATION_LLM_TEMPERATURE)
+      : undefined;
 
-    if (useMockTranslation) {
-      console.log('[TRANSLATION] Using mock translation client (NEXT_PUBLIC_USE_MOCK_TRANSLATION=true)');
-      translationClient = new MockTranslateClient();
-      return translationClient;
-    }
-
-    const apiKey = process.env.GOOGLE_TRANSLATE_API_KEY;
-
-    if (!apiKey) {
-      throw new Error('GOOGLE_TRANSLATE_API_KEY environment variable is required');
-    }
-
-    translationClient = new GoogleTranslateClient(apiKey);
+    translationClient = new LLMTranslateClient({ temperature });
+    console.log(
+      `[TRANSLATION] LLM client initialized (temperature: ${temperature ?? 0.3}, ` +
+      `inherits AI_PROVIDER from ai-client)`
+    );
   }
 
   return translationClient;
-}
-
-export function createTranslationClient(apiKey: string): TranslationProvider {
-  return new GoogleTranslateClient(apiKey);
 }

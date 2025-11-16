@@ -10,7 +10,7 @@ import { LoadingTips } from "@/components/loading-tips";
 import { VideoSkeleton } from "@/components/video-skeleton";
 import Link from "next/link";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { Topic, TranscriptSegment, VideoInfo, Citation, PlaybackCommand, Note, NoteSource, NoteMetadata, TopicCandidate, TopicGenerationMode } from "@/lib/types";
+import { Topic, TranscriptSegment, VideoInfo, Citation, PlaybackCommand, Note, NoteSource, NoteMetadata, TopicCandidate, TopicGenerationMode, TranslationRequestHandler } from "@/lib/types";
 import { normalizeWhitespace } from "@/lib/quote-matcher";
 import { hydrateTopicsWithTranscript, normalizeTranscript } from "@/lib/topic-utils";
 import { SelectionActionPayload, EXPLAIN_SELECTION_EVENT } from "@/components/selection-actions";
@@ -227,6 +227,14 @@ export default function AnalyzePage() {
     handleRequestTranslation,
     handleLanguageChange,
   } = useTranslation();
+
+  // Create unified translation handler with videoInfo context
+  const translateWithContext: TranslationRequestHandler = useCallback(
+    (text: string, cacheKey: string, scenario?) => {
+      return handleRequestTranslation(text, cacheKey, scenario, videoInfo);
+    },
+    [handleRequestTranslation, videoInfo]
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -663,162 +671,162 @@ export default function AnalyzePage() {
           const cacheData = await cacheResponse.json();
 
           if (cacheData.cached) {
-          // For cached videos, we're already in LOADING_CACHED state if isCached was true
-          // Otherwise, set it now
-          setPageState('LOADING_CACHED');
+            // For cached videos, we're already in LOADING_CACHED state if isCached was true
+            // Otherwise, set it now
+            setPageState('LOADING_CACHED');
 
-          const sanitizedTranscript = normalizeTranscript(cacheData.transcript);
-          const hydratedTopics = hydrateTopicsWithTranscript(
-            Array.isArray(cacheData.topics) ? cacheData.topics : [],
-            sanitizedTranscript,
-          );
+            const sanitizedTranscript = normalizeTranscript(cacheData.transcript);
+            const hydratedTopics = hydrateTopicsWithTranscript(
+              Array.isArray(cacheData.topics) ? cacheData.topics : [],
+              sanitizedTranscript,
+            );
 
-          // Load all cached data
-          setTranscript(sanitizedTranscript);
+            // Load all cached data
+            setTranscript(sanitizedTranscript);
 
-          const cachedVideoInfo = cacheData.videoInfo ?? null;
-          if (cachedVideoInfo) {
-            setVideoInfo(cachedVideoInfo);
-            const rawDuration = (cachedVideoInfo as { duration?: number | string | null }).duration;
-            const numericDuration =
-              typeof rawDuration === "number"
-                ? rawDuration
-                : typeof rawDuration === "string"
-                  ? Number(rawDuration)
-                  : null;
-            if (numericDuration && !Number.isNaN(numericDuration) && numericDuration > 0) {
-              setVideoDuration(numericDuration);
-            }
-          } else {
-            setVideoInfo(null);
-          }
-
-          setTopics(hydratedTopics);
-          setBaseTopics(hydratedTopics);
-          const initialKeys = new Set<string>();
-          hydratedTopics.forEach(topic => {
-            if (topic.quote?.timestamp && topic.quote.text) {
-              const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
-              initialKeys.add(key);
-            }
-          });
-          setUsedTopicKeys(initialKeys);
-          setSelectedTopic(hydratedTopics.length > 0 ? hydratedTopics[0] : null);
-
-          // Set cached takeaways and questions
-          if (cacheData.summary) {
-            setTakeawaysContent(cacheData.summary);
-            setShowChatTab(true);
-            setIsGeneratingTakeaways(false);
-          }
-          if (cacheData.suggestedQuestions) {
-            setCachedSuggestedQuestions(cacheData.suggestedQuestions);
-          }
-
-          // Store video ID for potential post-auth linking (for cached videos)
-          storeCurrentVideoForAuth(extractedVideoId);
-
-          // Set page state back to idle
-          setPageState('IDLE');
-          setLoadingStage(null);
-          setProcessingStartTime(null);
-
-          // Show contextual notification for cached analysis
-          if (user && !cacheData.ownedByCurrentUser) {
-            toast.success("Lucky you — Someone's already analyzed this video! No credits used.");
-          }
-
-          backgroundOperation(
-            'load-cached-themes',
-            async () => {
-              const response = await fetch("/api/video-analysis", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  videoId: extractedVideoId,
-                  videoInfo: cacheData.videoInfo,
-                  transcript: sanitizedTranscript,
-                  includeCandidatePool: true,
-                  mode: selectedMode,
-                  forceRegenerate: false
-                }),
-              });
-
-              if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-                const message = buildApiErrorMessage(errorData, "Failed to generate themes");
-                throw new Error(message);
+            const cachedVideoInfo = cacheData.videoInfo ?? null;
+            if (cachedVideoInfo) {
+              setVideoInfo(cachedVideoInfo);
+              const rawDuration = (cachedVideoInfo as { duration?: number | string | null }).duration;
+              const numericDuration =
+                typeof rawDuration === "number"
+                  ? rawDuration
+                  : typeof rawDuration === "string"
+                    ? Number(rawDuration)
+                    : null;
+              if (numericDuration && !Number.isNaN(numericDuration) && numericDuration > 0) {
+                setVideoDuration(numericDuration);
               }
-
-              const data = await response.json();
-              if (Array.isArray(data.themes)) {
-                setThemes(data.themes);
-              }
-              if (Array.isArray(data.topicCandidates)) {
-                setThemeCandidateMap(prev => ({
-                  ...prev,
-                  __default: data.topicCandidates
-                }));
-              }
-              return data.themes;
-            },
-            (error) => {
-              console.error("Failed to generate themes for cached video:", error);
+            } else {
+              setVideoInfo(null);
             }
-          );
 
-          // Auto-start takeaways generation if not available
-          if (!cacheData.summary) {
-            setShowChatTab(true);
-            setIsGeneratingTakeaways(true);
+            setTopics(hydratedTopics);
+            setBaseTopics(hydratedTopics);
+            const initialKeys = new Set<string>();
+            hydratedTopics.forEach(topic => {
+              if (topic.quote?.timestamp && topic.quote.text) {
+                const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
+                initialKeys.add(key);
+              }
+            });
+            setUsedTopicKeys(initialKeys);
+            setSelectedTopic(hydratedTopics.length > 0 ? hydratedTopics[0] : null);
+
+            // Set cached takeaways and questions
+            if (cacheData.summary) {
+              setTakeawaysContent(cacheData.summary);
+              setShowChatTab(true);
+              setIsGeneratingTakeaways(false);
+            }
+            if (cacheData.suggestedQuestions) {
+              setCachedSuggestedQuestions(cacheData.suggestedQuestions);
+            }
+
+            // Store video ID for potential post-auth linking (for cached videos)
+            storeCurrentVideoForAuth(extractedVideoId);
+
+            // Set page state back to idle
+            setPageState('IDLE');
+            setLoadingStage(null);
+            setProcessingStartTime(null);
+
+            // Show contextual notification for cached analysis
+            if (user && !cacheData.ownedByCurrentUser) {
+              toast.success("Lucky you — Someone's already analyzed this video! No credits used.");
+            }
 
             backgroundOperation(
-              'generate-cached-takeaways',
+              'load-cached-themes',
               async () => {
-                const summaryRes = await fetch("/api/generate-summary", {
+                const response = await fetch("/api/video-analysis", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    transcript: sanitizedTranscript,
+                    videoId: extractedVideoId,
                     videoInfo: cacheData.videoInfo,
-                    videoId: extractedVideoId
+                    transcript: sanitizedTranscript,
+                    includeCandidatePool: true,
+                    mode: selectedMode,
+                    forceRegenerate: false
                   }),
                 });
 
-                if (summaryRes.ok) {
-                  const { summaryContent: generatedTakeaways } = await summaryRes.json();
-                  setTakeawaysContent(generatedTakeaways);
-
-                  // Update the video analysis with the takeaways
-                  await backgroundOperation(
-                    'update-cached-takeaways',
-                    async () => {
-                      await fetch("/api/update-video-analysis", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          videoId: extractedVideoId,
-                          summary: generatedTakeaways
-                        }),
-                      });
-                    }
-                  );
-                  return generatedTakeaways;
-                } else {
-                  const errorData = await summaryRes.json().catch(() => ({ error: "Unknown error" }));
-                  const message = buildApiErrorMessage(errorData, "Failed to generate takeaways");
+                if (!response.ok) {
+                  const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+                  const message = buildApiErrorMessage(errorData, "Failed to generate themes");
                   throw new Error(message);
                 }
+
+                const data = await response.json();
+                if (Array.isArray(data.themes)) {
+                  setThemes(data.themes);
+                }
+                if (Array.isArray(data.topicCandidates)) {
+                  setThemeCandidateMap(prev => ({
+                    ...prev,
+                    __default: data.topicCandidates
+                  }));
+                }
+                return data.themes;
               },
               (error) => {
-                setTakeawaysError(error.message || "Failed to generate takeaways. Please try again.");
+                console.error("Failed to generate themes for cached video:", error);
               }
-            ).finally(() => {
-              setIsGeneratingTakeaways(false);
-            });
-          }
+            );
 
-          return; // Exit early - no need to fetch anything else
+            // Auto-start takeaways generation if not available
+            if (!cacheData.summary) {
+              setShowChatTab(true);
+              setIsGeneratingTakeaways(true);
+
+              backgroundOperation(
+                'generate-cached-takeaways',
+                async () => {
+                  const summaryRes = await fetch("/api/generate-summary", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      transcript: sanitizedTranscript,
+                      videoInfo: cacheData.videoInfo,
+                      videoId: extractedVideoId
+                    }),
+                  });
+
+                  if (summaryRes.ok) {
+                    const { summaryContent: generatedTakeaways } = await summaryRes.json();
+                    setTakeawaysContent(generatedTakeaways);
+
+                    // Update the video analysis with the takeaways
+                    await backgroundOperation(
+                      'update-cached-takeaways',
+                      async () => {
+                        await fetch("/api/update-video-analysis", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            videoId: extractedVideoId,
+                            summary: generatedTakeaways
+                          }),
+                        });
+                      }
+                    );
+                    return generatedTakeaways;
+                  } else {
+                    const errorData = await summaryRes.json().catch(() => ({ error: "Unknown error" }));
+                    const message = buildApiErrorMessage(errorData, "Failed to generate takeaways");
+                    throw new Error(message);
+                  }
+                },
+                (error) => {
+                  setTakeawaysError(error.message || "Failed to generate takeaways. Please try again.");
+                }
+              ).finally(() => {
+                setIsGeneratingTakeaways(false);
+              });
+            }
+
+            return; // Exit early - no need to fetch anything else
           }
         }
       }
@@ -1677,9 +1685,9 @@ export default function AnalyzePage() {
     const normalizedSelected = selectedText.trim();
     const mergedMetadata = normalizedSelected
       ? {
-          ...(editingNote.metadata ?? {}),
-          selectedText: normalizedSelected,
-        }
+        ...(editingNote.metadata ?? {}),
+        selectedText: normalizedSelected,
+      }
       : editingNote.metadata ?? undefined;
 
     await handleSaveNote({
@@ -1839,7 +1847,7 @@ export default function AnalyzePage() {
                   renderControls={false}
                   onDurationChange={setVideoDuration}
                   selectedLanguage={selectedLanguage}
-                  onRequestTranslation={handleRequestTranslation}
+                  onRequestTranslation={translateWithContext}
                 />
                 {(themes.length > 0 || isLoadingThemeTopics || themeError || selectedTheme) && (
                   <div className="flex justify-center">
@@ -1850,7 +1858,7 @@ export default function AnalyzePage() {
                       isLoading={isLoadingThemeTopics}
                       error={themeError}
                       selectedLanguage={selectedLanguage}
-                      onRequestTranslation={handleRequestTranslation}
+                      onRequestTranslation={translateWithContext}
                     />
                   </div>
                 )}
@@ -1869,7 +1877,7 @@ export default function AnalyzePage() {
                   isLoadingThemeTopics={isLoadingThemeTopics}
                   videoId={videoId ?? undefined}
                   selectedLanguage={selectedLanguage}
-                  onRequestTranslation={handleRequestTranslation}
+                  onRequestTranslation={translateWithContext}
                 />
               </div>
             </div>
@@ -1904,7 +1912,7 @@ export default function AnalyzePage() {
                   isAuthenticated={!!user}
                   onRequestSignIn={handleAuthRequired}
                   selectedLanguage={selectedLanguage}
-                  onRequestTranslation={handleRequestTranslation}
+                  onRequestTranslation={translateWithContext}
                   onLanguageChange={handleLanguageChange}
                   onRequestExport={handleRequestExport}
                   exportButtonState={exportButtonState}

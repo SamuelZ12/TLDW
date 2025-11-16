@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, RefObject, Fragment, useMemo } from "react";
 import { z } from "zod";
-import { ChatMessage, TranscriptSegment, Topic, Citation, NoteSource, NoteMetadata, VideoInfo } from "@/lib/types";
+import { ChatMessage, TranscriptSegment, Topic, Citation, NoteSource, NoteMetadata, VideoInfo, TranslationRequestHandler } from "@/lib/types";
 import { SelectionActions, SelectionActionPayload, triggerExplainSelection, EXPLAIN_SELECTION_EVENT } from "@/components/selection-actions";
 import { ChatMessageComponent } from "./chat-message";
 import { SuggestedQuestions } from "./suggested-questions";
@@ -109,7 +109,7 @@ interface AIChatProps {
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
   selectedLanguage?: string | null;
   translationCache?: Map<string, string>;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 export function AIChat({

@@ -24,6 +24,8 @@ export interface Topic {
     endCharOffset?: number;
     // Whether the text includes complete sentences
     hasCompleteSentences?: boolean;
+    // Confidence score for fuzzy matching (0-1 range)
+    confidence?: number;
   }[];
   keywords?: string[]; // Optional for backward compatibility
   translatedKeywords?: string[]; // Optional translated keywords
@@ -147,3 +149,13 @@ export interface TranslationState {
   targetLanguage: string;
   cache: Map<string, string>; // Cache for translated text
 }
+
+// Translation scenario types
+export type TranslationScenario = 'transcript' | 'chat' | 'topic' | 'general';
+
+// Translation request handler function signature
+export type TranslationRequestHandler = (
+  text: string,
+  cacheKey: string,
+  scenario?: TranslationScenario
+) => Promise<string>;
