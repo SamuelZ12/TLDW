@@ -18,6 +18,8 @@ import {
   type GenerationDecision
 } from '@/lib/subscription-manager';
 import { NO_CREDITS_USED_MESSAGE } from '@/lib/no-credits-message';
+import { ensureMergedFormat } from '@/lib/transcript-format-detector';
+import { TranscriptSegment } from '@/lib/types';
 
 function respondWithNoCredits(
   payload: Record<string, unknown>,
@@ -145,9 +147,16 @@ async function handler(req: NextRequest) {
           console.error('Error generating themes for cached video:', error);
         }
 
+        // Ensure transcript is in merged format (backward compatibility for old cached videos)
+        const originalTranscript = cachedVideo.transcript as TranscriptSegment[];
+        const migratedTranscript = ensureMergedFormat(originalTranscript, {
+          enableLogging: true,
+          context: `YouTube ID: ${videoId}`
+        });
+
         return NextResponse.json({
           topics: cachedVideo.topics,
-          transcript: cachedVideo.transcript,
+          transcript: migratedTranscript,
           videoInfo: {
             title: cachedVideo.title,
             author: cachedVideo.author,
