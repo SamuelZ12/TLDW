@@ -4,10 +4,19 @@ import { RATE_LIMITS, RateLimiter, rateLimitResponse } from '@/lib/rate-limiter'
 import { getTranslationClient } from '@/lib/translation';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
+import type { TranslationContext } from '@/lib/translation/llm-translate-client';
+
+const translationContextSchema = z.object({
+  scenario: z.enum(['transcript', 'chat', 'topic', 'general']).optional(),
+  videoTitle: z.string().optional(),
+  topicKeywords: z.array(z.string()).optional(),
+  preserveFormatting: z.boolean().optional(),
+}).optional();
 
 const translateBatchRequestSchema = z.object({
   texts: z.array(z.string()),
-  targetLanguage: z.string().default('zh-CN')
+  targetLanguage: z.string().default('zh-CN'),
+  context: translationContextSchema
 });
 
 // Note: Translation requires authentication, but is available to both Free and Pro users.
@@ -61,7 +70,7 @@ async function handler(request: NextRequest) {
       );
     }
 
-    const { texts, targetLanguage } = validation.data;
+    const { texts, targetLanguage, context } = validation.data;
 
     if (texts.length === 0) {
       return NextResponse.json({ translations: [] });
@@ -96,7 +105,11 @@ async function handler(request: NextRequest) {
     async function worker() {
       while (index < chunks.length) {
         const myIndex = index++;
-        const translated = await translationClient.translateBatch(chunks[myIndex], targetLanguage);
+        const translated = await translationClient.translateBatch(
+          chunks[myIndex],
+          targetLanguage,
+          context
+        );
         // place back preserving order
         const start = myIndex * CHUNK_SIZE;
         for (let i = 0; i < translated.length; i++) {

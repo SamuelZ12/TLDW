@@ -365,8 +365,9 @@ ${scenarioInstructions}`;
     switch (scenario) {
       case 'transcript':
         return `SCENARIO: Video Transcript Translation
-${context?.videoTitle ? `VIDEO CONTEXT: "${context.videoTitle}"\n` : ''}
+${context?.videoTitle ? `VIDEO TITLE: "${context.videoTitle}"\n` : ''}
 GUIDELINES:
+- IMPORTANT: Correct apparent mistranscriptions when video context provides the proper term (e.g., if transcript says "Palunteer" but video title mentions "Palantir", use "Palantir")
 - Preserve speaker attribution and timestamps if present
 - Maintain conversational flow and natural speech patterns
 - Keep technical terms related to the video topic in their original form when appropriate
@@ -379,6 +380,7 @@ Output (zh-CN): "所以，嗯，我们在这里使用 React hooks 所做的是..
 
       case 'chat':
         return `SCENARIO: Chat Message Translation
+${context?.videoTitle ? `VIDEO TITLE: "${context.videoTitle}"\n` : ''}
 GUIDELINES:
 - Maintain conversational tone and personality
 - Preserve markdown formatting (bold, italic, code blocks, links)
@@ -386,6 +388,7 @@ GUIDELINES:
 - Handle informal language and emojis appropriately
 - Preserve code snippets without translation
 - Keep URLs and technical identifiers unchanged
+- Use video context to understand domain-specific terms
 
 EXAMPLE:
 Input: "Great question! You can use \`useState\` hook for this. See [0:45] for details."
@@ -393,13 +396,14 @@ Output (zh-CN): "很好的问题！你可以使用 \`useState\` hook 来实现�
 
       case 'topic':
         return `SCENARIO: Topic/Highlight Translation
-${context?.topicKeywords?.length ? `TOPIC KEYWORDS: ${context.topicKeywords.join(', ')}\n` : ''}
+${context?.videoTitle ? `VIDEO TITLE: "${context.videoTitle}"\n` : ''}${context?.topicKeywords?.length ? `TOPIC KEYWORDS: ${context.topicKeywords.join(', ')}\n` : ''}
 GUIDELINES:
 - Translate topic titles to be concise and engaging
 - Preserve technical keywords and terminology
 - Keep quotes authentic to the original speaker's intent
 - Maintain the educational and informative tone
 - Preserve any special formatting in descriptions
+- Use video context to understand domain-specific terms
 
 EXAMPLE:
 Input (title): "Advanced React Patterns: Compound Components"

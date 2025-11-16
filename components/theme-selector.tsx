@@ -13,7 +13,7 @@ interface ThemeSelectorProps {
   isLoading?: boolean;
   error?: string | null;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
+  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
 }
 
 export function ThemeSelector({
@@ -84,7 +84,7 @@ export function ThemeSelector({
     console.log('[ThemeSelector] Requesting static label translations for language:', selectedLanguage);
 
     // Translate "Your Topic"
-    onRequestTranslation("Your Topic", `ui_label:your_topic:${selectedLanguage}`)
+    onRequestTranslation("Your Topic", `ui_label:your_topic:${selectedLanguage}`, 'topic')
       .then(translation => {
         console.log('[ThemeSelector] "Your Topic" translated to:', translation);
         setYourTopicLabel(translation);
@@ -95,7 +95,7 @@ export function ThemeSelector({
       });
 
     // Translate "Overall highlights"
-    onRequestTranslation("Overall highlights", `ui_label:overall_highlights:${selectedLanguage}`)
+    onRequestTranslation("Overall highlights", `ui_label:overall_highlights:${selectedLanguage}`, 'topic')
       .then(translation => {
         console.log('[ThemeSelector] "Overall highlights" translated to:', translation);
         setOverallHighlightsLabel(translation);
@@ -122,7 +122,7 @@ export function ThemeSelector({
 
     try {
       const cacheKey = `theme:${theme}:${selectedLanguage}`;
-      const translation = await onRequestTranslation(theme, cacheKey);
+      const translation = await onRequestTranslation(theme, cacheKey, 'topic');
       setTranslatedThemes((prev) => new Map(prev).set(theme, translation));
     } catch (error) {
       console.error(`[ThemeSelector] Translation failed for theme "${theme}":`, error);

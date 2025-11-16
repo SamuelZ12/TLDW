@@ -8,10 +8,13 @@
  * 4. Fail-safe - always drain queue eventually
  */
 
+import type { TranslationContext } from './translation/llm-translate-client';
+
 interface TranslationRequest {
   text: string;
   cacheKey: string;
   targetLanguage: string;
+  context?: TranslationContext;
   resolve: (translation: string) => void;
   reject: (error: Error) => void;
 }
@@ -56,7 +59,8 @@ export class TranslationBatcher {
   async translate(
     text: string,
     cacheKey: string,
-    targetLanguage: string
+    targetLanguage: string,
+    context?: TranslationContext
   ): Promise<string> {
     // Check cache first (synchronous, fast)
     if (this.cache.has(cacheKey)) {
@@ -66,7 +70,7 @@ export class TranslationBatcher {
 
     // Add to queue and return a promise
     return new Promise<string>((resolve, reject) => {
-      this.queue.push({ text, cacheKey, targetLanguage, resolve, reject });
+      this.queue.push({ text, cacheKey, targetLanguage, context, resolve, reject });
 
       // Trigger batch processing if needed
       this.maybeStartBatch();
@@ -208,6 +212,9 @@ export class TranslationBatcher {
     // Get unique texts (avoid translating duplicates)
     const uniqueTexts = Array.from(new Set(requests.map((r) => r.text)));
 
+    // Use context from first request (all requests in same video should have same context)
+    const context = requests[0]?.context;
+
     let lastError: Error | null = null;
 
     // Retry loop with exponential backoff
@@ -219,7 +226,8 @@ export class TranslationBatcher {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             texts: uniqueTexts,
-            targetLanguage: targetLanguage
+            targetLanguage: targetLanguage,
+            ...(context && { context })
           })
         });
 

@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { TranslationBatcher } from '@/lib/translation-batcher';
+import type { TranslationContext, TranslationScenario } from '@/lib/translation/llm-translate-client';
+import type { VideoInfo } from '@/lib/types';
 import { toast } from 'sonner';
 
 export function useTranslation() {
@@ -8,7 +10,12 @@ export function useTranslation() {
   const translationBatcherRef = useRef<TranslationBatcher | null>(null);
   const errorShownRef = useRef(false);
 
-  const handleRequestTranslation = useCallback(async (text: string, cacheKey: string): Promise<string> => {
+  const handleRequestTranslation = useCallback(async (
+    text: string,
+    cacheKey: string,
+    scenario?: TranslationScenario,
+    videoInfo?: VideoInfo | null
+  ): Promise<string> => {
     if (!selectedLanguage) return text;
 
     if (!translationBatcherRef.current) {
@@ -43,7 +50,19 @@ export function useTranslation() {
       );
     }
 
-    const translation = await translationBatcherRef.current.translate(text, cacheKey, selectedLanguage);
+    // Build translation context from video info
+    const context: TranslationContext | undefined = scenario ? {
+      scenario,
+      videoTitle: videoInfo?.title,
+      topicKeywords: videoInfo?.tags,
+    } : undefined;
+
+    const translation = await translationBatcherRef.current.translate(
+      text,
+      cacheKey,
+      selectedLanguage,
+      context
+    );
 
     const MAX_CACHE_SIZE = 500;
     if (translationCache.size >= MAX_CACHE_SIZE && !translationCache.has(cacheKey)) {

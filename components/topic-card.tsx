@@ -13,7 +13,7 @@ interface TopicCardProps {
   onPlayTopic?: () => void;
   videoId?: string;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, topicId: string) => Promise<string>;
+  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
 }
 
 export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic, videoId, selectedLanguage = null, onRequestTranslation }: TopicCardProps) {
@@ -30,7 +30,7 @@ export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic,
       // Topic ids like "topic-0" are reused across theme changes which caused
       // collisions and stale translations bleeding across themes.
       const cacheKey = `topic-title:${selectedLanguage}:${topic.title}`;
-      onRequestTranslation(topic.title, cacheKey)
+      onRequestTranslation(topic.title, cacheKey, 'topic')
         .then(translation => {
           setTranslatedTitle(translation);
         })

@@ -25,7 +25,7 @@ interface YouTubePlayerProps {
   renderControls?: boolean;
   onDurationChange?: (duration: number) => void;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
+  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
 }
 
 export function YouTubePlayer({

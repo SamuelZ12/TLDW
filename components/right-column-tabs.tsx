@@ -52,7 +52,7 @@ interface RightColumnTabsProps {
   onRequestSignIn?: () => void;
   selectedLanguage?: string | null;
   translationCache?: Map<string, string>;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
+  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
   onLanguageChange?: (languageCode: string | null) => void;
   onRequestExport?: () => void;
   exportButtonState?: {

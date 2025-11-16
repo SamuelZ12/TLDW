@@ -22,7 +22,7 @@ interface TranscriptViewerProps {
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
   videoId?: string;
   selectedLanguage?: string | null;
-  onRequestTranslation?: (text: string, cacheKey: string) => Promise<string>;
+  onRequestTranslation?: (text: string, cacheKey: string, scenario?: 'transcript' | 'chat' | 'topic' | 'general') => Promise<string>;
   onRequestExport?: () => void;
   exportButtonState?: {
     tooltip?: string;
@@ -85,7 +85,7 @@ export function TranscriptViewer({
     try {
       // Include language in cache key to allow caching per language
       const cacheKey = `transcript:${segmentIndex}:${selectedLanguage}`;
-      const translation = await onRequestTranslation(segment.text, cacheKey);
+      const translation = await onRequestTranslation(segment.text, cacheKey, 'transcript');
       setTranslationsCache(prev => new Map(prev).set(segmentIndex, translation));
     } catch (error) {
       console.error('Translation failed for segment', segmentIndex, error);
