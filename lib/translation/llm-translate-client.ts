@@ -1,21 +1,6 @@
 import { z } from 'zod';
 import { generateAIResponse } from '@/lib/ai-client';
-import type { TranslationProvider } from './types';
-
-/**
- * Translation scenario types for context-aware prompts
- */
-export type TranslationScenario = 'transcript' | 'chat' | 'topic' | 'general';
-
-/**
- * Context information for improved translation accuracy
- */
-export interface TranslationContext {
-  scenario?: TranslationScenario;
-  videoTitle?: string;
-  topicKeywords?: string[];
-  preserveFormatting?: boolean;
-}
+import type { TranslationProvider, TranslationContext, TranslationScenario } from './types';
 
 /**
  * Schema for batch translation responses (JSON format - fallback)

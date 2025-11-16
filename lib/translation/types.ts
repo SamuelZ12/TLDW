@@ -1,7 +1,12 @@
+export type TranslationScenario = 'transcript' | 'chat' | 'topic' | 'general';
+
 export interface TranslationContext {
+  scenario?: TranslationScenario;
   videoTitle?: string;
   videoDescription?: string;
   videoTags?: string[];
+  topicKeywords?: string[];
+  preserveFormatting?: boolean;
 }
 
 export interface TranslationProvider {
