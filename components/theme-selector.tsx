@@ -31,7 +31,6 @@ export function ThemeSelector({
   const displayThemes = useMemo(() => {
     const additionalThemes = customThemes.filter((theme) => !baseThemes.includes(theme));
     const result = [...baseThemes, ...additionalThemes];
-    console.log('[ThemeSelector] displayThemes computed:', result);
     return result;
   }, [baseThemes, customThemes]);
   const hasThemes = displayThemes.length > 0;
@@ -78,16 +77,12 @@ export function ThemeSelector({
   useEffect(() => {
     const translationEnabled = selectedLanguage !== null;
     if (!translationEnabled || !onRequestTranslation) {
-      console.log('[ThemeSelector] Static labels: translation disabled or no handler');
       return;
     }
-
-    console.log('[ThemeSelector] Requesting static label translations for language:', selectedLanguage);
 
     // Translate "Your Topic"
     onRequestTranslation("Your Topic", `ui_label:your_topic:${selectedLanguage}`, 'topic')
       .then(translation => {
-        console.log('[ThemeSelector] "Your Topic" translated to:', translation);
         setYourTopicLabel(translation);
       })
       .catch((error) => {
@@ -98,7 +93,6 @@ export function ThemeSelector({
     // Translate "Overall highlights"
     onRequestTranslation("Overall highlights", `ui_label:overall_highlights:${selectedLanguage}`, 'topic')
       .then(translation => {
-        console.log('[ThemeSelector] "Overall highlights" translated to:', translation);
         setOverallHighlightsLabel(translation);
       })
       .catch((error) => {
