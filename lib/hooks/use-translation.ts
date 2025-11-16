@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { TranslationBatcher } from '@/lib/translation-batcher';
-import type { TranslationContext, TranslationScenario } from '@/lib/translation/llm-translate-client';
+import type { TranslationContext, TranslationScenario } from '@/lib/translation/types';
 import type { VideoInfo } from '@/lib/types';
 import { toast } from 'sonner';
 

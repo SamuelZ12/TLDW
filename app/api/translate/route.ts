@@ -4,7 +4,7 @@ import { RATE_LIMITS, RateLimiter, rateLimitResponse } from '@/lib/rate-limiter'
 import { getTranslationClient } from '@/lib/translation';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
-import type { TranslationContext } from '@/lib/translation/llm-translate-client';
+import type { TranslationContext } from '@/lib/translation/types';
 
 const translationContextSchema = z.object({
   scenario: z.enum(['transcript', 'chat', 'topic', 'general']).optional(),

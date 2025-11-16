@@ -8,7 +8,7 @@
  * 4. Fail-safe - always drain queue eventually
  */
 
-import type { TranslationContext } from './translation/llm-translate-client';
+import type { TranslationContext } from './translation/types';
 
 interface TranslationRequest {
   text: string;
