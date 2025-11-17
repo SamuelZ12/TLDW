@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { extractVideoId } from '@/lib/utils';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
+import { ensureMergedFormat } from '@/lib/transcript-format-detector';
+import { TranscriptSegment } from '@/lib/types';
 
 async function handler(req: NextRequest) {
   try {
@@ -85,12 +87,19 @@ async function handler(req: NextRequest) {
           });
       }
 
+      // Ensure transcript is in merged format (backward compatibility for old cached videos)
+      const originalTranscript = cachedVideo.transcript as TranscriptSegment[];
+      const migratedTranscript = ensureMergedFormat(originalTranscript, {
+        enableLogging: true,
+        context: `YouTube ID: ${videoId}`
+      });
+
       // Return all cached data including transcript and video info
       return NextResponse.json({
         cached: true,
         videoId: videoId,
         topics: cachedVideo.topics,
-        transcript: cachedVideo.transcript,
+        transcript: migratedTranscript,
         videoInfo: {
           title: cachedVideo.title,
           author: cachedVideo.author,

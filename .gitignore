@@ -32,6 +32,9 @@ supabase/.temp/
 # documentation (local only)
 docs/
 
+# test resources (transcripts for testing)
+resources/transcripts/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
