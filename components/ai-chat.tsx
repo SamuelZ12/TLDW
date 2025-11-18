@@ -705,7 +705,7 @@ export function AIChat({
         const userMessage: ChatMessage = {
           id: Date.now().toString(),
           role: "user",
-          content: KEY_TAKEAWAYS_LABEL,
+          content: translatedKeyTakeawaysLabel,
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, userMessage]);
@@ -750,6 +750,7 @@ export function AIChat({
             transcript,
             videoInfo: requestVideoInfo,
             videoId,
+            ...(selectedLanguage && { targetLanguage: selectedLanguage }),
           }),
         });
 
@@ -811,7 +812,7 @@ export function AIChat({
         }
       }
     },
-    [askedQuestions, isLoading, transcript, videoInfo, videoId, videoTitle, requestFollowUpQuestions]
+    [askedQuestions, isLoading, transcript, videoInfo, videoId, videoTitle, requestFollowUpQuestions, selectedLanguage, translatedKeyTakeawaysLabel]
   );
 
   const executeTopQuotes = useCallback(
@@ -834,7 +835,7 @@ export function AIChat({
         const userMessage: ChatMessage = {
           id: Date.now().toString(),
           role: "user",
-          content: TOP_QUOTES_LABEL,
+          content: translatedTopQuotesLabel,
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, userMessage]);
@@ -878,6 +879,7 @@ export function AIChat({
           body: JSON.stringify({
             transcript,
             videoInfo: requestVideoInfo,
+            ...(selectedLanguage && { targetLanguage: selectedLanguage }),
           }),
         });
 
@@ -940,7 +942,7 @@ export function AIChat({
         }
       }
     },
-    [askedQuestions, isLoading, transcript, videoInfo, videoTitle, requestFollowUpQuestions]
+    [askedQuestions, isLoading, transcript, videoInfo, videoTitle, requestFollowUpQuestions, selectedLanguage, translatedTopQuotesLabel]
   );
 
   const handleAskKeyTakeaways = useCallback(() => {
