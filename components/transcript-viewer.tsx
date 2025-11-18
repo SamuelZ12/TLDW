@@ -674,7 +674,7 @@ export function TranscriptViewer({
                         className={cn(
                           "text-sm leading-relaxed",
                           isCurrent ? "text-foreground font-medium" : "text-muted-foreground",
-                          translationEnabled && "text-xs opacity-80"
+                          translationEnabled && "opacity-90"
                         )}
                       >
                         {highlightedText ? (
