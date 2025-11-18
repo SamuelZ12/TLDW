@@ -6,6 +6,7 @@ import { generateAIResponse } from '@/lib/ai-client';
 import { summaryTakeawaysSchema } from '@/lib/schemas';
 import { normalizeTimestampSources } from '@/lib/timestamp-normalization';
 import { buildTakeawaysPrompt } from '@/lib/prompts/takeaways';
+import { getLanguageName } from '@/lib/language-utils';
 
 type StructuredTakeaway = {
   label: string;
@@ -128,7 +129,7 @@ function buildTakeawaysMarkdown(takeaways: StructuredTakeaway[]): string {
 
 async function handler(request: NextRequest) {
   try {
-    const { transcript, videoInfo } = await request.json();
+    const { transcript, videoInfo, targetLanguage } = await request.json();
 
     if (!transcript || !Array.isArray(transcript)) {
       return NextResponse.json(
@@ -144,10 +145,20 @@ async function handler(request: NextRequest) {
       );
     }
 
-    const prompt = buildTakeawaysPrompt({
+    const basePrompt = buildTakeawaysPrompt({
       transcript: transcript as TranscriptSegment[],
       videoInfo: videoInfo as Partial<VideoInfo>
     });
+
+    // Build language instruction if targetLanguage is provided
+    const languageInstruction = targetLanguage
+      ? (() => {
+          const langName = getLanguageName(targetLanguage);
+          return `\n<languageRequirement>IMPORTANT: You MUST respond in ${langName}. All text in the "label" and "insight" fields must be in ${langName}.</languageRequirement>\n`;
+        })()
+      : '';
+
+    const prompt = basePrompt.replace('</task>', `${languageInstruction}</task>`);
 
     let response: string;
 
