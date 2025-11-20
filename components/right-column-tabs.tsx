@@ -167,7 +167,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
                     variant="ghost"
                     size="sm"
                     className={cn(
-                      "rounded-r-2xl rounded-l-none border-0",
+                      "rounded-r-2xl rounded-l-none border-0 !pl-0",
                       activeTab === "transcript"
                         ? "text-foreground hover:bg-neutral-100"
                         : "text-muted-foreground hover:text-foreground hover:bg-transparent"
