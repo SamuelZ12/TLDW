@@ -80,7 +80,7 @@ export const topicSchema = z.object({
 });
 
 const DEFAULT_AI_VALIDATION_MODEL =
-  process.env.AI_DEFAULT_MODEL ?? 'grok-4-fast-non-reasoning';
+  process.env.AI_DEFAULT_MODEL ?? 'grok-4-1-fast-non-reasoning';
 
 // Model selection validation
 export const modelSchema = z

@@ -104,14 +104,14 @@ Create `.env.local` in the repo root:
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `XAI_API_KEY` | yes* | xAI Grok API key (`grok-4-fast-non-reasoning` by default) |
+| `XAI_API_KEY` | yes* | xAI Grok API key (`grok-4-1-fast-non-reasoning` by default) |
 | `GEMINI_API_KEY` | optional* | Google Gemini API key (enable if `AI_PROVIDER=gemini`) |
 | `SUPADATA_API_KEY` | yes | Supadata transcript API key |
 | `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Supabase anonymous key |
 | `CSRF_SALT` | yes | Long random string used to sign CSRF tokens |
 | `AI_PROVIDER` | optional | `grok` (default) or `gemini`; determines which adapter is used |
-| `AI_DEFAULT_MODEL` | optional | Override provider default model (e.g., `grok-4-fast-non-reasoning`) |
+| `AI_DEFAULT_MODEL` | optional | Override provider default model (e.g., `grok-4-1-fast-non-reasoning`) |
 | `NEXT_PUBLIC_AI_MODEL` | optional | Client-side override for display/config hints |
 | `NEXT_PUBLIC_APP_URL` | optional | Canonical app URL (defaults to `http://localhost:3000`) |
 | `NEXT_PUBLIC_ENABLE_TRANSLATION_SELECTOR` | optional | Set to `true` to show the transcript translation dropdown (hidden otherwise) |

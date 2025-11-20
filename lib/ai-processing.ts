@@ -26,7 +26,7 @@ interface ParsedTopic {
 }
 
 const DEFAULT_AI_MODEL =
-  process.env.AI_DEFAULT_MODEL ?? 'grok-4-fast-non-reasoning';
+  process.env.AI_DEFAULT_MODEL ?? 'grok-4-1-fast-non-reasoning';
 const FAST_MODEL_DEFAULT =
   process.env.AI_FAST_MODEL ?? DEFAULT_AI_MODEL;
 const PRO_MODEL_DEFAULT =

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ProviderAdapter, ProviderGenerateParams, ProviderGenerateResult } from './types';
 
-const DEFAULT_MODEL = 'grok-4-fast-non-reasoning';
+const DEFAULT_MODEL = 'grok-4-1-fast-non-reasoning';
 const PROVIDER_NAME = 'grok';
 
 function ensureSchemaName(name?: string) {
