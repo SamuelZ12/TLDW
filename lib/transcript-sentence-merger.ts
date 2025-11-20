@@ -1,5 +1,11 @@
 import { TranscriptSegment } from './types';
 
+// Hard safeguards so we never return a single, video-length "sentence" when
+// captions don't include punctuation (common with auto-generated transcripts).
+const MAX_SENTENCE_DURATION_SECONDS = 24; // keep chunks short for navigation
+const MAX_SENTENCE_WORDS = 80;
+const MAX_SEGMENTS_PER_SENTENCE = 20;
+
 /**
  * Represents a merged sentence from multiple transcript segments
  */
@@ -8,6 +14,61 @@ export interface MergedSentence {
   startIndex: number; // Index of first segment
   endIndex: number; // Index of last segment (inclusive)
   segments: TranscriptSegment[]; // Original segments that make up this sentence
+}
+
+function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function splitLongSentence(sentence: MergedSentence): MergedSentence[] {
+  const chunks: MergedSentence[] = [];
+
+  let chunkSegments: TranscriptSegment[] = [];
+  let chunkWordCount = 0;
+  let chunkDuration = 0;
+  let chunkStartIndex = sentence.startIndex;
+
+  const pushChunk = (endIndex: number) => {
+    if (chunkSegments.length === 0) return;
+    chunks.push({
+      text: chunkSegments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim(),
+      startIndex: chunkStartIndex,
+      endIndex,
+      segments: [...chunkSegments],
+    });
+  };
+
+  sentence.segments.forEach((segment, idx) => {
+    const segmentWords = countWords(segment.text || '');
+    const segmentDuration = Math.max(segment.duration || 0, 0);
+    const nextDuration = chunkDuration + segmentDuration;
+    const nextWords = chunkWordCount + segmentWords;
+    const nextSegmentCount = chunkSegments.length + 1;
+
+    const exceedsDuration =
+      chunkSegments.length > 0 && nextDuration > MAX_SENTENCE_DURATION_SECONDS;
+    const exceedsWords =
+      chunkSegments.length > 0 && nextWords > MAX_SENTENCE_WORDS;
+    const exceedsSegments =
+      chunkSegments.length > 0 && nextSegmentCount > MAX_SEGMENTS_PER_SENTENCE;
+
+    if (exceedsDuration || exceedsWords || exceedsSegments) {
+      const endIndex = chunkStartIndex + chunkSegments.length - 1;
+      pushChunk(endIndex);
+      // Reset accumulators for new chunk starting at current segment
+      chunkSegments = [];
+      chunkWordCount = 0;
+      chunkDuration = 0;
+      chunkStartIndex = sentence.startIndex + idx;
+    }
+
+    chunkSegments.push(segment);
+    chunkWordCount += segmentWords;
+    chunkDuration += segmentDuration;
+  });
+
+  pushChunk(chunkStartIndex + chunkSegments.length - 1);
+  return chunks;
 }
 
 /**
@@ -332,5 +393,8 @@ export function mergeTranscriptSegmentsIntoSentences(
     });
   }
 
-  return merged;
+  // Safety net: break up extremely long "sentences" (common when captions lack punctuation)
+  const boundedMerged: MergedSentence[] = merged.flatMap(splitLongSentence);
+
+  return boundedMerged;
 }

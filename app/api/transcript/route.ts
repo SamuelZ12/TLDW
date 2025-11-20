@@ -103,13 +103,13 @@ async function handler(request: NextRequest) {
 
       const supadataStatusMessage =
         typeof parsedBody?.message === 'string' &&
-        parsedBody.message.trim().length > 0
+          parsedBody.message.trim().length > 0
           ? parsedBody.message.trim()
           : 'Transcript Unavailable';
 
       const supadataDetails =
         typeof parsedBody?.details === 'string' &&
-        parsedBody.details.trim().length > 0
+          parsedBody.details.trim().length > 0
           ? parsedBody.details.trim()
           : 'No transcript is available for this video.';
 
@@ -141,10 +141,9 @@ async function handler(request: NextRequest) {
         }
 
         throw new Error(
-          `Supadata transcript request failed (${response.status})${
-            combinedErrorFields.length > 0
-              ? `: ${combinedErrorFields.join(' ')}`
-              : ''
+          `Supadata transcript request failed (${response.status})${combinedErrorFields.length > 0
+            ? `: ${combinedErrorFields.join(' ')}`
+            : ''
           }`
         );
       }
@@ -153,14 +152,14 @@ async function handler(request: NextRequest) {
         const status = unsupportedLanguage ? 400 : 404;
         const errorPayload = unsupportedLanguage
           ? {
-              error: 'Unsupported transcript language',
-              details:
-                'We currently support only YouTube videos with English transcripts. Please choose a video that has English captions enabled.'
-            }
+            error: 'Unsupported transcript language',
+            details:
+              'We currently support only YouTube videos with English transcripts. Please choose a video that has English captions enabled.'
+          }
           : {
-              error: supadataStatusMessage,
-              details: supadataDetails
-            };
+            error: supadataStatusMessage,
+            details: supadataDetails
+          };
 
         return respondWithNoCredits(errorPayload, status);
       }
@@ -168,10 +167,10 @@ async function handler(request: NextRequest) {
       const candidateContent = Array.isArray(parsedBody?.content)
         ? parsedBody?.content
         : Array.isArray(parsedBody?.transcript)
-        ? parsedBody?.transcript
-        : Array.isArray(parsedBody)
-        ? parsedBody
-        : null;
+          ? parsedBody?.transcript
+          : Array.isArray(parsedBody)
+            ? parsedBody
+            : null;
 
       if (!candidateContent || candidateContent.length === 0) {
         return respondWithNoCredits(
@@ -264,19 +263,19 @@ async function handler(request: NextRequest) {
 
     const rawSegments = Array.isArray(transcriptSegments)
       ? transcriptSegments.map((item, idx) => {
-          const transformed = {
-            text: item.text || item.content || '',
-            // Convert milliseconds to seconds for offset/start
-            start:
-              (item.offset !== undefined ? item.offset / 1000 : item.start) ||
-              0,
-            // Convert milliseconds to seconds for duration
-            duration:
-              (item.duration !== undefined ? item.duration / 1000 : 0) || 0
-          };
+        const transformed = {
+          text: item.text || item.content || '',
+          // Convert milliseconds to seconds for offset/start
+          start:
+            (item.offset !== undefined ? item.offset / 1000 : item.start) ||
+            0,
+          // Convert milliseconds to seconds for duration
+          duration:
+            (item.duration !== undefined ? item.duration / 1000 : 0) || 0
+        };
 
-          return transformed;
-        })
+        return transformed;
+      })
       : [];
 
     // Merge segments into complete sentences for better translation

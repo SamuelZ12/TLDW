@@ -232,6 +232,7 @@ Chunk window: ${chunkWindow}
 <instructions>
   <item>Only use content from this chunk. If nothing stands out, return an empty list.</item>
 ${durationInstruction}
+  <item>Write titles as concise statements (avoid question marks unless the quote itself is a question).</item>
   <item>Quote text must match the transcript exactly—no paraphrasing, ellipses, or stitching from multiple places.</item>
   <item>Use absolute timestamps in [MM:SS-MM:SS] format that match the transcript lines.</item>
   <item>Focus on contrarian insights, vivid stories, or data-backed arguments that could stand alone.</item>
@@ -503,7 +504,7 @@ async function runSinglePassTopicGeneration(
     <themeCriteria>
       <criterion name="Insightful">Challenge a common assumption or reframe a known concept.</criterion>
       <criterion name="Specific">Avoid vague or catch-all wording.</criterion>
-      <criterion name="Format">Write each title as a complete sentence or question.</criterion>
+      <criterion name="Format">Write each title as a crisp statement. Only use a question if the quoted passage is literally a question.</criterion>
       <criterion name="LengthLimit">Keep titles to a maximum of 10 words.</criterion>
       <criterion name="Synthesized">Connect ideas that span multiple moments in the talk.</criterion>
       <criterion name="TemporalDistribution">Ensure topics are distributed throughout the video timeline. Explicitly consider content from the beginning, middle, and end sections. Avoid clustering all topics in the opening portion—scan the entire duration for valuable insights.</criterion>

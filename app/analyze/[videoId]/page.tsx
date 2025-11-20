@@ -135,6 +135,48 @@ function buildApiErrorMessage(errorData: unknown, fallback: string): string {
   return alreadyIncludes ? baseMessage : `${baseMessage}\n${creditsMessage}`;
 }
 
+function parseDurationSeconds(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed) && Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function isFlattenedTranscript(
+  transcript: TranscriptSegment[],
+  videoInfo?: VideoInfo | null,
+): boolean {
+  if (!Array.isArray(transcript) || transcript.length === 0) return false;
+  // If we already have several segments, it's probably fine
+  if (transcript.length > 3) return false;
+
+  const lastSegment = transcript[transcript.length - 1];
+  const transcriptDuration = lastSegment
+    ? lastSegment.start + (lastSegment.duration || 0)
+    : 0;
+
+  const numericDuration = parseDurationSeconds(videoInfo?.duration);
+  const referenceDuration =
+    numericDuration && numericDuration > 0 ? numericDuration : transcriptDuration;
+
+  const totalWords = transcript.reduce((sum, seg) => {
+    const words = typeof seg.text === "string"
+      ? seg.text.trim().split(/\s+/).filter(Boolean).length
+      : 0;
+    return sum + words;
+  }, 0);
+
+  // Heuristic: very few segments that each cover nearly the whole video and a lot of text
+  return (
+    transcript.length <= 2 &&
+    referenceDuration > 120 &&
+    transcriptDuration >= referenceDuration * 0.9 &&
+    totalWords > 150
+  );
+}
+
 export default function AnalyzePage() {
   const params = useParams<{ videoId: string }>();
   const routeVideoId = Array.isArray(params?.videoId) ? params.videoId[0] : params?.videoId;
@@ -671,162 +713,168 @@ export default function AnalyzePage() {
           const cacheData = await cacheResponse.json();
 
           if (cacheData.cached) {
-            // For cached videos, we're already in LOADING_CACHED state if isCached was true
-            // Otherwise, set it now
-            setPageState('LOADING_CACHED');
-
             const sanitizedTranscript = normalizeTranscript(cacheData.transcript);
-            const hydratedTopics = hydrateTopicsWithTranscript(
-              Array.isArray(cacheData.topics) ? cacheData.topics : [],
-              sanitizedTranscript,
-            );
+            const flattenedTranscript = isFlattenedTranscript(sanitizedTranscript, cacheData.videoInfo);
 
-            // Load all cached data
-            setTranscript(sanitizedTranscript);
+            if (!flattenedTranscript) {
+              // For cached videos, we're already in LOADING_CACHED state if isCached was true
+              // Otherwise, set it now
+              setPageState('LOADING_CACHED');
 
-            const cachedVideoInfo = cacheData.videoInfo ?? null;
-            if (cachedVideoInfo) {
-              setVideoInfo(cachedVideoInfo);
-              const rawDuration = (cachedVideoInfo as { duration?: number | string | null }).duration;
-              const numericDuration =
-                typeof rawDuration === "number"
-                  ? rawDuration
-                  : typeof rawDuration === "string"
-                    ? Number(rawDuration)
-                    : null;
-              if (numericDuration && !Number.isNaN(numericDuration) && numericDuration > 0) {
-                setVideoDuration(numericDuration);
-              }
-            } else {
-              setVideoInfo(null);
-            }
+              const hydratedTopics = hydrateTopicsWithTranscript(
+                Array.isArray(cacheData.topics) ? cacheData.topics : [],
+                sanitizedTranscript,
+              );
 
-            setTopics(hydratedTopics);
-            setBaseTopics(hydratedTopics);
-            const initialKeys = new Set<string>();
-            hydratedTopics.forEach(topic => {
-              if (topic.quote?.timestamp && topic.quote.text) {
-                const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
-                initialKeys.add(key);
-              }
-            });
-            setUsedTopicKeys(initialKeys);
-            setSelectedTopic(hydratedTopics.length > 0 ? hydratedTopics[0] : null);
+              // Load all cached data
+              setTranscript(sanitizedTranscript);
 
-            // Set cached takeaways and questions
-            if (cacheData.summary) {
-              setTakeawaysContent(cacheData.summary);
-              setShowChatTab(true);
-              setIsGeneratingTakeaways(false);
-            }
-            if (cacheData.suggestedQuestions) {
-              setCachedSuggestedQuestions(cacheData.suggestedQuestions);
-            }
-
-            // Store video ID for potential post-auth linking (for cached videos)
-            storeCurrentVideoForAuth(extractedVideoId);
-
-            // Set page state back to idle
-            setPageState('IDLE');
-            setLoadingStage(null);
-            setProcessingStartTime(null);
-
-            // Show contextual notification for cached analysis
-            if (user && !cacheData.ownedByCurrentUser) {
-              toast.success("Lucky you — Someone's already analyzed this video! No credits used.");
-            }
-
-            backgroundOperation(
-              'load-cached-themes',
-              async () => {
-                const response = await fetch("/api/video-analysis", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    videoId: extractedVideoId,
-                    videoInfo: cacheData.videoInfo,
-                    transcript: sanitizedTranscript,
-                    includeCandidatePool: true,
-                    mode: selectedMode,
-                    forceRegenerate: false
-                  }),
-                });
-
-                if (!response.ok) {
-                  const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-                  const message = buildApiErrorMessage(errorData, "Failed to generate themes");
-                  throw new Error(message);
+              const cachedVideoInfo = cacheData.videoInfo ?? null;
+              if (cachedVideoInfo) {
+                setVideoInfo(cachedVideoInfo);
+                const rawDuration = (cachedVideoInfo as { duration?: number | string | null }).duration;
+                const numericDuration =
+                  typeof rawDuration === "number"
+                    ? rawDuration
+                    : typeof rawDuration === "string"
+                      ? Number(rawDuration)
+                      : null;
+                if (numericDuration && !Number.isNaN(numericDuration) && numericDuration > 0) {
+                  setVideoDuration(numericDuration);
                 }
-
-                const data = await response.json();
-                if (Array.isArray(data.themes)) {
-                  setThemes(data.themes);
-                }
-                if (Array.isArray(data.topicCandidates)) {
-                  setThemeCandidateMap(prev => ({
-                    ...prev,
-                    __default: data.topicCandidates
-                  }));
-                }
-                return data.themes;
-              },
-              (error) => {
-                console.error("Failed to generate themes for cached video:", error);
+              } else {
+                setVideoInfo(null);
               }
-            );
 
-            // Auto-start takeaways generation if not available
-            if (!cacheData.summary) {
-              setShowChatTab(true);
-              setIsGeneratingTakeaways(true);
+              setTopics(hydratedTopics);
+              setBaseTopics(hydratedTopics);
+              const initialKeys = new Set<string>();
+              hydratedTopics.forEach(topic => {
+                if (topic.quote?.timestamp && topic.quote.text) {
+                  const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
+                  initialKeys.add(key);
+                }
+              });
+              setUsedTopicKeys(initialKeys);
+              setSelectedTopic(hydratedTopics.length > 0 ? hydratedTopics[0] : null);
+
+              // Set cached takeaways and questions
+              if (cacheData.summary) {
+                setTakeawaysContent(cacheData.summary);
+                setShowChatTab(true);
+                setIsGeneratingTakeaways(false);
+              }
+              if (cacheData.suggestedQuestions) {
+                setCachedSuggestedQuestions(cacheData.suggestedQuestions);
+              }
+
+              // Store video ID for potential post-auth linking (for cached videos)
+              storeCurrentVideoForAuth(extractedVideoId);
+
+              // Set page state back to idle
+              setPageState('IDLE');
+              setLoadingStage(null);
+              setProcessingStartTime(null);
+
+              // Show contextual notification for cached analysis
+              if (user && !cacheData.ownedByCurrentUser) {
+                toast.success("Lucky you — Someone's already analyzed this video! No credits used.");
+              }
 
               backgroundOperation(
-                'generate-cached-takeaways',
+                'load-cached-themes',
                 async () => {
-                  const summaryRes = await fetch("/api/generate-summary", {
+                  const response = await fetch("/api/video-analysis", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                      transcript: sanitizedTranscript,
+                      videoId: extractedVideoId,
                       videoInfo: cacheData.videoInfo,
-                      videoId: extractedVideoId
+                      transcript: sanitizedTranscript,
+                      includeCandidatePool: true,
+                      mode: selectedMode,
+                      forceRegenerate: false
                     }),
                   });
 
-                  if (summaryRes.ok) {
-                    const { summaryContent: generatedTakeaways } = await summaryRes.json();
-                    setTakeawaysContent(generatedTakeaways);
-
-                    // Update the video analysis with the takeaways
-                    await backgroundOperation(
-                      'update-cached-takeaways',
-                      async () => {
-                        await fetch("/api/update-video-analysis", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            videoId: extractedVideoId,
-                            summary: generatedTakeaways
-                          }),
-                        });
-                      }
-                    );
-                    return generatedTakeaways;
-                  } else {
-                    const errorData = await summaryRes.json().catch(() => ({ error: "Unknown error" }));
-                    const message = buildApiErrorMessage(errorData, "Failed to generate takeaways");
+                  if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+                    const message = buildApiErrorMessage(errorData, "Failed to generate themes");
                     throw new Error(message);
                   }
+
+                  const data = await response.json();
+                  if (Array.isArray(data.themes)) {
+                    setThemes(data.themes);
+                  }
+                  if (Array.isArray(data.topicCandidates)) {
+                    setThemeCandidateMap(prev => ({
+                      ...prev,
+                      __default: data.topicCandidates
+                    }));
+                  }
+                  return data.themes;
                 },
                 (error) => {
-                  setTakeawaysError(error.message || "Failed to generate takeaways. Please try again.");
+                  console.error("Failed to generate themes for cached video:", error);
                 }
-              ).finally(() => {
-                setIsGeneratingTakeaways(false);
-              });
-            }
+              );
 
-            return; // Exit early - no need to fetch anything else
+              // Auto-start takeaways generation if not available
+              if (!cacheData.summary) {
+                setShowChatTab(true);
+                setIsGeneratingTakeaways(true);
+
+                backgroundOperation(
+                  'generate-cached-takeaways',
+                  async () => {
+                    const summaryRes = await fetch("/api/generate-summary", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        transcript: sanitizedTranscript,
+                        videoInfo: cacheData.videoInfo,
+                        videoId: extractedVideoId
+                      }),
+                    });
+
+                    if (summaryRes.ok) {
+                      const { summaryContent: generatedTakeaways } = await summaryRes.json();
+                      setTakeawaysContent(generatedTakeaways);
+
+                      // Update the video analysis with the takeaways
+                      await backgroundOperation(
+                        'update-cached-takeaways',
+                        async () => {
+                          await fetch("/api/update-video-analysis", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              videoId: extractedVideoId,
+                              summary: generatedTakeaways
+                            }),
+                          });
+                        }
+                      );
+                      return generatedTakeaways;
+                    } else {
+                      const errorData = await summaryRes.json().catch(() => ({ error: "Unknown error" }));
+                      const message = buildApiErrorMessage(errorData, "Failed to generate takeaways");
+                      throw new Error(message);
+                    }
+                  },
+                  (error) => {
+                    setTakeawaysError(error.message || "Failed to generate takeaways. Please try again.");
+                  }
+                ).finally(() => {
+                  setIsGeneratingTakeaways(false);
+                });
+              }
+
+              return; // Exit early - no need to fetch anything else
+            } else {
+              console.warn("Cached transcript looks flattened; re-running full analysis.");
+            }
           }
         }
       }

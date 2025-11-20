@@ -44,7 +44,7 @@ export const videoInfoSchema = z.object({
 
 // Transcript segment validation
 export const transcriptSegmentSchema = z.object({
-  text: z.string().max(5000),
+  text: z.string().max(500000),
   start: z.number().min(0),
   duration: z.number().min(0)
 });
