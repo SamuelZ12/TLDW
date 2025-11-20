@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { RateLimiter, RATE_LIMITS } from '@/lib/rate-limiter';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 import { hasUnlimitedVideoAllowance } from '@/lib/access-control';
 import {
@@ -96,32 +95,26 @@ async function handler(request: NextRequest) {
       });
     }
 
-    // Handle anonymous users with IP-based rate limiting
-    const rateLimitConfig = RATE_LIMITS.VIDEO_GENERATION_FREE_UNREGISTERED;
-    const rateLimitResult = await RateLimiter.peek(
-      'video-analysis',
-      rateLimitConfig
-    );
-
+    // Anonymous users cannot generate analyses — force authentication
     return NextResponse.json({
-      canGenerate: rateLimitResult.allowed,
+      canGenerate: false,
       isAuthenticated: false,
       tier: 'anonymous',
       status: null,
-      reason: rateLimitResult.allowed ? null : 'ANON_LIMIT_REACHED',
+      reason: 'AUTH_REQUIRED',
       warning: null,
       unlimited: false,
-      requiresAuth: !rateLimitResult.allowed,
-      resetAt: rateLimitResult.resetAt.toISOString(),
+      requiresAuth: true,
+      resetAt: null,
       requiresTopup: false,
       willConsumeTopup: false,
       usage: {
         counted: null,
         cached: null,
-        baseLimit: rateLimitConfig.maxRequests,
-        baseRemaining: rateLimitResult.remaining,
+        baseLimit: 0,
+        baseRemaining: 0,
         topupRemaining: 0,
-        totalRemaining: rateLimitResult.remaining,
+        totalRemaining: 0,
       },
     });
   } catch (error) {

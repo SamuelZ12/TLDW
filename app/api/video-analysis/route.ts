@@ -4,7 +4,6 @@ import {
   videoAnalysisRequestSchema,
   formatValidationError
 } from '@/lib/validation';
-import { RateLimiter, RATE_LIMITS } from '@/lib/rate-limiter';
 import { z } from 'zod';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 import {
@@ -66,6 +65,28 @@ async function handler(req: NextRequest) {
       mode
     } = validatedData;
 
+    const supabase = await createClient();
+
+    // Require authentication before any video analysis
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return respondWithNoCredits(
+        {
+          error: 'Sign in to analyze videos',
+          message:
+            'Create a free account to get 5 analyses per month, or upgrade to Pro for 100 analyses per month.',
+          requiresAuth: true,
+          redirectTo: '/?auth=signup',
+        },
+        401
+      );
+    }
+
+    const unlimitedAccess = hasUnlimitedVideoAllowance(user);
+
     if (theme) {
       try {
         const { topics: themedTopics } = await generateTopicsFromTranscript(
@@ -106,13 +127,6 @@ async function handler(req: NextRequest) {
         );
       }
     }
-
-    const supabase = await createClient();
-
-    // Get current user if logged in
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
 
     // Check for cached analysis FIRST (before consuming rate limit)
     if (!forceRegenerate) {
@@ -173,89 +187,67 @@ async function handler(req: NextRequest) {
     }
 
     // Only apply credit checking for NEW video analysis (not cached)
-    const unlimitedAccess = hasUnlimitedVideoAllowance(user);
     let generationDecision: GenerationDecision | null = null;
 
     if (!unlimitedAccess) {
-      if (user) {
-        generationDecision = await canGenerateVideo(user.id, videoId, {
-          client: supabase,
-          skipCacheCheck: true
-        });
+      generationDecision = await canGenerateVideo(user.id, videoId, {
+        client: supabase,
+        skipCacheCheck: true
+      });
 
-        if (!generationDecision.allowed) {
-          const tier = generationDecision.subscription?.tier ?? 'free';
-          const stats = generationDecision.stats;
-          const resetAt =
-            stats?.resetAt ??
-            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      if (!generationDecision.allowed) {
+        const tier = generationDecision.subscription?.tier ?? 'free';
+        const stats = generationDecision.stats;
+        const resetAt =
+          stats?.resetAt ??
+          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-          let errorMessage = 'Monthly limit reached';
-          let upgradeMessage =
-            'You have reached your monthly quota. Upgrade your plan to continue.';
-          let statusCode = 429;
+        let errorMessage = 'Monthly limit reached';
+        let upgradeMessage =
+          'You have reached your monthly quota. Upgrade your plan to continue.';
+        let statusCode = 429;
 
-          if (generationDecision.reason === 'SUBSCRIPTION_INACTIVE') {
-            errorMessage = 'Subscription inactive';
+        if (generationDecision.reason === 'SUBSCRIPTION_INACTIVE') {
+          errorMessage = 'Subscription inactive';
+          upgradeMessage =
+            'Your subscription is not active. Visit the billing portal to reactivate and continue generating videos.';
+          statusCode = 402;
+        } else if (tier === 'free') {
+          upgradeMessage =
+            "You've used all 5 free videos this month. Upgrade to Pro for 100 videos/month ($10/mo).";
+        } else if (tier === 'pro') {
+          if (generationDecision.requiresTopupPurchase) {
             upgradeMessage =
-              'Your subscription is not active. Visit the billing portal to reactivate and continue generating videos.';
-            statusCode = 402;
-          } else if (tier === 'free') {
+              'You have used all Pro videos this period. Purchase a Top-Up (+20 videos for $3) or wait for your next billing cycle.';
+          } else {
             upgradeMessage =
-              "You've used all 5 free videos this month. Upgrade to Pro for 100 videos/month ($10/mo).";
-          } else if (tier === 'pro') {
-            if (generationDecision.requiresTopupPurchase) {
-              upgradeMessage =
-                'You have used all Pro videos this period. Purchase a Top-Up (+20 videos for $3) or wait for your next billing cycle.';
-            } else {
-              upgradeMessage =
-                'You have used your Pro allowance. Wait for your next billing cycle to reset.';
+              'You have used your Pro allowance. Wait for your next billing cycle to reset.';
+          }
+        }
+
+        return NextResponse.json(
+          {
+            error: errorMessage,
+            message: upgradeMessage,
+            code: generationDecision.reason,
+            tier,
+            limit: stats?.baseLimit ?? null,
+            remaining: stats?.totalRemaining ?? 0,
+            resetAt,
+            isAuthenticated: true,
+            warning: generationDecision.warning,
+            requiresTopup: generationDecision.requiresTopupPurchase ?? false
+          },
+          {
+            status: statusCode,
+            headers: {
+              'X-RateLimit-Remaining': String(
+                Math.max(stats?.totalRemaining ?? 0, 0)
+              ),
+              'X-RateLimit-Reset': resetAt
             }
           }
-
-          return NextResponse.json(
-            {
-              error: errorMessage,
-              message: upgradeMessage,
-              code: generationDecision.reason,
-              tier,
-              limit: stats?.baseLimit ?? null,
-              remaining: stats?.totalRemaining ?? 0,
-              resetAt,
-              isAuthenticated: true,
-              warning: generationDecision.warning,
-              requiresTopup: generationDecision.requiresTopupPurchase ?? false
-            },
-            {
-              status: statusCode,
-              headers: {
-                'X-RateLimit-Remaining': String(
-                  Math.max(stats?.totalRemaining ?? 0, 0)
-                ),
-                'X-RateLimit-Reset': resetAt
-              }
-            }
-          );
-        }
-      } else {
-        const rateLimitConfig = RATE_LIMITS.VIDEO_GENERATION_FREE_UNREGISTERED;
-        const rateLimitResult = await RateLimiter.check(
-          'video-analysis',
-          rateLimitConfig
         );
-
-        if (!rateLimitResult.allowed) {
-          return NextResponse.json(
-            {
-              error: 'Sign in to keep analyzing videos',
-              message:
-                "You've used your free video this month. Create a free account for 5 videos/month, or upgrade to Pro for 100 videos/month.",
-              requiresAuth: true,
-              redirectTo: '/?auth=limit'
-            },
-            { status: 429 }
-          );
-        }
       }
     }
 

@@ -228,7 +228,7 @@ export const RATE_LIMITS = {
   // Subscription tier video generation limits (rolling 30-day window)
   VIDEO_GENERATION_FREE_UNREGISTERED: {
     windowMs: 30 * 24 * 60 * 60 * 1000, // 30 days
-    maxRequests: 1 // 1 video per 30 days for anonymous users
+    maxRequests: 0 // No video analysis for anonymous users
   },
   VIDEO_GENERATION_FREE_REGISTERED: {
     windowMs: 30 * 24 * 60 * 60 * 1000, // 30 days

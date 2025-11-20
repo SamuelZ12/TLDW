@@ -38,7 +38,7 @@ import { toast } from "sonner";
 import { hasSpeakerMetadata } from "@/lib/transcript-export";
 import { buildSuggestedQuestionFallbacks } from "@/lib/suggested-question-fallback";
 
-const GUEST_LIMIT_MESSAGE = "You've used today's free analysis. Sign in to keep going.";
+const GUEST_LIMIT_MESSAGE = "Sign in to analyze videos. Create a free account for 5 videos/month.";
 const AUTH_LIMIT_MESSAGE = "You've used all 5 free videos this month. Upgrade to Pro for 100 videos/month.";
 const DEFAULT_CLIENT_ERROR = "Something went wrong. Please try again.";
 
@@ -1076,12 +1076,16 @@ export default function AnalyzePage() {
       if (!topicsRes.ok) {
         const errorData = await topicsRes.json().catch(() => ({ error: "Unknown error" }));
         const requiresAuth = Boolean((errorData as any)?.requiresAuth);
+        const authMessage =
+          typeof (errorData as any)?.message === "string"
+            ? (errorData as any).message
+            : undefined;
 
-        if (topicsRes.status === 429 && requiresAuth) {
+        if (requiresAuth || topicsRes.status === 401 || topicsRes.status === 403) {
           takeawaysController.abort();
           await takeawaysSettledPromise;
           redirectToAuthForLimit(
-            typeof (errorData as any)?.message === "string" ? (errorData as any).message : undefined,
+            authMessage,
             extractedVideoId
           );
           return;
