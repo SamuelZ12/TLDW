@@ -457,7 +457,7 @@ export default function AnalyzePage() {
   );
 
   // Check for pending video linking after auth
-  const checkPendingVideoLink = async (retryCount = 0) => {
+  const checkPendingVideoLink = useCallback(async (retryCount = 0) => {
     // Check both sessionStorage and current videoId state
     const pendingVideoId = sessionStorage.getItem('pendingVideoId');
     const currentVideoId = videoId;
@@ -514,16 +514,22 @@ export default function AnalyzePage() {
           setTimeout(() => {
             checkPendingVideoLink(retryCount + 1);
           }, 1000 * (retryCount + 1));
+        } else if (response.status === 503 && retryCount < 2) {
+          // User profile not ready yet, retry after a short delay
+          console.log(`Profile not ready, retrying in ${2000 * (retryCount + 1)}ms...`);
+          setTimeout(() => {
+            checkPendingVideoLink(retryCount + 1);
+          }, 2000 * (retryCount + 1));
         } else {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('Failed to link video:', errorData);
+          const errorText = await response.text().catch(() => 'Unknown error');
+          console.error('Failed to link video:', response.status, errorText);
           // Don't remove pendingVideoId on error, so it can be retried later
         }
       } catch (error) {
         console.error('Error linking video:', error);
       }
     }
-  };
+  }, [videoId, user]);
 
   const checkRateLimit = useCallback(async (): Promise<LimitCheckResponse | null> => {
     try {
@@ -569,7 +575,7 @@ export default function AnalyzePage() {
         checkPendingVideoLink();
       }, 1500);
     }
-  }, [user, videoId]); // Properly track both dependencies
+  }, [user, videoId, checkPendingVideoLink]);
 
   // Cleanup AbortManager on component unmount
   useEffect(() => {
