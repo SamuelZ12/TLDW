@@ -53,7 +53,6 @@ export function TranscriptViewer({
   const currentSegmentRef = useRef<HTMLDivElement | null>(null);
   const [showScrollToCurrentButton, setShowScrollToCurrentButton] = useState(false);
   const lastUserScrollTime = useRef<number>(0);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const manualModeRef = useRef(false);
   const [translationsCache, setTranslationsCache] = useState<Map<number, string>>(new Map());
   const [loadingTranslations, setLoadingTranslations] = useState<Set<number>>(new Set());
@@ -162,7 +161,7 @@ export function TranscriptViewer({
     }
   }, [citationHighlight]);
 
-  // Detect user scroll and temporarily disable auto-scroll with debouncing
+  // Detect user scroll and disable auto-scroll
   const handleUserScroll = useCallback(() => {
     const now = Date.now();
     if (manualModeRef.current) {
@@ -174,22 +173,6 @@ export function TranscriptViewer({
       if (autoScroll) {
         setAutoScroll(false);
         setShowScrollToCurrentButton(true);
-
-        // Clear existing timeout
-        if (scrollTimeoutRef.current) {
-          clearTimeout(scrollTimeoutRef.current);
-        }
-
-        // Re-enable auto-scroll after 8 seconds of inactivity for better UX
-        scrollTimeoutRef.current = setTimeout(() => {
-          if (manualModeRef.current) {
-            scrollTimeoutRef.current = null;
-            return;
-          }
-          setAutoScroll(true);
-          setShowScrollToCurrentButton(false);
-          scrollTimeoutRef.current = null;
-        }, 8000);
       }
     }
   }, [autoScroll]);
@@ -224,10 +207,6 @@ export function TranscriptViewer({
     manualModeRef.current = false;
     setAutoScroll(true);
     setShowScrollToCurrentButton(false);
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = null;
-    }
 
     if (currentSegmentRef.current) {
       scrollToElement(currentSegmentRef.current);
@@ -493,10 +472,6 @@ export function TranscriptViewer({
                   if (autoScroll) {
                     manualModeRef.current = true;
                     setAutoScroll(false);
-                    if (scrollTimeoutRef.current) {
-                      clearTimeout(scrollTimeoutRef.current);
-                      scrollTimeoutRef.current = null;
-                    }
                   } else {
                     manualModeRef.current = false;
                     setShowScrollToCurrentButton(false);
