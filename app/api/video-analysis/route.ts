@@ -19,6 +19,7 @@ import {
 import { NO_CREDITS_USED_MESSAGE } from '@/lib/no-credits-message';
 import { ensureMergedFormat } from '@/lib/transcript-format-detector';
 import { TranscriptSegment } from '@/lib/types';
+import { extractVideoId } from '@/lib/utils';
 
 function respondWithNoCredits(
   payload: Record<string, unknown>,
@@ -313,3 +314,72 @@ async function handler(req: NextRequest) {
 }
 
 export const POST = withSecurity(handler, SECURITY_PRESETS.PUBLIC);
+
+async function deleteHandler(req: NextRequest) {
+  try {
+    const { url, videoId: directVideoId } = await req.json();
+
+    // Accept either a YouTube URL or a direct video ID
+    const videoId = directVideoId || (url ? extractVideoId(url) : null);
+
+    if (!videoId) {
+      return NextResponse.json(
+        { error: 'Video ID or URL is required' },
+        { status: 400 }
+      );
+    }
+
+    const supabase = await createClient();
+
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    // Only allow admins to delete video analysis
+    if (!hasUnlimitedVideoAllowance(user)) {
+      return NextResponse.json(
+        { error: 'Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    // Delete the video analysis from database
+    const { error, count } = await supabase
+      .from('video_analyses')
+      .delete()
+      .eq('youtube_id', videoId)
+      .select();
+
+    if (error) {
+      console.error('Error deleting video analysis:', error);
+      return NextResponse.json(
+        { error: 'Failed to delete video analysis' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      videoId,
+      deleted: count !== null && count > 0
+    });
+  } catch (error) {
+    console.error('Error in delete video analysis:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete video analysis' },
+      { status: 500 }
+    );
+  }
+}
+
+export const DELETE = withSecurity(deleteHandler, {
+  ...SECURITY_PRESETS.AUTHENTICATED,
+  allowedMethods: ['DELETE']
+});
