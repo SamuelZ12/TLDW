@@ -87,6 +87,21 @@ function HomeContent() {
   }, [searchParams, router]);
 
   useEffect(() => {
+    if (!searchParams) return;
+
+    const authError = searchParams.get('auth_error');
+    if (!authError) return;
+
+    toast.error(`Authentication failed: ${decodeURIComponent(authError)}`);
+
+    // Clean up the URL
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('auth_error');
+    const queryString = params.toString();
+    router.replace(queryString ? `/?${queryString}` : '/', { scroll: false });
+  }, [searchParams, router]);
+
+  useEffect(() => {
     if (!authModalOpen) {
       return;
     }
