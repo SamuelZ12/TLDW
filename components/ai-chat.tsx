@@ -6,6 +6,7 @@ import { ChatMessage, TranscriptSegment, Topic, Citation, NoteSource, NoteMetada
 import { SelectionActions, SelectionActionPayload, triggerExplainSelection, EXPLAIN_SELECTION_EVENT } from "@/components/selection-actions";
 import { ChatMessageComponent } from "./chat-message";
 import { SuggestedQuestions } from "./suggested-questions";
+import { ImageCheatsheetCard } from "@/components/image-cheatsheet-card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -110,6 +111,8 @@ interface AIChatProps {
   selectedLanguage?: string | null;
   translationCache?: Map<string, string>;
   onRequestTranslation?: TranslationRequestHandler;
+  isAuthenticated?: boolean;
+  onRequestSignIn?: () => void;
 }
 
 export function AIChat({
@@ -125,7 +128,9 @@ export function AIChat({
   onTakeNoteFromSelection,
   selectedLanguage,
   translationCache,
-  onRequestTranslation
+  onRequestTranslation,
+  isAuthenticated,
+  onRequestSignIn
 }: AIChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -1072,6 +1077,32 @@ export function AIChat({
     }
   }, [messages, executeKeyTakeaways, executeTopQuotes, sendMessage]);
 
+  const handleImageGenerated = useCallback((data: {
+    imageUrl: string;
+    modelUsed: string;
+    remaining: number | null;
+    limit: number;
+  }) => {
+    const imageMessage: ChatMessage = {
+      id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      role: 'assistant',
+      content: '✨ Your cheatsheet is ready!',
+      imageUrl: data.imageUrl,
+      imageMetadata: {
+        modelUsed: data.modelUsed,
+        aspectRatio: '9:16'
+      },
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, imageMessage]);
+
+    // Auto-scroll to the new image message
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  }, []);
+
   const hasAskedKeyTakeaways = askedQuestions.has(KEY_TAKEAWAYS_LABEL);
   const hasAskedTopQuotes = askedQuestions.has(TOP_QUOTES_LABEL);
 
@@ -1087,6 +1118,14 @@ export function AIChat({
         }}>
           <div className="space-y-3.5 pt-3">
             <div className="flex w-full flex-col items-end gap-2">
+              <ImageCheatsheetCard
+                transcript={transcript}
+                videoId={videoId}
+                videoTitle={videoTitle}
+                isAuthenticated={isAuthenticated}
+                onRequestSignIn={onRequestSignIn}
+                onImageGenerated={handleImageGenerated}
+              />
               {!hasAskedKeyTakeaways && (
                 <Button
                   variant="pill"

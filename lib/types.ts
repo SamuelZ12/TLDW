@@ -75,6 +75,11 @@ export interface ChatMessage {
   content: string;
   citations?: Citation[];
   timestamp: Date;
+  imageUrl?: string;
+  imageMetadata?: {
+    modelUsed?: string;
+    aspectRatio?: string;
+  };
 }
 
 export type NoteSource = 'chat' | 'takeaways' | 'transcript' | 'custom';

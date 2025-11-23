@@ -7,8 +7,15 @@ import { Button } from "@/components/ui/button";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { TimestampButton } from "./timestamp-button";
-import { Copy, RefreshCw, Check, Bookmark } from "lucide-react";
+import { Copy, RefreshCw, Check, Bookmark, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { parseTimestamp } from "@/lib/timestamp-utils";
 import { normalizeTimestampSources } from "@/lib/timestamp-normalization";
@@ -30,6 +37,7 @@ function formatTimestamp(seconds: number): string {
 export function ChatMessageComponent({ message, onCitationClick, onTimestampClick, onRetry, onSaveNote }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
   // Handle copy to clipboard
   const handleCopy = React.useCallback(async () => {
@@ -352,7 +360,50 @@ const findMatchingCitation = useCallback((seconds: number): Citation | null => {
             {message.content}
           </ReactMarkdown>
           </div>
-          
+
+          {/* Image Display */}
+          {message.imageUrl && (
+            <div className="mt-3 max-w-sm">
+              <Dialog open={isImageModalOpen} onOpenChange={setIsImageModalOpen}>
+                <button
+                  onClick={() => setIsImageModalOpen(true)}
+                  className="group relative overflow-hidden rounded-xl cursor-zoom-in hover:opacity-90 transition-opacity w-full"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={message.imageUrl}
+                    alt="AI-generated cheatsheet"
+                    className="w-full h-auto rounded-xl border border-slate-200 shadow-sm"
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-xl" />
+                </button>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
+                  <DialogHeader>
+                    <DialogTitle>Generated Cheatsheet</DialogTitle>
+                  </DialogHeader>
+                  <div className="flex justify-center items-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={message.imageUrl}
+                      alt="AI-generated cheatsheet"
+                      className="w-full h-auto rounded-lg"
+                    />
+                  </div>
+                  <DialogFooter>
+                    <a
+                      href={message.imageUrl}
+                      download="tldw-cheatsheet.png"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                    >
+                      <Download className="h-4 w-4" />
+                      Download
+                    </a>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          )}
+
           {/* Action buttons */}
           <div className="flex items-center gap-0 mt-2 mb-3">
             <Tooltip>

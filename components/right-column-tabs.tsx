@@ -344,6 +344,8 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
             selectedLanguage={selectedLanguage}
             translationCache={translationCache}
             onRequestTranslation={onRequestTranslation}
+            isAuthenticated={isAuthenticated}
+            onRequestSignIn={onRequestSignIn}
           />
         </div>
         <div className={cn("absolute inset-0", activeTab !== "notes" && "hidden")}
