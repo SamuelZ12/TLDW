@@ -1122,6 +1122,7 @@ export function AIChat({
                 transcript={transcript}
                 videoId={videoId}
                 videoTitle={videoTitle}
+                videoAuthor={videoInfo?.author}
                 isAuthenticated={isAuthenticated}
                 onRequestSignIn={onRequestSignIn}
                 onImageGenerated={handleImageGenerated}

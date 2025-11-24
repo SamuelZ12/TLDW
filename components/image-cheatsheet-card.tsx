@@ -10,6 +10,7 @@ interface ImageCheatsheetCardProps {
   transcript: TranscriptSegment[];
   videoId: string;
   videoTitle?: string;
+  videoAuthor?: string;
   isAuthenticated?: boolean;
   onRequestSignIn?: () => void;
   onImageGenerated?: (data: {
@@ -35,6 +36,7 @@ export function ImageCheatsheetCard({
   transcript,
   videoId,
   videoTitle,
+  videoAuthor,
   isAuthenticated,
   onRequestSignIn,
   onImageGenerated,
@@ -94,7 +96,7 @@ export function ImageCheatsheetCard({
       const res = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId, transcript, videoTitle }),
+        body: JSON.stringify({ videoId, transcript, videoTitle, videoAuthor }),
       });
 
       const data = await res.json();
@@ -146,6 +148,7 @@ export function ImageCheatsheetCard({
     transcript,
     videoId,
     videoTitle,
+    videoAuthor,
     remaining,
     limit,
     onImageGenerated,

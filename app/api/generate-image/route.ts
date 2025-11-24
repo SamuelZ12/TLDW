@@ -15,6 +15,7 @@ const requestSchema = z.object({
   videoId: z.string().min(5),
   transcript: transcriptSchema,
   videoTitle: z.string().optional(),
+  videoAuthor: z.string().optional(),
 });
 
 const DEFAULT_IMAGE_MODEL =
@@ -27,10 +28,21 @@ function transcriptToPlainText(transcript: TranscriptSegment[]): string {
     .join('\n');
 }
 
-function buildPrompt(transcript: TranscriptSegment[]): string {
+function buildPrompt(
+  transcript: TranscriptSegment[],
+  videoTitle?: string,
+  videoAuthor?: string
+): string {
   const transcriptText = transcriptToPlainText(transcript);
+  const context = [];
+
+  if (videoTitle) context.push(`Video: "${videoTitle}"`);
+  if (videoAuthor) context.push(`Channel: ${videoAuthor}`);
+
   return [
-    'Generate an image. Turn this transcript into a cheatsheet with key takeaways, and give final output as 9:16 image created by nano banana.',
+    'Generate a highly shareable social media infographic based on this YouTube video transcript, summarizing the top insights and takeaways.',
+    'Include the video title and channel name in the graphics. In a corner of the image, include the elegant label "Made with tldw.us".',
+    ...context,
     '',
     transcriptText,
   ].join('\n');
@@ -112,7 +124,7 @@ async function handler(req: NextRequest) {
       );
     }
 
-    const { videoId, transcript } = parsed.data;
+    const { videoId, transcript, videoTitle, videoAuthor } = parsed.data;
     const supabase = await createClient();
     const {
       data: { user },
@@ -167,7 +179,7 @@ async function handler(req: NextRequest) {
       );
     }
 
-    const prompt = buildPrompt(transcript);
+    const prompt = buildPrompt(transcript, videoTitle, videoAuthor);
     const modelUsed = DEFAULT_IMAGE_MODEL;
 
     const { imageUrl } = await callGeminiImageAPI(
