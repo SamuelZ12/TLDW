@@ -1082,6 +1082,8 @@ export function AIChat({
     modelUsed: string;
     remaining: number | null;
     limit: number;
+    aspectRatio: string;
+    style: string;
   }) => {
     const imageMessage: ChatMessage = {
       id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -1090,7 +1092,8 @@ export function AIChat({
       imageUrl: data.imageUrl,
       imageMetadata: {
         modelUsed: data.modelUsed,
-        aspectRatio: '9:16'
+        aspectRatio: data.aspectRatio,
+        style: data.style,
       },
       timestamp: new Date()
     };

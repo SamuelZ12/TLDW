@@ -5,6 +5,30 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, X } from "lucide-react";
 import { TranscriptSegment } from "@/lib/types";
 import { toast } from "sonner";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const ASPECT_RATIO_OPTIONS = [
+  { value: "9:16", label: "Portrait 9:16" },
+  { value: "3:4", label: "Portrait 3:4" },
+  { value: "1:1", label: "Square 1:1" },
+  { value: "4:3", label: "Landscape 4:3" },
+  { value: "16:9", label: "Widescreen 16:9" },
+  { value: "21:9", label: "Cinematic 21:9" },
+];
+
+const STYLE_OPTIONS = [
+  { value: "neo-brutalism", label: "Neo-Brutalism" },
+  { value: "glass", label: "Glass" },
+  { value: "vintage-revival-editorial", label: "Vintage-Revival Editorial" },
+  { value: "dark-mode-botanical", label: "Dark Mode Botanical" },
+];
 
 interface ImageCheatsheetCardProps {
   transcript: TranscriptSegment[];
@@ -18,6 +42,8 @@ interface ImageCheatsheetCardProps {
     modelUsed: string;
     remaining: number | null;
     limit: number;
+    aspectRatio: string;
+    style: string;
   }) => void;
 }
 
@@ -47,6 +73,9 @@ export function ImageCheatsheetCard({
   const [remaining, setRemaining] = useState<number | null>(null);
   const [resetAt, setResetAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isConfiguring, setIsConfiguring] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState<string>("9:16");
+  const [style, setStyle] = useState<string>("neo-brutalism");
 
   const limitReached = useMemo(() => {
     if (!isAuthenticated) return false;
@@ -78,9 +107,25 @@ export function ImageCheatsheetCard({
     void fetchLimit();
   }, [fetchLimit]);
 
+  const handleOpenConfigurator = useCallback(() => {
+    if (!isAuthenticated) {
+      onRequestSignIn?.();
+      return;
+    }
+
+    if (!transcript || transcript.length === 0) {
+      setError("Transcript is required before generating an image.");
+      return;
+    }
+
+    setIsConfiguring(true);
+    setError(null);
+  }, [isAuthenticated, onRequestSignIn, transcript]);
+
   const handleGenerate = useCallback(async () => {
     if (!isAuthenticated) {
       onRequestSignIn?.();
+      setIsConfiguring(false);
       return;
     }
 
@@ -96,7 +141,14 @@ export function ImageCheatsheetCard({
       const res = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId, transcript, videoTitle, videoAuthor }),
+        body: JSON.stringify({
+          videoId,
+          transcript,
+          videoTitle,
+          videoAuthor,
+          aspectRatio,
+          style,
+        }),
       });
 
       const data = await res.json();
@@ -132,9 +184,12 @@ export function ImageCheatsheetCard({
         modelUsed: data.modelUsed || "gemini-3-pro-image-preview",
         remaining: data.remaining,
         limit: data.limit,
+        aspectRatio: data.aspectRatio || aspectRatio,
+        style: data.style || style,
       });
 
       toast.success("Cheatsheet image generated");
+      setIsConfiguring(false);
     } catch (err) {
       console.error("Error generating image", err);
       setError("Failed to generate image. Please try again.");
@@ -145,24 +200,20 @@ export function ImageCheatsheetCard({
   }, [
     isAuthenticated,
     onRequestSignIn,
-    transcript,
     videoId,
+    transcript,
     videoTitle,
     videoAuthor,
+    aspectRatio,
+    style,
     remaining,
     limit,
     onImageGenerated,
   ]);
 
-  const resetLabel = useMemo(() => {
-    if (!resetAt) return null;
-    const date = new Date(resetAt);
-    if (Number.isNaN(date.getTime())) return null;
-    return date.toLocaleDateString();
-  }, [resetAt]);
-
   const buttonText = useMemo(() => {
     if (isGenerating) return "Generating cheatsheet...";
+    if (isConfiguring) return "Select aspect ratio & style";
     if (!isAuthenticated) return "Generate cheatsheet image";
     if (isCheckingLimit) return "Generate cheatsheet...";
     if (limitReached) return "Limit reached";
@@ -170,16 +221,16 @@ export function ImageCheatsheetCard({
       return `Generate cheatsheet (${remaining} left)`;
     }
     return "Generate cheatsheet image";
-  }, [isGenerating, isAuthenticated, isCheckingLimit, limitReached, remaining]);
+  }, [isGenerating, isConfiguring, isAuthenticated, isCheckingLimit, limitReached, remaining]);
 
   return (
     <div className="flex w-full flex-col items-end gap-2">
-      {/* Generate Button */}
+      {/* Trigger */}
       <Button
         variant="pill"
         size="sm"
         className="self-end w-fit h-auto max-w-full sm:max-w-[80%] justify-start text-left whitespace-normal break-words leading-snug py-2 px-4 transition-colors hover:bg-neutral-100"
-        onClick={handleGenerate}
+        onClick={handleOpenConfigurator}
         disabled={isGenerating || limitReached || isCheckingLimit}
       >
         {isGenerating ? (
@@ -189,6 +240,67 @@ export function ImageCheatsheetCard({
         )}
         {buttonText}
       </Button>
+
+      {/* Inline chat-style prompt */}
+      {isConfiguring && (
+        <div className="w-full max-w-[80%] self-end rounded-[18px] border border-neutral-200 bg-white p-3 shadow-[0_8px_0_#00000012]">
+          <div className="grid gap-3">
+            <div className="flex flex-col gap-1">
+              <Label className="text-[11px] text-neutral-600">Aspect ratio</Label>
+              <Select value={aspectRatio} onValueChange={setAspectRatio}>
+                <SelectTrigger className="h-9 text-xs bg-white">
+                  <SelectValue placeholder="Choose aspect ratio" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ASPECT_RATIO_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <Label className="text-[11px] text-neutral-600">Style</Label>
+            <Select value={style} onValueChange={setStyle}>
+              <SelectTrigger className="h-9 text-xs bg-white">
+                <SelectValue placeholder="Choose style" />
+              </SelectTrigger>
+              <SelectContent>
+                {STYLE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          </div>
+          <div className="flex items-center gap-2 mt-3">
+            <Button
+              size="sm"
+              className="h-8 px-3"
+              onClick={handleGenerate}
+              disabled={isGenerating}
+            >
+              {isGenerating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
+              ) : null}
+              Generate
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-3"
+              onClick={() => setIsConfiguring(false)}
+              disabled={isGenerating}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Error Message */}
       {error && (

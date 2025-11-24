@@ -79,6 +79,8 @@ export interface ChatMessage {
   imageMetadata?: {
     modelUsed?: string;
     aspectRatio?: string;
+    imageSize?: string;
+    style?: string;
   };
 }
 

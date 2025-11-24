@@ -16,7 +16,46 @@ const requestSchema = z.object({
   transcript: transcriptSchema,
   videoTitle: z.string().optional(),
   videoAuthor: z.string().optional(),
+  aspectRatio: z
+    .enum(['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'])
+    .default('9:16'),
+  style: z
+    .enum([
+      'neo-brutalism',
+      'glass',
+      'vintage-revival-editorial',
+      'dark-mode-botanical',
+    ])
+    .default('neo-brutalism'),
 });
+
+type AspectRatio = z.infer<typeof requestSchema>['aspectRatio'];
+type ImageStyle = z.infer<typeof requestSchema>['style'];
+
+const DEFAULT_IMAGE_SIZE = '1K' as const;
+
+const IMAGE_STYLE_PROMPTS: Record<ImageStyle, { label: string; prompt: string }> = {
+  'neo-brutalism': {
+    label: 'Neo-Brutalism',
+    prompt:
+      'Use heavy ~3px black outlines around every container, hard black offset shadows (no blur), an off-white canvas with blocks of mustard yellow, cornflower blue, and seafoam green. Headings are heavy, all-caps geometric sans. Buttons and cards are sharp rectangles with raw, functional presence.',
+  },
+  glass: {
+    label: 'Glass',
+    prompt:
+      'Photorealistic futuristic glassmorphism: a transparent bezel-less handheld device in a realistic hand, dramatic low-key lighting on a black void. Neon rim light magenta-to-amber, crisp sans UI showing video title and channel, insights/takeaways readable beneath. The device glow should light the fingers.',
+  },
+  'vintage-revival-editorial': {
+    label: 'Vintage-Revival Editorial',
+    prompt:
+      'Warm cream paper background with soft charcoal ink, subtle film grain. Typography is high-contrast serif (Editorial New vibe), centered tight-kerning Title Case headlines for an authoritative editorial look.',
+  },
+  'dark-mode-botanical': {
+    label: 'Dark Mode Botanical',
+    prompt:
+      'True black backdrop with crisp white/grey monospaced text laid out like a code grid. Accents of dusty rose, cream, sage green, burnished gold in an embroidered/tapestry floral motif anchored bottom-left. Tech-noir meets cottagecore: lots of negative space, raw neo-brutalist layout balance.',
+  },
+};
 
 const DEFAULT_IMAGE_MODEL =
   process.env.GEMINI_IMAGE_MODEL?.trim() || 'gemini-3-pro-image-preview';
@@ -33,8 +72,10 @@ function transcriptToPlainText(transcript: TranscriptSegment[]): string {
 
 function buildPrompt(
   transcript: TranscriptSegment[],
-  videoTitle?: string,
-  videoAuthor?: string
+  videoTitle: string | undefined,
+  videoAuthor: string | undefined,
+  style: ImageStyle,
+  aspectRatio: AspectRatio
 ): string {
   const transcriptText = transcriptToPlainText(transcript);
   const context = [];
@@ -42,16 +83,26 @@ function buildPrompt(
   if (videoTitle) context.push(`Video: "${videoTitle}"`);
   if (videoAuthor) context.push(`Channel: ${videoAuthor}`);
 
+  const stylePreset = IMAGE_STYLE_PROMPTS[style] ?? IMAGE_STYLE_PROMPTS['neo-brutalism'];
+  const dimensionNote = `Target aspect ratio ${aspectRatio}.`;
+
   return [
     'Generate a highly shareable social media infographic based on this YouTube video transcript, summarizing the top insights and takeaways.',
     'Include the video title and channel name in the graphics. In a corner of the image, include the elegant label "Made with tldw.us".',
+    dimensionNote,
+    `Apply the "${stylePreset.label}" style: ${stylePreset.prompt}`,
     ...context,
     '',
     transcriptText,
   ].join('\n');
 }
 
-async function callGeminiImageAPI(prompt: string, model: string, apiKey: string) {
+async function callGeminiImageAPI(
+  prompt: string,
+  model: string,
+  apiKey: string,
+  aspectRatio: AspectRatio
+) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const response = await fetch(endpoint, {
@@ -70,8 +121,8 @@ async function callGeminiImageAPI(prompt: string, model: string, apiKey: string)
         temperature: 0.35,
         responseModalities: ['IMAGE'],
         imageConfig: {
-          aspectRatio: '9:16',
-          imageSize: '1K',
+          aspectRatio,
+          imageSize: DEFAULT_IMAGE_SIZE,
         },
       },
     }),
@@ -127,7 +178,14 @@ async function handler(req: NextRequest) {
       );
     }
 
-    const { videoId, transcript, videoTitle, videoAuthor } = parsed.data;
+    const {
+      videoId,
+      transcript,
+      videoTitle,
+      videoAuthor,
+      aspectRatio,
+      style,
+    } = parsed.data;
     const supabase = await createClient();
     const {
       data: { user },
@@ -182,13 +240,20 @@ async function handler(req: NextRequest) {
       );
     }
 
-    const prompt = buildPrompt(transcript, videoTitle, videoAuthor);
+    const prompt = buildPrompt(
+      transcript,
+      videoTitle,
+      videoAuthor,
+      style,
+      aspectRatio
+    );
     const modelUsed = DEFAULT_IMAGE_MODEL;
 
     const { imageUrl } = await callGeminiImageAPI(
       prompt,
       modelUsed,
-      apiKey
+      apiKey,
+      aspectRatio
     );
 
     // Consume credit after successful generation (unless unlimited)
@@ -216,6 +281,9 @@ async function handler(req: NextRequest) {
     return NextResponse.json({
       imageUrl,
       modelUsed,
+      aspectRatio,
+      imageSize: DEFAULT_IMAGE_SIZE,
+      style,
       remaining,
       limit: generationDecision.stats
         ? generationDecision.stats.baseLimit
