@@ -21,6 +21,9 @@ const requestSchema = z.object({
 const DEFAULT_IMAGE_MODEL =
   process.env.GEMINI_IMAGE_MODEL?.trim() || 'gemini-3-pro-image-preview';
 
+const FREE_IMAGE_LIMIT = IMAGE_TIER_LIMITS.free;
+const PRO_IMAGE_LIMIT = IMAGE_TIER_LIMITS.pro;
+
 function transcriptToPlainText(transcript: TranscriptSegment[]): string {
   return transcript
     .map((segment) => segment.text?.trim() || '')
@@ -135,7 +138,7 @@ async function handler(req: NextRequest) {
         {
           error: 'Sign in to generate images',
           message:
-            'Create a free account to get 5 image generations per month, or upgrade to Pro for 100 per month.',
+            `Create a free account to get ${FREE_IMAGE_LIMIT} image generation${FREE_IMAGE_LIMIT === 1 ? '' : 's'} per month, or upgrade to Pro for ${PRO_IMAGE_LIMIT} per month.`,
           requiresAuth: true,
         },
         { status: 401 }
@@ -168,7 +171,7 @@ async function handler(req: NextRequest) {
           error: 'Monthly image limit reached',
           message:
             tier === 'free'
-              ? "You've used your 5 free image generations this month. Upgrade to Pro for 100 per month."
+              ? `You've used your ${FREE_IMAGE_LIMIT} free image generation${FREE_IMAGE_LIMIT === 1 ? '' : 's'} this month. Upgrade to Pro for ${PRO_IMAGE_LIMIT} per month.`
               : 'You have used your Pro allowance. Please wait for your next billing cycle to reset.',
           tier,
           remaining: stats?.baseRemaining ?? 0,

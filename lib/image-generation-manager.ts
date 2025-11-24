@@ -23,7 +23,7 @@ export interface ImageGenerationDecision {
 type DatabaseClient = SupabaseClient<any, string, any>;
 
 export const IMAGE_TIER_LIMITS: Record<SubscriptionTier, number> = {
-  free: 5,
+  free: 1,
   pro: 100,
 };
 
