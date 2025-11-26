@@ -88,7 +88,7 @@ export function NoteEditor({ selectedText, onSave }: NoteEditorProps) {
   const enhancementDisabled = isEnhancing || !quoteText.trim();
 
   return (
-    <div className="relative rounded-xl bg-neutral-100 border border-[#ebecee] p-4 animate-in fade-in duration-200 w-full max-w-full overflow-hidden">
+    <div className="relative rounded-xl bg-neutral-100 border border-[#ebecee] p-4 animate-in fade-in duration-200 w-full max-w-full">
       <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.17em] text-muted-foreground/80 mb-1">
         <span>Selected Snippet</span>
         {hasEnhanced && !isEnhancing && (
@@ -105,7 +105,7 @@ export function NoteEditor({ selectedText, onSave }: NoteEditorProps) {
           onChange={(e) => setQuoteText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Edit the snippet before saving"
-          className="resize-none border-none bg-transparent px-0 py-0 text-sm text-foreground/90 leading-relaxed focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-none whitespace-pre-wrap break-words min-h-[72px]"
+          className="resize-none border-none bg-transparent px-1 py-0 text-sm text-foreground/90 leading-relaxed focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-none whitespace-pre-wrap break-words min-h-[72px]"
           aria-label="Selected snippet editor"
         />
       </div>
