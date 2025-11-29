@@ -187,7 +187,7 @@ async function handler(req: NextRequest) {
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: mode,
-      payment_method_types: ['card'],
+      payment_method_types: ['card', 'alipay'],
       line_items: [
         {
           price: priceId,
