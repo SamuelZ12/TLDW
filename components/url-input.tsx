@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Loader2, ArrowUp, Link, Sparkles } from "lucide-react";
 import { extractVideoId } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,7 @@ export function UrlInput({
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [isFocused, setIsFocused] = useState(false);
+  const [isValidUrl, setIsValidUrl] = useState(false);
   const forceSmartMode = isGrokProviderOnClient();
   const showModeSelector =
     !forceSmartMode && typeof onModeChange === "function";
@@ -37,6 +38,17 @@ export function UrlInput({
   const modeValue: TopicGenerationMode = forceSmartMode
     ? "smart"
     : mode ?? "fast";
+
+  // Validate URL in real-time
+  useEffect(() => {
+    if (!url.trim()) {
+      setIsValidUrl(false);
+      return;
+    }
+
+    const videoId = extractVideoId(url);
+    setIsValidUrl(!!videoId);
+  }, [url]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,7 +131,13 @@ export function UrlInput({
                 type="submit"
                 disabled={isLoading || !url.trim()}
                 size="icon"
-                className="h-7 w-7 shrink-0 rounded-full bg-[#B3B4B4] text-white hover:bg-[#9d9e9e] disabled:bg-[#B3B4B4] disabled:text-white disabled:opacity-100"
+                className={cn(
+                  "h-7 w-7 shrink-0 rounded-full text-white transition-colors",
+                  isValidUrl
+                    ? "bg-black hover:bg-black/80"
+                    : "bg-[#B3B4B4] hover:bg-[#9d9e9e]",
+                  "disabled:bg-[#B3B4B4] disabled:text-white disabled:opacity-100"
+                )}
               >
                 {isLoading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
