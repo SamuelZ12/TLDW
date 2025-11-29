@@ -27,20 +27,8 @@ async function handler(req: NextRequest) {
 
     const supabase = await createClient();
 
-    // Get current user if logged in
+    // Get current user if logged in (optional)
     const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json(
-        {
-          error: 'Sign in to view video analyses',
-          requiresAuth: true,
-          cached: false,
-          videoId
-        },
-        { status: 401 }
-      );
-    }
 
     // Check for cached video
     const { data: cachedVideo } = await supabase

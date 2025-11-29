@@ -61,7 +61,7 @@ function HomeContent() {
 
     authPromptHandled.current = true;
 
-    let message = "You've used today's free analysis. Sign in to keep going.";
+    let message = "You've used your free preview. Sign in to keep going.";
     try {
       const storedMessage = sessionStorage.getItem("limitRedirectMessage");
       if (storedMessage) {

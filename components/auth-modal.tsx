@@ -127,7 +127,7 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
       case 'generation-limit':
         return {
           title: 'Sign up to continue',
-          description: 'You\'ve used your anonymous allowance. Create a free account to unlock monthly credits.',
+          description: 'You\'ve used your free preview. Create a free account to unlock monthly credits.',
           benefits: [
             '5 video analyses every 30 days',
             'Save videos, notes, and highlights across devices',

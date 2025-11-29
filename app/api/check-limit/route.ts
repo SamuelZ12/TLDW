@@ -6,6 +6,7 @@ import {
   canGenerateVideo,
   TIER_LIMITS,
 } from '@/lib/subscription-manager';
+import { getGuestAccessState, setGuestCookies } from '@/lib/guest-usage';
 
 /**
  * GET /api/check-limit
@@ -25,7 +26,7 @@ import {
  *   requiresAuth?: boolean
  * }
  */
-async function handler(request: NextRequest) {
+async function handler(_request: NextRequest) {
   try {
     const supabase = await createClient();
 
@@ -33,6 +34,39 @@ async function handler(request: NextRequest) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+
+    // Handle anonymous guests with a one-time allowance
+    if (!user) {
+      const guestState = await getGuestAccessState({ supabase });
+      const canGenerate = !guestState.used;
+
+      const response = NextResponse.json({
+        canGenerate,
+        isAuthenticated: false,
+        tier: 'anonymous',
+        status: null,
+        reason: canGenerate ? null : 'AUTH_REQUIRED',
+        warning: null,
+        unlimited: false,
+        requiresAuth: !canGenerate,
+        resetAt: null,
+        requiresTopup: false,
+        willConsumeTopup: false,
+        usage: {
+          counted: null,
+          cached: null,
+          baseLimit: 1,
+          baseRemaining: canGenerate ? 1 : 0,
+          topupRemaining: 0,
+          totalRemaining: canGenerate ? 1 : 0,
+        },
+      });
+
+      // Persist a stable guest token for this browser
+      setGuestCookies(response, guestState);
+
+      return response;
+    }
 
     // Check for unlimited access (whitelist)
     const unlimitedAccess = hasUnlimitedVideoAllowance(user);
