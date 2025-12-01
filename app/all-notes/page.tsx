@@ -517,6 +517,7 @@ export default function AllNotesPage() {
                     })}
                   </div>
                 </Card>
+                );
               })}
           </div>
         </div>

@@ -37,41 +37,38 @@ async function resolveVideoFromSlug(
 ): Promise<{ video: VideoAnalysisRow; videoId: string; canonicalSlug: string } | null> {
   const videoIdFromSlug = extractVideoIdFromSlug(slug);
 
-  const lookups: Array<Promise<{ data: VideoAnalysisRow | null; error: any }>> = [];
-
+  // 1) Try by youtube_id if we could extract one
   if (videoIdFromSlug) {
-    lookups.push(
-      supabase
-        .from('video_analyses')
-        .select('*')
-        .eq('youtube_id', videoIdFromSlug)
-        .maybeSingle()
-    );
-  }
-
-  lookups.push(
-    supabase
+    const { data, error } = await supabase
       .from('video_analyses')
       .select('*')
-      .eq('slug', slug)
-      .maybeSingle()
-  );
-
-  for (const lookup of lookups) {
-    const { data, error } = await lookup;
+      .eq('youtube_id', videoIdFromSlug)
+      .maybeSingle();
 
     if (error && error.code !== 'PGRST116') {
-      console.error('Error fetching video analysis by slug', { slug, error });
+      console.error('Error fetching video analysis by youtube_id', { slug, videoIdFromSlug, error });
     }
 
     if (data) {
       const canonicalSlug = buildVideoSlug(data.title, data.youtube_id);
-      return {
-        video: data,
-        videoId: data.youtube_id,
-        canonicalSlug
-      };
+      return { video: data, videoId: data.youtube_id, canonicalSlug };
     }
+  }
+
+  // 2) Try by stored slug (legacy rows may not include the videoId suffix)
+  const { data, error } = await supabase
+    .from('video_analyses')
+    .select('*')
+    .eq('slug', slug)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error fetching video analysis by slug', { slug, error });
+  }
+
+  if (data) {
+    const canonicalSlug = buildVideoSlug(data.title, data.youtube_id);
+    return { video: data, videoId: data.youtube_id, canonicalSlug };
   }
 
   return null;
@@ -194,7 +191,7 @@ export default async function VideoPage({ params }: PageProps) {
   const videoInfo: VideoInfo = {
     videoId,
     title: video.title,
-    author: video.author,
+    author: video.author || '',
     duration: video.duration || 0,
     thumbnail: video.thumbnail_url || '',
     description: '',
@@ -316,6 +313,9 @@ export default async function VideoPage({ params }: PageProps) {
         slug={slug}
         initialVideo={{
           ...video,
+          author: video.author || '',
+          created_at: video.created_at || '',
+          updated_at: video.updated_at || '',
           transcript,
           topics,
           videoInfo,
