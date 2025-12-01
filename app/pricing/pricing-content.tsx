@@ -36,7 +36,7 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
   const isCanceled = status === 'canceled' || cancelAtPeriodEnd
 
   const freeFeatures = [
-    '5 videos / month',
+    '3 videos / month',
     'AI highlight reels',
     'Chat with transcripts',
     'Save notes',

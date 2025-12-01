@@ -232,7 +232,7 @@ export const RATE_LIMITS = {
   },
   VIDEO_GENERATION_FREE_REGISTERED: {
     windowMs: 30 * 24 * 60 * 60 * 1000, // 30 days
-    maxRequests: 5 // 5 videos per 30 days for free registered users
+    maxRequests: 3 // 3 videos per 30 days for free registered users
   },
   VIDEO_GENERATION_PRO: {
     windowMs: 30 * 24 * 60 * 60 * 1000, // 30 days
