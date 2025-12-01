@@ -3,16 +3,21 @@
 import { csrfFetch } from '@/lib/csrf-client'
 
 type PriceType = 'subscription' | 'subscription_annual' | 'topup'
+type Currency = 'usd' | 'cny'
 
 /**
  * Initiates a Stripe Checkout session for subscription or top-up purchase.
  * Creates a checkout session and redirects to the Stripe-hosted checkout page.
  *
  * @param priceType - Type of purchase: 'subscription' or 'topup'
+ * @param currency - Currency for top-up purchases: 'usd' or 'cny' (default: 'usd')
  * @throws {Error} If checkout session creation fails
  */
-export async function startCheckout(priceType: PriceType): Promise<void> {
-  const response = await csrfFetch.post('/api/stripe/create-checkout-session', { priceType })
+export async function startCheckout(priceType: PriceType, currency: Currency = 'usd'): Promise<void> {
+  const response = await csrfFetch.post('/api/stripe/create-checkout-session', {
+    priceType,
+    currency
+  })
 
   if (!response.ok) {
     let message = 'Failed to create checkout session'

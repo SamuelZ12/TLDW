@@ -15,6 +15,7 @@ import { resolveAppUrl } from '@/lib/utils';
  */
 const createCheckoutSessionSchema = z.object({
   priceType: z.enum(['subscription', 'subscription_annual', 'topup']),
+  currency: z.enum(['usd', 'cny']).optional().default('usd'), // Optional currency selection for top-ups
 });
 
 /**
@@ -129,7 +130,12 @@ async function handler(req: NextRequest) {
         priceId = STRIPE_PRICE_IDS.PRO_SUBSCRIPTION_ANNUAL;
         break;
       case 'topup':
-        priceId = STRIPE_PRICE_IDS.TOPUP_CREDITS;
+        // For top-ups, select price based on currency
+        if (validatedData.currency === 'cny' && STRIPE_PRICE_IDS.TOPUP_CREDITS_CNY) {
+          priceId = STRIPE_PRICE_IDS.TOPUP_CREDITS_CNY;
+        } else {
+          priceId = STRIPE_PRICE_IDS.TOPUP_CREDITS;
+        }
         break;
     }
 
@@ -138,6 +144,7 @@ async function handler(req: NextRequest) {
     // Debug logging
     console.log('Creating checkout session:', {
       priceType: validatedData.priceType,
+      currency: validatedData.currency,
       priceId,
       mode,
       userId: user.id,
@@ -188,10 +195,19 @@ async function handler(req: NextRequest) {
       customer: customerId,
       mode: mode,
       // Conditionally set payment methods based on mode
-      // Alipay only supports one-time payments, not subscriptions
+      // Alipay and WeChat Pay only support one-time payments, not subscriptions
       payment_method_types: mode === 'subscription'
         ? ['card']  // Subscriptions: cards only
-        : ['card', 'alipay'],  // Topups: cards + Alipay
+        : ['card', 'alipay', 'wechat_pay'],  // Topups: cards + Alipay + WeChat Pay
+      // Configure payment method options for WeChat Pay
+      // WeChat Pay requires explicit client type for web applications
+      ...(mode === 'payment' && {
+        payment_method_options: {
+          wechat_pay: {
+            client: 'web',  // Display QR code for web-based payments
+          },
+        },
+      }),
       line_items: [
         {
           price: priceId,

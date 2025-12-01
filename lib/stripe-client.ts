@@ -47,8 +47,11 @@ export const STRIPE_PRICE_IDS = {
   /** Pro subscription: discounted annual option */
   PRO_SUBSCRIPTION_ANNUAL: process.env.STRIPE_PRO_ANNUAL_PRICE_ID!,
 
-  /** Top-Up credits: $3 one-time for +20 video credits */
+  /** Top-Up credits: $3 one-time for +20 video credits (USD) */
   TOPUP_CREDITS: process.env.STRIPE_TOPUP_PRICE_ID!,
+
+  /** Top-Up credits: ¥20 one-time for +20 video credits (CNY) - Optional for WeChat Pay */
+  TOPUP_CREDITS_CNY: process.env.STRIPE_TOPUP_PRICE_ID_CNY,
 } as const;
 
 /**
