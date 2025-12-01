@@ -21,6 +21,8 @@ import { ensureMergedFormat } from '@/lib/transcript-format-detector';
 import { TranscriptSegment } from '@/lib/types';
 import { getGuestAccessState, recordGuestUsage, setGuestCookies } from '@/lib/guest-usage';
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+
 function respondWithNoCredits(
   payload: Record<string, unknown>,
   status: number
@@ -33,6 +35,46 @@ function respondWithNoCredits(
     },
     { status }
   );
+}
+
+async function hasCountedGenerationThisPeriod({
+  supabase,
+  userId,
+  youtubeId,
+  videoId,
+  periodStart,
+  periodEnd
+}: {
+  supabase: SupabaseServerClient;
+  userId: string;
+  youtubeId: string;
+  videoId?: string | null;
+  periodStart: Date;
+  periodEnd: Date;
+}): Promise<boolean> {
+  const orConditions = [`youtube_id.eq.${youtubeId}`];
+
+  if (videoId) {
+    orConditions.push(`video_id.eq.${videoId}`);
+  }
+
+  const { data, error } = await supabase
+    .from('video_generations')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('counted_toward_limit', true)
+    .gte('created_at', periodStart.toISOString())
+    .lte('created_at', periodEnd.toISOString())
+    .or(orConditions.join(','))
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Failed to check existing generation for cached video:', error);
+    return false;
+  }
+
+  return Boolean(data);
 }
 
 async function handler(req: NextRequest) {
@@ -86,6 +128,9 @@ async function handler(req: NextRequest) {
     }
 
     const isCachedAnalysis = Boolean(cachedVideo?.topics);
+
+    let generationDecision: GenerationDecision | null = null;
+    let alreadyCountedThisPeriod = false;
 
     if (theme) {
       // Guests only get one fresh analysis; allow themed queries for cached videos
@@ -157,67 +202,8 @@ async function handler(req: NextRequest) {
       }
     }
 
-    // Check for cached analysis FIRST (before consuming rate limit)
-    if (!forceRegenerate && cachedVideo && cachedVideo.topics) {
-      // If user is logged in, track their access to this video atomically
-      if (user) {
-        await supabase.rpc('upsert_video_analysis_with_user_link', {
-          p_youtube_id: videoId,
-          p_title: cachedVideo.title,
-          p_author: cachedVideo.author,
-          p_duration: cachedVideo.duration,
-          p_thumbnail_url: cachedVideo.thumbnail_url,
-          p_transcript: cachedVideo.transcript,
-          p_topics: cachedVideo.topics,
-          p_summary: cachedVideo.summary || null, // Ensure null instead of undefined
-          p_suggested_questions: cachedVideo.suggested_questions || null,
-          p_model_used: cachedVideo.model_used,
-          p_user_id: user.id
-        });
-      }
-
-      let themes: string[] = [];
-      try {
-        themes = await generateThemesFromTranscript(transcript, videoInfo);
-      } catch (error) {
-        console.error('Error generating themes for cached video:', error);
-      }
-
-      // Ensure transcript is in merged format (backward compatibility for old cached videos)
-      const originalTranscript = cachedVideo.transcript as TranscriptSegment[];
-      const migratedTranscript = ensureMergedFormat(originalTranscript, {
-        enableLogging: true,
-        context: `YouTube ID: ${videoId}`
-      });
-
-      const response = NextResponse.json({
-        topics: cachedVideo.topics,
-        transcript: migratedTranscript,
-        videoInfo: {
-          title: cachedVideo.title,
-          author: cachedVideo.author,
-          duration: cachedVideo.duration,
-          thumbnail: cachedVideo.thumbnail_url
-        },
-        summary: cachedVideo.summary,
-        suggestedQuestions: cachedVideo.suggested_questions,
-        themes,
-        cached: true,
-        cacheDate: cachedVideo.created_at
-      });
-
-      if (!user && guestState) {
-        setGuestCookies(response, guestState);
-      }
-
-      return response;
-    }
-
-    // Only apply credit checking for NEW video analysis (not cached)
-    let generationDecision: GenerationDecision | null = null;
-
     if (!user) {
-      if (guestState?.used) {
+      if (guestState?.used && !isCachedAnalysis) {
         const response = respondWithNoCredits(
           {
             error: 'Sign in to analyze videos',
@@ -240,7 +226,18 @@ async function handler(req: NextRequest) {
         skipCacheCheck: true
       });
 
-      if (!generationDecision.allowed) {
+      if (isCachedAnalysis && generationDecision.stats) {
+        alreadyCountedThisPeriod = await hasCountedGenerationThisPeriod({
+          supabase,
+          userId: user.id,
+          youtubeId: videoId,
+          videoId: cachedVideo?.id ?? null,
+          periodStart: generationDecision.stats.periodStart,
+          periodEnd: generationDecision.stats.periodEnd
+        });
+      }
+
+      if (!alreadyCountedThisPeriod && !generationDecision.allowed) {
         const tier = generationDecision.subscription?.tier ?? 'free';
         const stats = generationDecision.stats;
         const resetAt =
@@ -294,6 +291,85 @@ async function handler(req: NextRequest) {
           }
         );
       }
+    }
+
+    // Serve cached analysis but still count credits when required
+    if (!forceRegenerate && cachedVideo && cachedVideo.topics) {
+      // If user is logged in, track their access to this video atomically
+      if (user) {
+        await supabase.rpc('upsert_video_analysis_with_user_link', {
+          p_youtube_id: videoId,
+          p_title: cachedVideo.title,
+          p_author: cachedVideo.author,
+          p_duration: cachedVideo.duration,
+          p_thumbnail_url: cachedVideo.thumbnail_url,
+          p_transcript: cachedVideo.transcript,
+          p_topics: cachedVideo.topics,
+          p_summary: cachedVideo.summary || null, // Ensure null instead of undefined
+          p_suggested_questions: cachedVideo.suggested_questions || null,
+          p_model_used: cachedVideo.model_used,
+          p_user_id: user.id
+        });
+      }
+
+      const shouldConsumeCachedCredit = Boolean(
+        user &&
+        !unlimitedAccess &&
+        !alreadyCountedThisPeriod &&
+        generationDecision?.subscription &&
+        generationDecision.stats
+      );
+
+      if (shouldConsumeCachedCredit && user && generationDecision?.subscription && generationDecision.stats) {
+        const consumeResult = await consumeVideoCreditAtomic({
+          userId: user.id,
+          youtubeId: videoId,
+          subscription: generationDecision.subscription,
+          statsSnapshot: generationDecision.stats,
+          videoAnalysisId: cachedVideo.id,
+          counted: true
+        });
+
+        if (!consumeResult.success) {
+          console.error('Failed to consume cached video credit:', consumeResult.error);
+        }
+      }
+
+      let themes: string[] = [];
+      try {
+        themes = await generateThemesFromTranscript(transcript, videoInfo);
+      } catch (error) {
+        console.error('Error generating themes for cached video:', error);
+      }
+
+      // Ensure transcript is in merged format (backward compatibility for old cached videos)
+      const originalTranscript = cachedVideo.transcript as TranscriptSegment[];
+      const migratedTranscript = ensureMergedFormat(originalTranscript, {
+        enableLogging: true,
+        context: `YouTube ID: ${videoId}`
+      });
+
+      const response = NextResponse.json({
+        topics: cachedVideo.topics,
+        transcript: migratedTranscript,
+        videoInfo: {
+          title: cachedVideo.title,
+          author: cachedVideo.author,
+          duration: cachedVideo.duration,
+          thumbnail: cachedVideo.thumbnail_url
+        },
+        summary: cachedVideo.summary,
+        suggestedQuestions: cachedVideo.suggested_questions,
+        themes,
+        cached: true,
+        cacheDate: cachedVideo.created_at
+      });
+
+      if (!user && guestState) {
+        setGuestCookies(response, guestState);
+      }
+
+      return response;
     }
 
     const generationResult = await generateTopicsFromTranscript(
