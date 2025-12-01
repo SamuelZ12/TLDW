@@ -1,19 +1,77 @@
 import { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { VideoPageClient } from './video-page-client';
 import { Topic, TranscriptSegment, VideoInfo } from '@/lib/types';
+import { buildVideoSlug } from '@/lib/utils';
 
 // Extract video ID from slug (format: "title-words-videoId")
 function extractVideoIdFromSlug(slug: string): string | null {
-  // Video ID is the last part after the last hyphen
-  // YouTube IDs are 11 characters and contain letters, numbers, hyphens, underscores
-  const parts = slug.split('-');
-  const potentialId = parts[parts.length - 1];
+  // Robustly grab the last 11 characters; YouTube IDs can contain hyphens/underscores
+  const cleaned = slug.trim().replace(/\/$/, '');
+  const potentialId = cleaned.slice(-11);
 
-  // YouTube video IDs are typically 11 characters
-  if (potentialId && potentialId.length === 11) {
-    return potentialId;
+  return /^[A-Za-z0-9_-]{11}$/.test(potentialId) ? potentialId : null;
+}
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+
+interface VideoAnalysisRow {
+  youtube_id: string;
+  title: string;
+  author: string | null;
+  duration: number | null;
+  thumbnail_url: string | null;
+  transcript: TranscriptSegment[] | null;
+  topics: Topic[] | null;
+  summary: string | Record<string, unknown> | null;
+  suggested_questions?: string[] | null;
+  slug?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+async function resolveVideoFromSlug(
+  supabase: SupabaseServerClient,
+  slug: string
+): Promise<{ video: VideoAnalysisRow; videoId: string; canonicalSlug: string } | null> {
+  const videoIdFromSlug = extractVideoIdFromSlug(slug);
+
+  const lookups: Array<Promise<{ data: VideoAnalysisRow | null; error: any }>> = [];
+
+  if (videoIdFromSlug) {
+    lookups.push(
+      supabase
+        .from('video_analyses')
+        .select('*')
+        .eq('youtube_id', videoIdFromSlug)
+        .maybeSingle()
+    );
+  }
+
+  lookups.push(
+    supabase
+      .from('video_analyses')
+      .select('*')
+      .eq('slug', slug)
+      .maybeSingle()
+  );
+
+  for (const lookup of lookups) {
+    const { data, error } = await lookup;
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error fetching video analysis by slug', { slug, error });
+    }
+
+    if (data) {
+      const canonicalSlug = buildVideoSlug(data.title, data.youtube_id);
+      return {
+        video: data,
+        videoId: data.youtube_id,
+        canonicalSlug
+      };
+    }
   }
 
   return null;
@@ -26,28 +84,18 @@ interface PageProps {
 // Generate metadata for SEO
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const videoId = extractVideoIdFromSlug(slug);
-
-  if (!videoId) {
-    return {
-      title: 'Video Not Found - TLDW',
-      description: 'This video analysis could not be found.'
-    };
-  }
-
   const supabase = await createClient();
-  const { data: video } = await supabase
-    .from('video_analyses')
-    .select('*')
-    .eq('youtube_id', videoId)
-    .single();
+  const resolved = await resolveVideoFromSlug(supabase, slug);
 
-  if (!video) {
+  if (!resolved) {
     return {
       title: 'Video Not Found - TLDW',
       description: 'This video analysis could not be found.'
     };
   }
+
+  const { video, videoId, canonicalSlug } = resolved;
+  const slugForMeta = canonicalSlug || slug;
 
   // Extract summary content
   const summary = typeof video.summary === 'string'
@@ -77,7 +125,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title: video.title,
       description: description,
       type: 'video.other',
-      url: `https://tldw.us/v/${slug}`,
+      url: `https://tldw.us/v/${slugForMeta}`,
       siteName: 'TLDW - Too Long; Didn\'t Watch',
       images: [
         {
@@ -101,7 +149,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       creator: '@tldwai'
     },
     alternates: {
-      canonical: `https://tldw.us/v/${slug}`
+      canonical: `https://tldw.us/v/${slugForMeta}`
     },
     robots: {
       index: true,
@@ -120,21 +168,18 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // Main page component (Server Component)
 export default async function VideoPage({ params }: PageProps) {
   const { slug } = await params;
-  const videoId = extractVideoIdFromSlug(slug);
+  const supabase = await createClient();
+  const resolved = await resolveVideoFromSlug(supabase, slug);
 
-  if (!videoId) {
+  if (!resolved) {
     notFound();
   }
 
-  const supabase = await createClient();
-  const { data: video, error } = await supabase
-    .from('video_analyses')
-    .select('*')
-    .eq('youtube_id', videoId)
-    .single();
+  const { video, videoId, canonicalSlug } = resolved;
 
-  if (error || !video) {
-    notFound();
+  // Redirect old/non-canonical slugs (e.g., ones created before video IDs were appended)
+  if (canonicalSlug && canonicalSlug !== slug) {
+    redirect(`/v/${canonicalSlug}`);
   }
 
   // Parse JSON fields
@@ -228,7 +273,7 @@ export default async function VideoPage({ params }: PageProps) {
     },
     "mainEntityOfPage": {
       "@type": "WebPage",
-      "@id": `https://tldw.us/v/${slug}`
+      "@id": `https://tldw.us/v/${canonicalSlug || slug}`
     },
     "articleBody": fullTranscriptText
   };

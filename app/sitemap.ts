@@ -1,5 +1,6 @@
 import { MetadataRoute } from 'next';
 import { createClient } from '@/lib/supabase/server';
+import { buildVideoSlug } from '@/lib/utils';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const supabase = await createClient();
@@ -7,19 +8,39 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Fetch all videos with their slugs and update times
   const { data: videos } = await supabase
     .from('video_analyses')
-    .select('slug, updated_at')
+    .select('slug, updated_at, youtube_id, title')
     .order('updated_at', { ascending: false })
     .limit(50000); // Google's sitemap limit
 
+  const normalizeSlug = (video: { slug: string | null; youtube_id: string | null; title: string | null }) => {
+    const youtubeId = video.youtube_id ?? '';
+    const hasCanonicalSuffix = Boolean(video.slug && youtubeId && video.slug.endsWith(youtubeId));
+    const canonicalSlug = youtubeId ? buildVideoSlug(video.title, youtubeId) : null;
+
+    if (hasCanonicalSuffix) {
+      return video.slug;
+    }
+
+    return canonicalSlug || video.slug || null;
+  };
+
   // Generate URLs for all video pages
   const videoUrls: MetadataRoute.Sitemap = (videos || [])
-    .filter(video => video.slug) // Only include videos with slugs
-    .map(video => ({
-      url: `https://tldw.us/v/${video.slug}`,
-      lastModified: new Date(video.updated_at),
-      changeFrequency: 'monthly' as const,
-      priority: 0.8
-    }));
+    .map(video => {
+      const slug = normalizeSlug(video);
+
+      if (!slug) {
+        return null;
+      }
+
+      return {
+        url: `https://tldw.us/v/${slug}`,
+        lastModified: new Date(video.updated_at),
+        changeFrequency: 'monthly' as const,
+        priority: 0.8
+      };
+    })
+    .filter(Boolean) as MetadataRoute.Sitemap;
 
   // Static pages
   const staticPages: MetadataRoute.Sitemap = [

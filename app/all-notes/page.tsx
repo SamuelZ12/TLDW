@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { Search, Trash2, Video, NotebookPen, Loader2, ArrowUpDown } from 'lucide-react';
-import { formatDuration } from '@/lib/utils';
+import { buildVideoSlug, formatDuration } from '@/lib/utils';
 import Image from 'next/image';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
@@ -46,6 +46,25 @@ function getSourceColor(source: NoteSource) {
       return 'bg-gray-100 text-gray-700';
   }
 }
+
+const resolveVideoSlug = (video?: NoteWithVideo['video']): string | null => {
+  if (!video) {
+    return null;
+  }
+
+  const existingSlug = video.slug?.trim();
+  const slugId = existingSlug?.slice(-11);
+
+  if (existingSlug && slugId === video.youtubeId) {
+    return existingSlug;
+  }
+
+  if (!video.youtubeId) {
+    return null;
+  }
+
+  return buildVideoSlug(video.title, video.youtubeId);
+};
 
 const markdownComponents = {
   p: ({ children }: any) => (
@@ -348,13 +367,17 @@ export default function AllNotesPage() {
         /* Padding wrapper to prevent shadow cutoff */
         <div className="px-1 pb-4">
           <div className="space-y-6">
-              {Object.entries(groupedNotes).map(([videoId, { video, notes: videoNotes }]) => (
+              {Object.entries(groupedNotes).map(([videoId, { video, notes: videoNotes }]) => {
+                const slug = resolveVideoSlug(video);
+                const href = slug ? `/v/${slug}` : `/analyze/${videoId}`;
+
+                return (
                 <Card
                   key={videoId}
                   className="overflow-hidden border-border/60 shadow-none hover:shadow-lg transition-shadow duration-200"
                 >
                   {/* Video Header Section */}
-                  <Link href={video?.slug ? `/v/${video.slug}` : `/analyze/${videoId}`} className="block group">
+                  <Link href={href} className="block group">
                     <div className="flex gap-4 p-4 hover:bg-muted/10 transition-colors">
                       {video?.thumbnailUrl && (
                         <div className="relative w-28 h-[70px] flex-shrink-0 rounded-md overflow-hidden bg-muted shadow-sm">
@@ -494,7 +517,7 @@ export default function AllNotesPage() {
                     })}
                   </div>
                 </Card>
-              ))}
+              })}
           </div>
         </div>
       )}

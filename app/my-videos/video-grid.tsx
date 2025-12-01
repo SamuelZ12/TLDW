@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react';
-import { formatDuration } from '@/lib/utils';
+import { buildVideoSlug, formatDuration } from '@/lib/utils';
 import { Calendar, Clock, Play, Star, Search, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,21 @@ interface UserVideo {
 interface VideoGridProps {
   videos: UserVideo[];
 }
+
+const buildCanonicalSlug = (video: VideoAnalysis): string | null => {
+  const existingSlug = video.slug?.trim();
+  const slugId = existingSlug?.slice(-11);
+
+  if (existingSlug && slugId === video.youtube_id) {
+    return existingSlug;
+  }
+
+  if (!video.youtube_id) {
+    return null;
+  }
+
+  return buildVideoSlug(video.title, video.youtube_id);
+};
 
 export function VideoGrid({ videos }: VideoGridProps) {
   const { user } = useAuth();
@@ -142,15 +157,21 @@ export function VideoGrid({ videos }: VideoGridProps) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredVideos.map((userVideo) => (
-          <Link
-            key={userVideo.id}
-            href={userVideo.video.slug ? `/v/${userVideo.video.slug}` : `/analyze/${userVideo.video.youtube_id}?cached=true`}
-            className="group cursor-pointer"
-          >
-            <div className="rounded-lg overflow-hidden border bg-card hover:shadow-lg transition-shadow duration-200">
-              <div className="relative aspect-video bg-muted">
-                {userVideo.video.thumbnail_url && (
+        {filteredVideos.map((userVideo) => {
+          const slug = buildCanonicalSlug(userVideo.video);
+          const href = slug
+            ? `/v/${slug}`
+            : `/analyze/${userVideo.video.youtube_id}?cached=true`;
+
+          return (
+            <Link
+              key={userVideo.id}
+              href={href}
+              className="group cursor-pointer"
+            >
+              <div className="rounded-lg overflow-hidden border bg-card hover:shadow-lg transition-shadow duration-200">
+                <div className="relative aspect-video bg-muted">
+                  {userVideo.video.thumbnail_url && (
                   <Image
                     src={userVideo.video.thumbnail_url}
                     alt={userVideo.video.title}
@@ -214,9 +235,10 @@ export function VideoGrid({ videos }: VideoGridProps) {
                 </div>
 
               </div>
-            </div>
-          </Link>
-        ))}
+              </div>
+            </Link>
+          );
+        })}
       </div>
 
       {filteredVideos.length === 0 && (
