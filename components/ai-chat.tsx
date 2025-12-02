@@ -153,6 +153,7 @@ export function AIChat({
   const dismissedQuestionsRef = useRef<Set<string>>(new Set());
   const followUpQuestionsRef = useRef<string[]>([]);
   const followUpRequestIdRef = useRef(0);
+  const isComposingRef = useRef(false);
 
   useEffect(() => {
     const viewport = scrollViewportRef.current;
@@ -1041,7 +1042,7 @@ export function AIChat({
   }, [isLoading, sendMessage, followUpQuestions]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current) {
       e.preventDefault();
       sendMessage();
     }
@@ -1219,6 +1220,12 @@ export function AIChat({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
+              onCompositionStart={() => {
+                isComposingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                isComposingRef.current = false;
+              }}
               placeholder="Ask about the video..."
               className="resize-none rounded-[20px] text-xs bg-neutral-100 border-[#ebecee] pr-11"
               rows={2}
