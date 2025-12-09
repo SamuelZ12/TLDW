@@ -47,6 +47,8 @@ interface RightColumnTabsProps {
   translationCache?: Map<string, string>;
   onRequestTranslation?: TranslationRequestHandler;
   onLanguageChange?: (languageCode: string | null) => void;
+  availableLanguages?: string[];
+  currentSourceLanguage?: string;
   onRequestExport?: () => void;
   exportButtonState?: {
     tooltip?: string;
@@ -87,6 +89,8 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   translationCache,
   onRequestTranslation,
   onLanguageChange,
+  availableLanguages,
+  currentSourceLanguage,
   onRequestExport,
   exportButtonState,
 
@@ -124,6 +128,8 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
             <LanguageSelector
               activeTab={activeTab}
               selectedLanguage={selectedLanguage}
+              availableLanguages={availableLanguages}
+              currentSourceLanguage={currentSourceLanguage}
               isAuthenticated={isAuthenticated}
               onTabSwitch={setActiveTab}
               onLanguageChange={onLanguageChange}

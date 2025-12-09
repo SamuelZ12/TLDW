@@ -4,25 +4,35 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Languages, ChevronDown, CheckCircle2, Circle, Search } from "lucide-react";
-import { SUPPORTED_LANGUAGES } from "@/lib/language-utils";
+import { Languages, ChevronDown, CheckCircle2, Circle, Search, Sparkles } from "lucide-react";
+import { SUPPORTED_LANGUAGES, getLanguageName } from "@/lib/language-utils";
 import { cn } from "@/lib/utils";
 
 interface LanguageSelectorProps {
   activeTab: "transcript" | "chat" | "notes";
   selectedLanguage: string | null;
+  availableLanguages?: string[];
+  currentSourceLanguage?: string;
   isAuthenticated?: boolean;
   onTabSwitch: (tab: "transcript" | "chat" | "notes") => void;
   onLanguageChange?: (languageCode: string | null) => void;
   onRequestSignIn?: () => void;
 }
 
+interface LanguageOption {
+  code: string;
+  name: string;
+  nativeName: string;
+  isNative?: boolean;
+}
+
 interface LanguageSelectorMenuProps {
   chevronRef: React.RefObject<HTMLButtonElement | null>;
   menuRef: React.RefObject<HTMLDivElement | null>;
-  filteredLanguages: Array<typeof SUPPORTED_LANGUAGES[number]>;
+  filteredLanguages: LanguageOption[];
   currentLanguageCode: string;
   selectedLanguage: string | null;
+  currentSourceLanguage?: string;
   isAuthenticated: boolean;
   languageSearch: string;
   onLanguageSearchChange: (value: string) => void;
@@ -35,6 +45,8 @@ interface LanguageSelectorMenuProps {
 export function LanguageSelector({
   activeTab,
   selectedLanguage,
+  availableLanguages = [],
+  currentSourceLanguage,
   isAuthenticated = false,
   onTabSwitch,
   onLanguageChange,
@@ -50,11 +62,44 @@ export function LanguageSelector({
   const chevronRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Get current language - null or 'en' means English
-  const currentLanguageCode = selectedLanguage || 'en';
+  // Get current language - null or 'en' means English, unless we have a different source language
+  const currentLanguageCode = selectedLanguage || currentSourceLanguage || 'en';
+
+  // Merge supported languages with available native languages
+  // First, map supported languages
+  const allLanguages: LanguageOption[] = [...SUPPORTED_LANGUAGES];
+
+  // Then add any available native languages that aren't in supported list
+  availableLanguages.forEach(code => {
+    if (!allLanguages.find(l => l.code === code)) {
+      // Best effort for name if we don't have it in our list
+      // For now, we can use the code or a simple lookup if we expand getLanguageName
+      // But SUPPORTED_LANGUAGES is fixed.
+      // We might want to just show the code if unknown, or "Native (code)"
+      const name = getLanguageName(code);
+      allLanguages.push({
+        code,
+        name: name === 'English' && code !== 'en' ? code.toUpperCase() : name,
+        nativeName: code.toUpperCase() // Fallback
+      });
+    }
+  });
+
+  // Mark native languages
+  const languagesWithNativeStatus = allLanguages.map(lang => ({
+    ...lang,
+    isNative: availableLanguages.includes(lang.code) || (lang.code === 'en' && !availableLanguages.length)
+  }));
+
+  // Sort: Native first, then alphabetical
+  languagesWithNativeStatus.sort((a, b) => {
+    if (a.isNative && !b.isNative) return -1;
+    if (!a.isNative && b.isNative) return 1;
+    return a.name.localeCompare(b.name);
+  });
 
   // Filter languages based on search
-  const filteredLanguages = SUPPORTED_LANGUAGES.filter(lang =>
+  const filteredLanguages = languagesWithNativeStatus.filter(lang =>
     lang.name.toLowerCase().includes(languageSearch.toLowerCase()) ||
     lang.nativeName.toLowerCase().includes(languageSearch.toLowerCase())
   );
@@ -249,6 +294,7 @@ export function LanguageSelector({
           filteredLanguages={filteredLanguages}
           currentLanguageCode={currentLanguageCode}
           selectedLanguage={selectedLanguage}
+          currentSourceLanguage={currentSourceLanguage}
           isAuthenticated={isAuthenticated}
           languageSearch={languageSearch}
           onLanguageSearchChange={setLanguageSearch}
@@ -268,6 +314,7 @@ function LanguageSelectorMenu({
   filteredLanguages,
   currentLanguageCode,
   selectedLanguage,
+  currentSourceLanguage,
   isAuthenticated,
   languageSearch,
   onLanguageSearchChange,
@@ -342,22 +389,32 @@ function LanguageSelectorMenu({
       </div>
       <div className="max-h-[300px] overflow-y-auto">
         {filteredLanguages.map((lang) => {
-          const isOriginalLanguage = lang.code === 'en';
-          const isTargetLanguage = lang.code === currentLanguageCode && selectedLanguage !== null;
+          // It's active if:
+          // 1. It is the selected language (translation target)
+          // 2. OR no translation is selected (selectedLanguage is null) AND it is the source language
+          const isActive = selectedLanguage
+            ? lang.code === selectedLanguage
+            : lang.code === (currentSourceLanguage || 'en');
+
+          const isDisabled = !isAuthenticated && !lang.isNative && lang.code !== 'en';
 
           return (
             <div
               key={lang.code}
               className={cn(
                 "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-xs outline-none transition-colors hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-                isOriginalLanguage && "cursor-default",
-                !isAuthenticated && !isOriginalLanguage && "opacity-50"
+                isDisabled && "opacity-50"
               )}
               onClick={(e) => {
-                if (isOriginalLanguage || (!isAuthenticated && !isOriginalLanguage)) {
-                  if (!isAuthenticated && !isOriginalLanguage) {
-                    e.preventDefault();
-                    onRequestSignIn?.();
+                if (isDisabled) {
+                  e.preventDefault();
+                  onRequestSignIn?.();
+                  return;
+                }
+                // If clicking current language, deselect if it's a translation, do nothing if it's source
+                if (isActive) {
+                  if (selectedLanguage) {
+                    onLanguageSelect(lang.code); // This will toggle it off in the parent handler
                   }
                   return;
                 }
@@ -366,12 +423,23 @@ function LanguageSelectorMenu({
             >
               <div className="flex items-center justify-between w-full">
                 <div>
-                  <div className="font-medium">{lang.nativeName}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium">{lang.nativeName}</span>
+                    {lang.isNative && (
+                      <span className="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-1.5 py-0.5 text-[9px] font-medium text-green-700">
+                        Original
+                      </span>
+                    )}
+                    {!lang.isNative && (
+                      <span className="inline-flex items-center rounded-full border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[9px] font-medium text-blue-700">
+                        <Sparkles className="mr-0.5 h-2 w-2" />
+                        AI
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[10px] text-muted-foreground">{lang.name}</div>
                 </div>
-                {isOriginalLanguage ? (
-                  <CheckCircle2 className="w-4 h-4 text-muted-foreground/50" />
-                ) : isTargetLanguage ? (
+                {isActive ? (
                   <CheckCircle2 className="w-4 h-4 text-foreground fill-background" />
                 ) : (
                   <Circle className="w-4 h-4 text-muted-foreground/30" />

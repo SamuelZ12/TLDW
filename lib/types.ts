@@ -136,6 +136,8 @@ export interface VideoInfo {
   duration: number | null;
   description?: string;
   tags?: string[];
+  language?: string;
+  availableLanguages?: string[];
 }
 
 // Playback command types for centralized control

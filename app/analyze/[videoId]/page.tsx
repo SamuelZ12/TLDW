@@ -653,7 +653,8 @@ export default function AnalyzePage() {
 
   const processVideo = useCallback(async (
     url: string,
-    selectedMode: TopicGenerationMode
+    selectedMode: TopicGenerationMode,
+    preferredLanguage?: string
   ) => {
     const currentRemaining = rateLimitInfo.remaining;
     try {
@@ -906,7 +907,7 @@ export default function AnalyzePage() {
       const transcriptPromise = fetch("/api/transcript", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, lang: preferredLanguage }),
         signal: transcriptController.signal,
       }).catch(err => {
         if (err.name === 'AbortError') {
@@ -945,9 +946,13 @@ export default function AnalyzePage() {
       }
 
       let fetchedTranscript;
+      let language: string | undefined;
+      let availableLanguages: string[] | undefined;
       try {
         const data = await transcriptRes.json();
         fetchedTranscript = data.transcript;
+        language = data.language;
+        availableLanguages = data.availableLanguages;
       } catch (jsonError) {
         if (jsonError instanceof Error && jsonError.name === 'AbortError') {
           throw new Error("Transcript processing timed out. The video may be too long. Please try again.");
@@ -964,7 +969,12 @@ export default function AnalyzePage() {
         try {
           const videoInfoData = await videoInfoRes.json();
           if (videoInfoData && !videoInfoData.error) {
-            setVideoInfo(videoInfoData);
+            fetchedVideoInfo = {
+              ...videoInfoData,
+              language,
+              availableLanguages,
+            };
+            setVideoInfo(fetchedVideoInfo);
             const rawDuration = videoInfoData?.duration;
             const numericDuration =
               typeof rawDuration === "number"
@@ -975,11 +985,14 @@ export default function AnalyzePage() {
             if (numericDuration && !Number.isNaN(numericDuration) && numericDuration > 0) {
               setVideoDuration(numericDuration);
             }
-            fetchedVideoInfo = videoInfoData;
           }
         } catch (error) {
           console.error("Failed to parse video info:", error);
         }
+      }
+      // If we didn't get video info from the separate endpoint, try to use what we have, but update the languages
+      if (!fetchedVideoInfo) {
+        setVideoInfo(prev => prev ? { ...prev, language, availableLanguages } : null);
       }
 
       // Move to understanding stage
@@ -1966,7 +1979,24 @@ export default function AnalyzePage() {
                   onRequestSignIn={handleAuthRequired}
                   selectedLanguage={selectedLanguage}
                   onRequestTranslation={translateWithContext}
-                  onLanguageChange={handleLanguageChange}
+                  onLanguageChange={(langCode) => {
+                    // Check if this is a request for a native transcript
+                    const availableLanguages = videoInfo?.availableLanguages || [];
+                    if (langCode && availableLanguages.includes(langCode)) {
+                      // It's a native language request
+                      if (videoInfo?.language !== langCode) {
+                         // Only re-fetch if it's different from current
+                         processVideo(normalizedUrl, mode, langCode);
+                         // Clear any translation override
+                         handleLanguageChange(null);
+                      }
+                    } else {
+                      // It's a translation request
+                      handleLanguageChange(langCode);
+                    }
+                  }}
+                  availableLanguages={videoInfo?.availableLanguages}
+                  currentSourceLanguage={videoInfo?.language}
                   onRequestExport={handleRequestExport}
                   exportButtonState={exportButtonState}
                 />
