@@ -187,10 +187,10 @@ function HomeContent() {
         <div className="mx-auto flex w-full max-w-[660px] -translate-y-[5vh] transform flex-col items-center gap-9 px-6 py-16 text-center sm:py-24">
           <header className="flex flex-col items-center gap-4">
             <div className="flex items-center gap-3">
-              <h1 className="text-[21px] font-bold tracking-tight text-[#787878]">TLDW</h1>
+              <h1 className="text-[21px] font-bold tracking-tight text-[#787878]">LongCut</h1>
             </div>
             <p className="text-[14px] leading-[15px] text-[#787878]">
-              Too Long; Didn&apos;t Watch - Learn from long videos 10x faster
+              The best way to learn from long videos.
             </p>
           </header>
           <div className="flex w-full flex-col items-center gap-9">
@@ -205,10 +205,10 @@ function HomeContent() {
             <Card className="relative flex w-[425px] max-w-full flex-col gap-2.5 overflow-hidden rounded-[22px] border border-[#f0f1f1] bg-white p-6 text-left shadow-[2px_11px_40.4px_rgba(0,0,0,0.06)]">
               <div className="relative z-10 flex flex-col gap-2.5">
                 <h3 className="text-[14px] font-medium leading-[15px] text-[#5c5c5c]">
-                  Skip to the good parts
+                  Don&apos;t take the shortcut.
                 </h3>
-                <p className="max-w-[60%] text-[14px] leading-[1.5] text-[#8d8d8d]">
-                  Paste a link, and we&apos;ll generate highlight reels for you. Consume a 1-hour video in 5 minutes.
+                <p className="max-w-[70%] text-[14px] leading-[1.5] text-[#8d8d8d]">
+                  LongCut doesn&apos;t summarize. We show you where to look instead. Find the highlights. Take notes. Ask questions.
                 </p>
               </div>
               <div className="pointer-events-none absolute right-[10px] top-[-00px] h-[110px] w-[110px]">
