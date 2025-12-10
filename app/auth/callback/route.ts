@@ -6,13 +6,21 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
   const error = requestUrl.searchParams.get('error')
+  const errorCode = requestUrl.searchParams.get('error_code')
   const errorDescription = requestUrl.searchParams.get('error_description')
   const origin = resolveAppUrl(requestUrl.origin)
 
-  // Handle OAuth errors
+  // Handle OAuth and other auth errors
   if (error) {
-    console.error('OAuth error:', error, errorDescription)
-    // Redirect to home with error parameter
+    console.error('Auth error:', error, errorDescription, errorCode)
+
+    // Handle specific error codes
+    if (errorCode === 'otp_expired') {
+      // Redirect to home with specific status for scanner-consumed links
+      return NextResponse.redirect(`${origin}?auth_status=link_expired`)
+    }
+
+    // Redirect to home with generic error parameter
     return NextResponse.redirect(`${origin}?auth_error=${encodeURIComponent(errorDescription || error)}`)
   }
 
@@ -23,6 +31,7 @@ export async function GET(request: Request) {
 
       if (sessionError) {
         console.error('Session exchange error:', sessionError)
+        // Check for specific session exchange errors if needed
         return NextResponse.redirect(`${origin}?auth_error=${encodeURIComponent(sessionError.message)}`)
       }
     } catch (err) {
