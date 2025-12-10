@@ -16,7 +16,7 @@ export function Footer() {
           <div className="flex flex-wrap items-center justify-center gap-2">
           <Github className="h-4 w-4" />
           <Link
-            href="https://github.com/SamuelZ12/tldw"
+            href="https://github.com/SamuelZ12/longcut"
             target="_blank"
             rel="noopener noreferrer"
             className="transition-colors hover:text-[#5c5c5c]"

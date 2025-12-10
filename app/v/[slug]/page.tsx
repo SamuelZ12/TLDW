@@ -86,7 +86,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   if (!resolved) {
     return {
-      title: 'Video Not Found - TLDW',
+      title: 'Video Not Found - LongCut',
       description: 'This video analysis could not be found.'
     };
   }
@@ -106,7 +106,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const thumbnailUrl = video.thumbnail_url || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
   return {
-    title: `${video.title} - Transcript & Analysis | TLDW`,
+    title: `${video.title} - Transcript & Analysis | LongCut`,
     description,
     keywords: [
       video.title,
@@ -122,8 +122,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title: video.title,
       description: description,
       type: 'video.other',
-      url: `https://tldw.us/v/${slugForMeta}`,
-      siteName: 'TLDW - Too Long; Didn\'t Watch',
+      url: `https://longcut.ai/v/${slugForMeta}`,
+      siteName: 'LongCut',
       images: [
         {
           url: thumbnailUrl,
@@ -142,11 +142,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       card: 'summary_large_image',
       title: video.title,
       description: description,
-      images: [thumbnailUrl],
-      creator: '@tldwai'
+      images: [thumbnailUrl]
     },
     alternates: {
-      canonical: `https://tldw.us/v/${slugForMeta}`
+      canonical: `https://longcut.ai/v/${slugForMeta}`
     },
     robots: {
       index: true,
@@ -241,8 +240,8 @@ export default async function VideoPage({ params }: PageProps) {
     },
     "publisher": {
       "@type": "Organization",
-      "name": "TLDW",
-      "url": "https://tldw.us"
+      "name": "LongCut",
+      "url": "https://longcut.ai"
     },
     "author": {
       "@type": "Person",
@@ -265,12 +264,12 @@ export default async function VideoPage({ params }: PageProps) {
     },
     "publisher": {
       "@type": "Organization",
-      "name": "TLDW",
-      "url": "https://tldw.us"
+      "name": "LongCut",
+      "url": "https://longcut.ai"
     },
     "mainEntityOfPage": {
       "@type": "WebPage",
-      "@id": `https://tldw.us/v/${canonicalSlug || slug}`
+      "@id": `https://longcut.ai/v/${canonicalSlug || slug}`
     },
     "articleBody": fullTranscriptText
   };

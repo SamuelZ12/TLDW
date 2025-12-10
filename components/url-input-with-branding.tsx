@@ -66,21 +66,21 @@ export function UrlInputWithBranding({ onSubmit, isLoading = false, initialUrl, 
         >
           {/* Top row: Branding + Input field only */}
           <form onSubmit={handleSubmit} className="flex w-full items-center gap-3.5">
-            {/* Left: TLDW Logo and Text */}
+            {/* Left: LongCut Logo and Text */}
             <Link
               href="/"
               className="flex items-center gap-2.5 shrink-0 border-0 bg-transparent p-0 text-left outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-              aria-label="Go to TLDW home"
+              aria-label="Go to LongCut home"
             >
               <Image
                 src="/Video_Play.svg"
-                alt="TLDW logo"
+                alt="LongCut logo"
                 width={29}
                 height={29}
                 className="h-7 w-7"
                 priority
               />
-              <p className="text-sm font-semibold text-slate-800">TLDW</p>
+              <p className="text-sm font-semibold text-slate-800">LongCut</p>
             </Link>
 
             {/* Vertical Separator */}

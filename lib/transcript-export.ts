@@ -16,7 +16,7 @@ export interface TranscriptExportResult {
   filename: string;
 }
 
-const DEFAULT_FILENAME = 'tldw-transcript';
+const DEFAULT_FILENAME = 'longcut-transcript';
 
 function formatClockTime(seconds: number): string {
   const totalSeconds = Math.max(0, Math.floor(seconds));

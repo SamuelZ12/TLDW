@@ -392,7 +392,7 @@ const findMatchingCitation = useCallback((seconds: number): Citation | null => {
                   <DialogFooter>
                     <a
                       href={message.imageUrl}
-                      download="tldw-cheatsheet.png"
+                      download="longcut-cheatsheet.png"
                       className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                     >
                       <Download className="h-4 w-4" />

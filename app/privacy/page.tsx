@@ -2,12 +2,12 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | TLDW',
+  title: 'Privacy Policy | LongCut',
   description:
-    'Learn how TLDW collects, uses, and protects your personal information and video analysis data.',
+    'Learn how LongCut collects, uses, and protects your personal information and video analysis data.',
 }
 
-const supportEmail = 'hello@tldw.us'
+const supportEmail = 'zara@longcut.ai'
 
 export default function PrivacyPage() {
   return (
@@ -16,7 +16,7 @@ export default function PrivacyPage() {
         <h1 className="text-3xl font-bold tracking-tight text-[#3f3f3f]">Privacy Policy</h1>
         <p className="text-sm text-muted-foreground">Last updated: November 15, 2025</p>
         <p>
-          This Privacy Policy describes how TLDW (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) collects,
+          This Privacy Policy describes how LongCut (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) collects,
           uses, and protects your personal information when you use our service. We are committed to protecting your
           privacy and being transparent about our data practices.
         </p>
@@ -162,7 +162,7 @@ export default function PrivacyPage() {
 
         <h3 className="text-xl font-medium text-[#3f3f3f]">Access and Portability</h3>
         <p>
-          You can access your video analyses, notes, and account information at any time through your TLDW account. If
+          You can access your video analyses, notes, and account information at any time through your LongCut account. If
           you would like to export your data in a portable format, please contact us.
         </p>
 
@@ -214,7 +214,7 @@ export default function PrivacyPage() {
       <section className="space-y-4">
         <h2 className="text-2xl font-semibold tracking-tight text-[#3f3f3f]">Children&apos;s Privacy</h2>
         <p>
-          TLDW is not intended for children under the age of 13. We do not knowingly collect personal information from
+          LongCut is not intended for children under the age of 13. We do not knowingly collect personal information from
           children under 13. If you believe we have collected information from a child under 13, please contact us
           immediately and we will delete it.
         </p>
@@ -224,7 +224,7 @@ export default function PrivacyPage() {
         <h2 className="text-2xl font-semibold tracking-tight text-[#3f3f3f]">International Data Transfers</h2>
         <p>
           Your information may be transferred to and processed in countries other than your country of residence. These
-          countries may have data protection laws that are different from the laws of your country. By using TLDW, you
+          countries may have data protection laws that are different from the laws of your country. By using LongCut, you
           consent to the transfer of your information to our facilities and third-party service providers.
         </p>
       </section>
@@ -238,7 +238,7 @@ export default function PrivacyPage() {
           last revised.
         </p>
         <p>
-          Your continued use of TLDW after any changes to this Privacy Policy constitutes your acceptance of the
+          Your continued use of LongCut after any changes to this Privacy Policy constitutes your acceptance of the
           updated policy.
         </p>
       </section>

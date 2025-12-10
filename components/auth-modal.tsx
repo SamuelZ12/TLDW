@@ -148,7 +148,7 @@ export function AuthModal({ open, onOpenChange, onSuccess, trigger = 'manual', c
         }
       default:
         return {
-          title: 'Sign in to TLDW',
+          title: 'Sign in to LongCut',
           description: 'Create an account or sign in to save your video analyses and access them anytime.',
           benefits: [
             'Save your analyzed videos',

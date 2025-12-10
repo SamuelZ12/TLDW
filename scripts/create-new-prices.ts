@@ -56,10 +56,10 @@ async function main() {
 
   // Get the Pro product
   const products = await stripe.products.list({ limit: 10 });
-  const proProduct = products.data.find(p => p.name.includes('TLDW Pro'));
+  const proProduct = products.data.find(p => p.name.includes('LongCut Pro'));
 
   if (!proProduct) {
-    console.error('❌ Could not find TLDW Pro product');
+    console.error('❌ Could not find LongCut Pro product');
     console.error('   Please create the product first in your Stripe dashboard');
     process.exit(1);
   }

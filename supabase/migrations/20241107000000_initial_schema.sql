@@ -1,5 +1,5 @@
 -- ============================================================================
--- TLDW Initial Schema Migration
+-- LongCut Initial Schema Migration
 -- ============================================================================
 -- This migration captures the complete database schema including:
 -- - Extensions
@@ -673,7 +673,7 @@ CREATE POLICY "Service role full access to stripe_events" ON public.stripe_event
 -- MIGRATION COMPLETE
 -- ============================================================================
 
--- This migration establishes the complete database schema for the TLDW application.
+-- This migration establishes the complete database schema for the LongCut application.
 -- It includes all tables, indexes, functions, triggers, and security policies.
 --
 -- Note: The auth.users trigger (on_auth_user_created) should be created separately

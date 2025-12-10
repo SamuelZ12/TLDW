@@ -36,7 +36,7 @@ export default function robots(): MetadataRoute.Robots {
         ]
       }
     ],
-    sitemap: 'https://tldw.us/sitemap.xml',
-    host: 'https://tldw.us'
+    sitemap: 'https://longcut.ai/sitemap.xml',
+    host: 'https://longcut.ai'
   };
 }

@@ -21,9 +21,9 @@ function createStripeClient(): Stripe {
     apiVersion: '2025-10-29.clover',
     typescript: true,
     appInfo: {
-      name: 'TLDW',
+      name: 'LongCut',
       version: '1.0.0',
-      url: 'https://github.com/yourusername/tldw',
+      url: 'https://github.com/SamuelZ12/longcut',
     },
   });
 }

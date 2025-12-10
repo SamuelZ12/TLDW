@@ -88,7 +88,7 @@ function buildPrompt(
 
   return [
     'Generate a highly shareable social media infographic based on this YouTube video transcript, summarizing the top insights and takeaways.',
-    'Include the video title and channel name in the graphics. In a corner of the image, include the elegant label "Made with tldw.us".',
+    'Include the video title and channel name in the graphics. In a corner of the image, include the elegant label "Made with longcut.ai".',
     dimensionNote,
     `Apply the "${stylePreset.label}" style: ${stylePreset.prompt}`,
     ...context,

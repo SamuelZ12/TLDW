@@ -1,6 +1,6 @@
-# TLDW (Too Long; Didn't Watch)
+# LongCut
 
-TLDW turns long-form YouTube videos into a structured learning workspace. Paste a URL and the app generates highlight reels, timestamped AI answers, and a place to capture your own notes so you can absorb an hour-long video in minutes.
+LongCut turns long-form YouTube videos into a structured learning workspace. Paste a URL and the app generates highlight reels, timestamped AI answers, and a place to capture your own notes so you can absorb an hour-long video in minutes.
 
 ## Overview
 
@@ -93,8 +93,8 @@ The project is a Next.js 15 + React 19 application that wraps xAI’s Grok 4 Fas
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/yourusername/tldw.git
-cd tldw
+git clone https://github.com/SamuelZ12/longcut.git
+cd longcut
 npm install
 ```
 

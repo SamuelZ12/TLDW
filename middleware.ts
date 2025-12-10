@@ -15,7 +15,7 @@ export async function middleware(request: NextRequest) {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.ytimg.com",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.supadata.ai https://*.supabase.co https://app.tldw.us https://*.googleapis.com wss://*.supabase.co wss://app.tldw.us https://www.youtube.com https://api.stripe.com",
+    "connect-src 'self' https://api.supadata.ai https://*.supabase.co https://app.longcut.ai https://*.googleapis.com wss://*.supabase.co wss://app.longcut.ai https://www.youtube.com https://api.stripe.com",
     "media-src 'self' blob: https://www.youtube.com",
     "object-src 'none'",
     'frame-src https://www.youtube.com https://youtube.com',

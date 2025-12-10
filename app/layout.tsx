@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TLDW - Too Long; Didn't Watch",
+  title: "LongCut - The best way to learn from long videos",
   description: "Smart video navigation that transforms long YouTube videos into topic-driven learning experiences",
   icons: {
     icon: "/Video_Play.svg",
@@ -47,7 +47,7 @@ export default function RootLayout({
                 >
                   <Image
                     src="/Video_Play.svg"
-                    alt="TLDW logo"
+                    alt="LongCut logo"
                     width={28}
                     height={28}
                     className="h-7 w-7"

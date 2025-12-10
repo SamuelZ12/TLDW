@@ -34,7 +34,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
 
       return {
-        url: `https://tldw.us/v/${slug}`,
+        url: `https://longcut.ai/v/${slug}`,
         lastModified: new Date(video.updated_at),
         changeFrequency: 'monthly' as const,
         priority: 0.8
@@ -45,19 +45,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Static pages
   const staticPages: MetadataRoute.Sitemap = [
     {
-      url: 'https://tldw.us',
+      url: 'https://longcut.ai',
       lastModified: new Date(),
       changeFrequency: 'daily',
       priority: 1.0
     },
     {
-      url: 'https://tldw.us/pricing',
+      url: 'https://longcut.ai/pricing',
       lastModified: new Date(),
       changeFrequency: 'weekly',
       priority: 0.9
     },
     {
-      url: 'https://tldw.us/library',
+      url: 'https://longcut.ai/library',
       lastModified: new Date(),
       changeFrequency: 'daily',
       priority: 0.7

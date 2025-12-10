@@ -27,7 +27,7 @@ export function createServiceRoleClient() {
         },
         global: {
           headers: {
-            'X-Client-Info': 'tldw-service-role',
+            'X-Client-Info': 'longcut-service-role',
           },
         },
       }
