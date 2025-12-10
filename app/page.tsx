@@ -90,6 +90,21 @@ function HomeContent() {
     if (!searchParams) return;
 
     const authError = searchParams.get('auth_error');
+    const authStatus = searchParams.get('auth_status');
+
+    if (authStatus === 'link_expired') {
+      toast.info('Your verification link has expired or was already used. Please try signing in.', {
+        duration: 5000,
+      });
+      setAuthModalOpen(true);
+
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('auth_status');
+      const queryString = params.toString();
+      router.replace(queryString ? `/?${queryString}` : '/', { scroll: false });
+      return;
+    }
+
     if (!authError) return;
 
     toast.error(`Authentication failed: ${decodeURIComponent(authError)}`);
