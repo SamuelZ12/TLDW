@@ -300,7 +300,7 @@ export async function canGenerateVideo(
   }
 
   const willConsumeTopup =
-    stats.baseRemaining <= 0 && stats.topupRemaining > 0 && subscription.tier === 'pro';
+    stats.baseRemaining <= 0 && stats.topupRemaining > 0;
 
   return {
     allowed: true,

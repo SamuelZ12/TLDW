@@ -81,21 +81,6 @@ async function handler(req: NextRequest) {
     const body = await req.json();
     validatedData = createCheckoutSessionSchema.parse(body);
 
-    // For top-up purchases, verify user has Pro subscription (using batched data)
-    if (validatedData.priceType === 'topup') {
-      const isPro = profile.subscription_tier === 'pro' && profile.subscription_status === 'active';
-
-      if (!isPro) {
-        return NextResponse.json(
-          {
-            error: 'Top-Up credits are only available for Pro subscribers',
-            message: 'Upgrade to Pro first to purchase Top-Up credits',
-          },
-          { status: 403 }
-        );
-      }
-    }
-
     // Create or retrieve Stripe customer (using batched data)
     let customerId = profile.stripe_customer_id;
 
