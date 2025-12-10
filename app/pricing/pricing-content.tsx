@@ -13,7 +13,7 @@ import {
 import { startCheckout, openBillingPortal } from '@/lib/stripe-actions'
 import type { SubscriptionStatus, SubscriptionTier } from '@/lib/subscription-manager'
 import { toast } from 'sonner'
-import { ArrowUpRight, CheckCircle2, Loader2 } from 'lucide-react'
+import { ArrowUpRight, CheckCircle2, Infinity, Layers, Loader2, Package2, Sparkles, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface PricingContentProps {
@@ -49,15 +49,21 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
     'Export transcripts',
   ]
 
+  const topupFeatures = [
+    '20 videos per pack',
+    'Never expires',
+    'Use alongside any plan',
+  ]
+
   const heroDescription = (() => {
     if (!isAuthenticated) {
       return 'Create a free account to get started, or upgrade when you need more headroom.'
     }
     if (isPro) {
-      return 'You’re currently on Pro. Manage billing or adjust your plan below.'
+      return 'You’re currently on Pro. Manage billing or top up your credits below.'
     }
     if (isFreeUser) {
-      return 'You’re currently on a free plan. Select any of the plans that fits your needs.'
+      return 'You’re currently on a free plan. Select any of the plans or top-up options that fits your needs.'
     }
     return 'Select the plan that fits your workflow.'
   })()
@@ -92,11 +98,6 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
       return
     }
 
-    if (!isPro) {
-      toast.info('Top-Up credits are available for Pro members. Upgrade to unlock them!')
-      return
-    }
-
     try {
       setPendingAction('topup')
       await startCheckout('topup')
@@ -128,6 +129,7 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
       </div>
 
       <div className="mx-auto flex w-full flex-col items-center gap-[44px] md:flex-row md:items-start md:justify-center">
+        {/* Free Plan Card */}
         <Card
           className="relative flex w-full flex-col overflow-hidden rounded-[32px] border border-border/60 bg-background/80 !gap-2 !pt-4 !pb-2 backdrop-blur md:h-[420px] md:w-[298px]"
           style={{ boxShadow: '2px 11px 40.4px 0 rgba(0, 0, 0, 0.06)' }}
@@ -173,6 +175,7 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
           </CardFooter>
         </Card>
 
+        {/* Pro Plan Card */}
         <Card
           className="relative flex w-full flex-col overflow-hidden rounded-[32px] border border-border/60 bg-background/80 !gap-2 !pt-4 !pb-2 backdrop-blur md:h-[420px] md:w-[298px]"
           style={{ boxShadow: '2px 11px 40.4px 0 rgba(0, 0, 0, 0.06)' }}
@@ -211,30 +214,6 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
                 '/Creator_Rewards.svg',
                 '/Arrow_In_Right.svg',
               ]}
-              footer={
-                <li key="topup">
-                  <button
-                    type="button"
-                    onClick={handleTopup}
-                    disabled={pendingAction === 'topup'}
-                    className={cn(
-                      'flex w-full items-center gap-3 text-left text-sm font-medium text-[#007AFF] transition hover:underline disabled:cursor-not-allowed disabled:opacity-50'
-                    )}
-                  >
-                    {pendingAction === 'topup' ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Processing Top-Up...
-                      </>
-                    ) : (
-                      <>
-                        <ArrowUpRight className="h-4 w-4" />
-                        Need more? $3 for 20 more videos
-                      </>
-                    )}
-                  </button>
-                </li>
-              }
             />
           </CardContent>
           <CardFooter className="mt-auto flex flex-col gap-2 px-4 pb-2 pt-0">
@@ -255,6 +234,61 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
             </Button>
           </CardFooter>
         </Card>
+
+        {/* Top-Up Card (New) */}
+        <Card
+          className="relative flex w-full flex-col overflow-hidden rounded-[32px] border border-border/60 bg-background/80 !gap-2 !pt-4 !pb-2 backdrop-blur md:h-[420px] md:w-[298px]"
+          style={{ boxShadow: '2px 11px 40.4px 0 rgba(0, 0, 0, 0.06)' }}
+        >
+          <CardHeader className="!px-4 !pt-0 !pb-1">
+            <div className="rounded-[24px] bg-gradient-to-br from-white to-blue-50 px-4 pt-2 pb-4 text-left border border-blue-50/40">
+              <div className="flex flex-col">
+                <div className="mb-10 flex items-center justify-between">
+                  <p className="text-[16px] font-medium text-black">Top Up</p>
+                </div>
+                <div className="flex items-baseline gap-2 whitespace-nowrap mb-0">
+                   <span className="text-[32px] font-semibold">
+                    $3
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0">
+                  Pay as you go, one-time payment
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="flex-1 px-8 pt-0 pb-4">
+            <PlanFeaturesList
+              features={topupFeatures}
+              icons={[
+                <Package2 key="package" className="h-4 w-4" />,
+                <Infinity key="infinity" className="h-4 w-4" />,
+                <Layers key="layers" className="h-4 w-4" />,
+              ]}
+            />
+          </CardContent>
+          <CardFooter className="mt-auto flex flex-col gap-2 px-4 pb-2 pt-0">
+            <Button
+              onClick={handleTopup}
+              disabled={pendingAction === 'topup'}
+              variant="outline"
+              size="lg"
+              className={cn(
+                "w-full rounded-full h-[42px] text-[14px] font-semibold shadow-none border-blue-100 hover:bg-blue-50/30",
+                pendingAction === 'topup' && "opacity-80"
+              )}
+            >
+              {pendingAction === 'topup' ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                'Buy Credits'
+              )}
+            </Button>
+          </CardFooter>
+        </Card>
       </div>
     </div>
   )
@@ -266,7 +300,7 @@ function PlanFeaturesList({
   footer
 }: {
   features: string[]
-  icons?: (string | typeof ArrowUpRight)[]
+  icons?: (string | ReactNode)[]
   footer?: ReactNode
 }) {
   return (
@@ -285,7 +319,7 @@ function PlanFeaturesList({
                   className="h-4 w-4"
                 />
               ) : (
-                <ArrowUpRight className="h-4 w-4 text-primary" />
+                icon
               )
             ) : (
               <CheckCircle2 className="h-4 w-4 text-primary" />
