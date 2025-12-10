@@ -1,0 +1,82 @@
+
+> nextjs@0.1.0 dev
+> next dev --turbopack
+
+   ▲ Next.js 15.5.7 (Turbopack)
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.0.2:3000
+
+ ✓ Starting...
+ ✓ Compiled middleware in 498ms
+ ✓ Ready in 2.1s
+Auth token refresh failed: Auth session missing!
+ ○ Compiling /analyze/[videoId] ...
+ ✓ Compiled /analyze/[videoId] in 8.4s
+ GET /analyze/test-video-id?url=https://www.youtube.com/watch?v=test-video-id 200 in 10171ms
+Auth token refresh failed: Auth session missing!
+ GET /analyze/test-video-id?url=https://www.youtube.com/watch?v=test-video-id 200 in 285ms
+Auth token refresh failed: Auth session missing!
+Auth token refresh failed: Auth session missing!
+ ○ Compiling /api/image-limit ...
+ ✓ Compiled /api/image-limit in 1719ms
+ GET /api/image-limit 200 in 1807ms
+ GET /api/image-limit 200 in 1807ms
+Rate limiter error: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '    at node:internal/deps/undici/undici:14900:13\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n' +
+    '    at async RateLimiter.check (/app/.next/server/chunks/[root-of-the-server]__b7511f90._.js:220:65)\n' +
+    '    at async securedHandler (/app/.next/server/chunks/[root-of-the-server]__b7511f90._.js:742:41)\n' +
+    '    at async AppRouteRouteModule.do (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:38696)\n' +
+    '    at async AppRouteRouteModule.handle (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:45978)\n' +
+    '    at async responseGenerator (/app/.next/server/chunks/node_modules_next_8fc89c76._.js:15715:38)\n' +
+    '    at async AppRouteRouteModule.handleResponse (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:1:187643)\n' +
+    '    at async handleResponse (/app/.next/server/chunks/node_modules_next_8fc89c76._.js:15777:32)\n' +
+    '    at async handler (/app/.next/server/chunks/node_modules_next_8fc89c76._.js:15829:13)\n' +
+    '    at async DevServer.renderToResponseWithComponentsImpl (/app/node_modules/next/dist/server/base-server.js:1422:9)\n' +
+    '    at async DevServer.renderPageComponent (/app/node_modules/next/dist/server/base-server.js:1474:24)\n' +
+    '    at async DevServer.renderToResponseImpl (/app/node_modules/next/dist/server/base-server.js:1514:32)\n' +
+    '    at async DevServer.pipeImpl (/app/node_modules/next/dist/server/base-server.js:1025:25)\n' +
+    '    at async NextNodeServer.handleCatchallRenderRequest (/app/node_modules/next/dist/server/next-server.js:393:17)\n' +
+    '    at async DevServer.handleRequestImpl (/app/node_modules/next/dist/server/base-server.js:916:17)\n' +
+    '    at async /app/node_modules/next/dist/server/dev/next-dev-server.js:399:20\n' +
+    '    at async Span.traceAsyncFn (/app/node_modules/next/dist/trace/trace.js:157:20)\n' +
+    '    at async DevServer.handleRequest (/app/node_modules/next/dist/server/dev/next-dev-server.js:395:24)\n' +
+    '    at async invokeRender (/app/node_modules/next/dist/server/lib/router-server.js:240:21)\n' +
+    '    at async handleRequest (/app/node_modules/next/dist/server/lib/router-server.js:437:24)\n' +
+    '    at async requestHandlerImpl (/app/node_modules/next/dist/server/lib/router-server.js:485:13)\n' +
+    '    at async Server.requestListener (/app/node_modules/next/dist/server/lib/start-server.js:226:13)',
+  hint: '',
+  code: ''
+}
+Rate limiter error: {
+  message: 'TypeError: fetch failed',
+  details: 'TypeError: fetch failed\n' +
+    '    at node:internal/deps/undici/undici:14900:13\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n' +
+    '    at async RateLimiter.check (/app/.next/server/chunks/[root-of-the-server]__b7511f90._.js:220:65)\n' +
+    '    at async securedHandler (/app/.next/server/chunks/[root-of-the-server]__b7511f90._.js:742:41)\n' +
+    '    at async AppRouteRouteModule.do (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:38696)\n' +
+    '    at async AppRouteRouteModule.handle (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:5:45978)\n' +
+    '    at async responseGenerator (/app/.next/server/chunks/node_modules_next_8fc89c76._.js:15715:38)\n' +
+    '    at async AppRouteRouteModule.handleResponse (/app/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.dev.js:1:187643)\n' +
+    '    at async handleResponse (/app/.next/server/chunks/node_modules_next_8fc89c76._.js:15777:32)\n' +
+    '    at async handler (/app/.next/server/chunks/node_modules_next_8fc89c76._.js:15829:13)\n' +
+    '    at async DevServer.renderToResponseWithComponentsImpl (/app/node_modules/next/dist/server/base-server.js:1422:9)\n' +
+    '    at async DevServer.renderPageComponent (/app/node_modules/next/dist/server/base-server.js:1474:24)\n' +
+    '    at async DevServer.renderToResponseImpl (/app/node_modules/next/dist/server/base-server.js:1514:32)\n' +
+    '    at async DevServer.pipeImpl (/app/node_modules/next/dist/server/base-server.js:1025:25)\n' +
+    '    at async NextNodeServer.handleCatchallRenderRequest (/app/node_modules/next/dist/server/next-server.js:393:17)\n' +
+    '    at async DevServer.handleRequestImpl (/app/node_modules/next/dist/server/base-server.js:916:17)\n' +
+    '    at async /app/node_modules/next/dist/server/dev/next-dev-server.js:399:20\n' +
+    '    at async Span.traceAsyncFn (/app/node_modules/next/dist/trace/trace.js:157:20)\n' +
+    '    at async DevServer.handleRequest (/app/node_modules/next/dist/server/dev/next-dev-server.js:395:24)\n' +
+    '    at async invokeRender (/app/node_modules/next/dist/server/lib/router-server.js:240:21)\n' +
+    '    at async handleRequest (/app/node_modules/next/dist/server/lib/router-server.js:437:24)\n' +
+    '    at async requestHandlerImpl (/app/node_modules/next/dist/server/lib/router-server.js:485:13)\n' +
+    '    at async Server.requestListener (/app/node_modules/next/dist/server/lib/start-server.js:226:13)',
+  hint: '',
+  code: ''
+}
+[?25h

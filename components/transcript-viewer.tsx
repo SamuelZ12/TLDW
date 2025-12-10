@@ -5,8 +5,9 @@ import { TranscriptSegment, Topic, Citation, TranslationRequestHandler } from "@
 import { getTopicHSLColor, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Eye, EyeOff, ChevronDown, Download, Loader2 } from "lucide-react";
+import { Eye, EyeOff, ChevronDown, Download, Loader2, Search, ChevronUp, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { SelectionActions, triggerExplainSelection, SelectionActionPayload } from "@/components/selection-actions";
@@ -57,6 +58,14 @@ export function TranscriptViewer({
   const [translationsCache, setTranslationsCache] = useState<Map<number, string>>(new Map());
   const [loadingTranslations, setLoadingTranslations] = useState<Set<number>>(new Set());
   const [translationErrors, setTranslationErrors] = useState<Set<number>>(new Set());
+
+  // Search state
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<{ segmentIndex: number; startIndex: number; endIndex: number }[]>([]);
+  const [currentResultIndex, setCurrentResultIndex] = useState(-1);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const selectedTopicIndex = selectedTopic
     ? topics.findIndex((topic) => topic.id === selectedTopic.id)
     : -1;
@@ -203,6 +212,79 @@ export function TranscriptViewer({
     });
   }, []);
 
+  // Search Logic
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setCurrentResultIndex(-1);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const results: { segmentIndex: number; startIndex: number; endIndex: number }[] = [];
+
+    transcript.forEach((segment, segmentIndex) => {
+      const text = segment.text.toLowerCase();
+      let startIndex = 0;
+      let matchIndex = text.indexOf(query, startIndex);
+
+      while (matchIndex !== -1) {
+        results.push({
+          segmentIndex,
+          startIndex: matchIndex,
+          endIndex: matchIndex + query.length,
+        });
+        startIndex = matchIndex + 1;
+        matchIndex = text.indexOf(query, startIndex);
+      }
+    });
+
+    setSearchResults(results);
+    setCurrentResultIndex(results.length > 0 ? 0 : -1);
+  }, [searchQuery, transcript]);
+
+  // Handle Search Navigation
+  const navigateSearch = useCallback((direction: 'next' | 'prev') => {
+    if (searchResults.length === 0) return;
+
+    let newIndex;
+    if (direction === 'next') {
+      newIndex = currentResultIndex + 1 >= searchResults.length ? 0 : currentResultIndex + 1;
+    } else {
+      newIndex = currentResultIndex - 1 < 0 ? searchResults.length - 1 : currentResultIndex - 1;
+    }
+
+    setCurrentResultIndex(newIndex);
+
+    // Scroll to the result
+    const result = searchResults[newIndex];
+    const element = document.querySelector(`[data-segment-index="${result.segmentIndex}"]`) as HTMLElement;
+    if (element) {
+      scrollToElement(element);
+    }
+  }, [searchResults, currentResultIndex, scrollToElement]);
+
+  // Auto-focus search input when opened
+  useEffect(() => {
+    if (isSearchOpen && searchInputRef.current) {
+      setTimeout(() => searchInputRef.current?.focus(), 100);
+    }
+  }, [isSearchOpen]);
+
+  // Jump to first result when search results change (if user typed something new)
+  // But careful not to jump unexpectedly if just typing more characters of same word?
+  // For now, let's just stick to the first result being selected but maybe not auto-scrolled unless requested.
+  // Actually, standard behavior is usually jump to first match.
+  useEffect(() => {
+      if (searchResults.length > 0 && currentResultIndex === 0) {
+          const result = searchResults[0];
+          const element = document.querySelector(`[data-segment-index="${result.segmentIndex}"]`) as HTMLElement;
+          if (element) {
+              scrollToElement(element);
+          }
+      }
+  }, [searchResults, scrollToElement]);
+
   const jumpToCurrent = useCallback(() => {
     manualModeRef.current = false;
     setAutoScroll(true);
@@ -272,7 +354,52 @@ export function TranscriptViewer({
   };
 
 
-  const getHighlightedText = (segment: TranscriptSegment, segmentIndex: number): { highlightedParts: Array<{ text: string; highlighted: boolean; isCitation?: boolean }> } | null => {
+  const getHighlightedText = (segment: TranscriptSegment, segmentIndex: number): { highlightedParts: Array<{ text: string; highlighted: boolean; isCitation?: boolean; isSearchMatch?: boolean; isCurrentSearchMatch?: boolean }> } | null => {
+    // Priority: Search > Citation/Topic
+
+    // Check for search matches in this segment
+    const segmentSearchResults = searchResults.filter(r => r.segmentIndex === segmentIndex);
+
+    if (segmentSearchResults.length > 0) {
+      const text = segment.text;
+      const parts: Array<{ text: string; highlighted: boolean; isCitation?: boolean; isSearchMatch?: boolean; isCurrentSearchMatch?: boolean }> = [];
+      let lastIndex = 0;
+
+      // Sort matches by start index to handle them in order
+      // (Though our search logic generates them in order anyway)
+
+      segmentSearchResults.forEach(match => {
+        // Text before match
+        if (match.startIndex > lastIndex) {
+          parts.push({
+            text: text.substring(lastIndex, match.startIndex),
+            highlighted: false
+          });
+        }
+
+        // Match text
+        const isCurrent = searchResults[currentResultIndex] === match;
+        parts.push({
+          text: text.substring(match.startIndex, match.endIndex),
+          highlighted: true,
+          isSearchMatch: true,
+          isCurrentSearchMatch: isCurrent
+        });
+
+        lastIndex = match.endIndex;
+      });
+
+      // Text after last match
+      if (lastIndex < text.length) {
+        parts.push({
+          text: text.substring(lastIndex),
+          highlighted: false
+        });
+      }
+
+      return { highlightedParts: parts };
+    }
+
     // Determine what segments to highlight based on citation or topic
     const segmentsToHighlight = citationHighlight
       ? [citationHighlight]
@@ -420,113 +547,201 @@ export function TranscriptViewer({
     });
   };
 
+  const handleSegmentClick = (segment: TranscriptSegment, e: React.MouseEvent) => {
+    // Check if there is a text selection (dragging)
+    const selection = window.getSelection();
+    if (selection && selection.toString().length > 0) {
+      return; // Do nothing if text is selected
+    }
+
+    // Check if the user is dragging (moved mouse significantly between down and up)
+    // Actually, selection check handles this mostly, but if they drag and don't select anything (empty selection)?
+    // The requirement is "dragging to select text". If they drag but select nothing, maybe they still meant to drag?
+    // But usually click implies mousedown and mouseup at same location.
+
+    // Seek to the start of the segment
+    onTimestampClick(segment.start);
+  };
 
   return (
     <TooltipProvider delayDuration={300}>
       <div className="h-full max-h-full flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-5 py-1.5 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.03)]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5">
-              {selectedTopic && !selectedTopic.isCitationReel && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div
-                      className="h-2.5 w-2.5 rounded-full cursor-help"
-                      style={{
-                        backgroundColor: selectedTopicColor
-                          ? `hsl(${selectedTopicColor})`
-                          : undefined,
-                      }}
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-[180px]">
-                    <p className="text-[11px]">{selectedTopic.title}</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-              {(citationHighlight || selectedTopic?.isCitationReel) && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div
-                      className="h-2.5 w-2.5 rounded-full cursor-help"
-                      style={{
-                        backgroundColor: 'hsl(48, 100%, 50%)',
-                      }}
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    <p className="text-[11px]">
-                      {selectedTopic?.isCitationReel ? 'Cited Clips' : 'AI Chat Citation'}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
+        <div className="px-5 py-1.5 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.03)] h-11 flex items-center">
+          <div className="flex items-center justify-between gap-3 w-full">
+            {isSearchOpen ? (
+              <div className="flex items-center gap-2 w-full animate-in fade-in slide-in-from-right-5 duration-200">
+                <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <Input
+                  ref={searchInputRef}
+                  placeholder="Search transcript..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') navigateSearch('next');
+                    if (e.key === 'Escape') {
+                      setIsSearchOpen(false);
+                      setSearchQuery("");
+                    }
+                  }}
+                  className="h-7 text-xs border-0 bg-transparent focus-visible:ring-0 px-1 shadow-none"
+                />
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-[10px] text-muted-foreground mr-1 whitespace-nowrap">
+                     {searchResults.length > 0 ? `${currentResultIndex + 1}/${searchResults.length}` : '0/0'}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => navigateSearch('prev')}
+                    disabled={searchResults.length === 0}
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => navigateSearch('next')}
+                    disabled={searchResults.length === 0}
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 hover:bg-red-50 hover:text-red-600"
+                    onClick={() => {
+                      setIsSearchOpen(false);
+                      setSearchQuery("");
+                      setSearchResults([]);
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-1.5">
+                  {selectedTopic && !selectedTopic.isCitationReel && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          className="h-2.5 w-2.5 rounded-full cursor-help"
+                          style={{
+                            backgroundColor: selectedTopicColor
+                              ? `hsl(${selectedTopicColor})`
+                              : undefined,
+                          }}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-[180px]">
+                        <p className="text-[11px]">{selectedTopic.title}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  {(citationHighlight || selectedTopic?.isCitationReel) && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          className="h-2.5 w-2.5 rounded-full cursor-help"
+                          style={{
+                            backgroundColor: 'hsl(48, 100%, 50%)',
+                          }}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        <p className="text-[11px]">
+                          {selectedTopic?.isCitationReel ? 'Cited Clips' : 'AI Chat Citation'}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                variant={autoScroll ? "default" : "outline"}
-                size="sm"
-                onClick={() => {
-                  if (autoScroll) {
-                    manualModeRef.current = true;
-                    setAutoScroll(false);
-                  } else {
-                    manualModeRef.current = false;
-                    setShowScrollToCurrentButton(false);
-                    jumpToCurrent();
-                  }
-                }}
-                className="text-[11px] h-6 shadow-none"
-              >
-                {autoScroll ? (
-                  <>
-                    <Eye className="w-2.5 h-2.5 mr-1" />
-                    Auto
-                  </>
-                ) : (
-                  <>
-                    <EyeOff className="w-2.5 h-2.5 mr-1" />
-                    Manual
-                  </>
-                )}
-              </Button>
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsSearchOpen(true)}
+                        className="h-6 w-6 p-0 rounded-full hover:bg-slate-100"
+                      >
+                        <Search className="h-3.5 w-3.5 text-slate-500" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      <p className="text-xs">Search transcript</p>
+                    </TooltipContent>
+                  </Tooltip>
 
-              {onRequestExport && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={onRequestExport}
-                      disabled={exportButtonState?.disabled}
-                      className="h-6 gap-1.5 rounded-full border-slate-200 text-[11px] shadow-none transition hover:border-slate-300 hover:bg-white/80"
-                    >
-                      {exportButtonState?.isLoading ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Download className="h-3.5 w-3.5" />
-                      )}
-                      <span>Export</span>
-                      {exportButtonState?.badgeLabel && (
-                        <Badge
+                  <Button
+                    variant={autoScroll ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      if (autoScroll) {
+                        manualModeRef.current = true;
+                        setAutoScroll(false);
+                      } else {
+                        manualModeRef.current = false;
+                        setShowScrollToCurrentButton(false);
+                        jumpToCurrent();
+                      }
+                    }}
+                    className="text-[11px] h-6 shadow-none"
+                  >
+                    {autoScroll ? (
+                      <>
+                        <Eye className="w-2.5 h-2.5 mr-1" />
+                        Auto
+                      </>
+                    ) : (
+                      <>
+                        <EyeOff className="w-2.5 h-2.5 mr-1" />
+                        Manual
+                      </>
+                    )}
+                  </Button>
+
+                  {onRequestExport && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
                           variant="outline"
-                          className="ml-0.5 rounded-full border-blue-200 bg-blue-50 px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wide text-blue-700"
+                          size="sm"
+                          onClick={onRequestExport}
+                          disabled={exportButtonState?.disabled}
+                          className="h-6 gap-1.5 rounded-full border-slate-200 text-[11px] shadow-none transition hover:border-slate-300 hover:bg-white/80"
                         >
-                          {exportButtonState.badgeLabel}
-                        </Badge>
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    <p className="text-xs">
-                      {exportButtonState?.tooltip ?? "Export transcript"}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
+                          {exportButtonState?.isLoading ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Download className="h-3.5 w-3.5" />
+                          )}
+                          <span>Export</span>
+                          {exportButtonState?.badgeLabel && (
+                            <Badge
+                              variant="outline"
+                              className="ml-0.5 rounded-full border-blue-200 bg-blue-50 px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wide text-blue-700"
+                            >
+                              {exportButtonState.badgeLabel}
+                            </Badge>
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        <p className="text-xs">
+                          {exportButtonState?.tooltip ?? "Export transcript"}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -640,9 +855,10 @@ export function TranscriptViewer({
                         }
                       }}
                       className={cn(
-                        "group relative px-2.5 py-1.5 rounded-xl transition-all duration-200",
+                        "group relative px-2.5 py-1.5 rounded-xl transition-all duration-200 cursor-pointer hover:bg-slate-50",
                         translationEnabled && "space-y-1"
                       )}
+                      onClick={(e) => handleSegmentClick(segment, e)}
                     >
                       {/* Original text */}
                       <p
@@ -654,30 +870,40 @@ export function TranscriptViewer({
                       >
                         {highlightedText ? (
                           highlightedText.highlightedParts.map((part, partIndex) => {
+                            const isSearchMatch = 'isSearchMatch' in part && part.isSearchMatch;
+                            const isCurrentSearchMatch = 'isCurrentSearchMatch' in part && part.isCurrentSearchMatch;
                             const isCitation = 'isCitation' in part && part.isCitation;
+
+                            let style = undefined;
+                            if (part.highlighted) {
+                              if (isSearchMatch) {
+                                style = {
+                                  backgroundColor: isCurrentSearchMatch ? 'hsl(40, 100%, 50%)' : 'hsl(48, 100%, 80%)',
+                                  color: isCurrentSearchMatch ? 'white' : 'black',
+                                  padding: '0 1px',
+                                  borderRadius: '2px',
+                                };
+                              } else if (isCitation || selectedTopic?.isCitationReel) {
+                                style = {
+                                  backgroundColor: 'hsl(48, 100%, 85%)',
+                                  padding: '1px 3px',
+                                  borderRadius: '3px',
+                                  boxShadow: '0 0 0 1px hsl(48, 100%, 50%, 0.3)',
+                                };
+                              } else if (selectedTopicColor) {
+                                style = {
+                                  backgroundColor: `hsl(${selectedTopicColor} / 0.2)`,
+                                  padding: '0 2px',
+                                  borderRadius: '2px',
+                                };
+                              }
+                            }
 
                             return (
                               <span
                                 key={partIndex}
                                 className={part.highlighted ? "text-foreground" : ""}
-                                style={
-                                  part.highlighted
-                                    ? isCitation || selectedTopic?.isCitationReel
-                                      ? {
-                                        backgroundColor: 'hsl(48, 100%, 85%)',
-                                        padding: '1px 3px',
-                                        borderRadius: '3px',
-                                        boxShadow: '0 0 0 1px hsl(48, 100%, 50%, 0.3)',
-                                      }
-                                      : selectedTopicColor
-                                        ? {
-                                          backgroundColor: `hsl(${selectedTopicColor} / 0.2)`,
-                                          padding: '0 2px',
-                                          borderRadius: '2px',
-                                        }
-                                        : undefined
-                                    : undefined
-                                }
+                                style={style}
                               >
                                 {part.text}
                               </span>
