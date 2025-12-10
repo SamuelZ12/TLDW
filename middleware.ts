@@ -1,12 +1,26 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 
+function parseHost(url: string | undefined) {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   // First, handle Supabase session update
   const response = await updateSession(request);
 
   // Add Content-Security-Policy and other security headers
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
+
+  const supabaseHost = parseHost(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const supabaseConnectSrc = supabaseHost
+    ? [`https://${supabaseHost}`, `wss://${supabaseHost}`]
+    : [];
 
   // Define CSP directives
   const cspHeader = [
@@ -15,7 +29,26 @@ export async function middleware(request: NextRequest) {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https://i.ytimg.com https://img.youtube.com https://*.ytimg.com",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.supadata.ai https://*.supabase.co https://app.longcut.ai https://*.googleapis.com wss://*.supabase.co wss://app.longcut.ai https://www.youtube.com https://api.stripe.com",
+    [
+      "connect-src 'self'",
+      'https://api.supadata.ai',
+      'https://*.supabase.co',
+      'https://*.supabase.in',
+      'https://*.supabase.net',
+      'https://*.supabase.com',
+      'http://localhost:54321',
+      'wss://*.supabase.co',
+      'wss://*.supabase.in',
+      'wss://*.supabase.net',
+      'wss://*.supabase.com',
+      'wss://localhost:54321',
+      'https://app.longcut.ai',
+      'wss://app.longcut.ai',
+      'https://*.googleapis.com',
+      'https://www.youtube.com',
+      'https://api.stripe.com',
+      ...supabaseConnectSrc,
+    ].join(' '),
     "media-src 'self' blob: https://www.youtube.com",
     "object-src 'none'",
     'frame-src https://www.youtube.com https://youtube.com',
