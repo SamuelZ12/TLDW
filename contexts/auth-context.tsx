@@ -35,7 +35,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase.auth])
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    try {
+      // Call server-side signout to clear HTTP-only cookies
+      await fetch('/api/auth/signout', { method: 'POST' })
+      
+      // Also sign out on client to clear any local state
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.error('Sign out error:', error)
+    }
+    
     setUser(null)
     window.location.href = '/'
   }
