@@ -13,7 +13,7 @@ import {
 import { startCheckout, openBillingPortal } from '@/lib/stripe-actions'
 import type { SubscriptionStatus, SubscriptionTier } from '@/lib/subscription-manager'
 import { toast } from 'sonner'
-import { ArrowUpRight, CheckCircle2, Loader2, Sparkles, Zap } from 'lucide-react'
+import { ArrowUpRight, CheckCircle2, Infinity, Layers, Loader2, Package2, Sparkles, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface PricingContentProps {
@@ -53,7 +53,6 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
     '20 videos per pack',
     'Never expires',
     'Use alongside any plan',
-    'No monthly fee',
   ]
 
   const heroDescription = (() => {
@@ -242,11 +241,10 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
           style={{ boxShadow: '2px 11px 40.4px 0 rgba(0, 0, 0, 0.06)' }}
         >
           <CardHeader className="!px-4 !pt-0 !pb-1">
-            <div className="rounded-[24px] bg-gradient-to-br from-blue-50 to-indigo-50 px-4 pt-2 pb-4 text-left border border-blue-100/50">
+            <div className="rounded-[24px] bg-gradient-to-br from-white to-blue-50 px-4 pt-2 pb-4 text-left border border-blue-50/40">
               <div className="flex flex-col">
                 <div className="mb-10 flex items-center justify-between">
                   <p className="text-[16px] font-medium text-black">Top Up</p>
-                  <Sparkles className="h-4 w-4 text-blue-500" />
                 </div>
                 <div className="flex items-baseline gap-2 whitespace-nowrap mb-0">
                    <span className="text-[32px] font-semibold">
@@ -263,10 +261,9 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
             <PlanFeaturesList
               features={topupFeatures}
               icons={[
-                <Zap key="zap" className="h-4 w-4 text-blue-500" />,
-                <CheckCircle2 key="check" className="h-4 w-4 text-blue-500" />,
-                <CheckCircle2 key="check2" className="h-4 w-4 text-blue-500" />,
-                <CheckCircle2 key="check3" className="h-4 w-4 text-blue-500" />,
+                <Package2 key="package" className="h-4 w-4" />,
+                <Infinity key="infinity" className="h-4 w-4" />,
+                <Layers key="layers" className="h-4 w-4" />,
               ]}
             />
           </CardContent>
@@ -277,7 +274,7 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
               variant="outline"
               size="lg"
               className={cn(
-                "w-full rounded-full h-[42px] text-[14px] font-semibold shadow-none border-blue-200 hover:bg-blue-50 hover:text-blue-600",
+                "w-full rounded-full h-[42px] text-[14px] font-semibold shadow-none border-blue-100 hover:bg-blue-50/30",
                 pendingAction === 'topup' && "opacity-80"
               )}
             >
