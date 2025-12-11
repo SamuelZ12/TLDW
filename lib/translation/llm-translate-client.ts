@@ -325,12 +325,13 @@ Your response:`;
     scenario: TranslationScenario,
     context?: TranslationContext
   ): string {
-    const baseInstructions = `You are a professional translator specializing in technical and educational content.
+    const baseInstructions = `You are an expert linguist and translator specializing in converting spoken content into natural, native-sounding text.
 
 CORE PRINCIPLES:
-- Preserve technical terminology, code snippets, URLs, and proper nouns
-- Maintain the original meaning and tone
-- Use natural, fluent language in the target language
+- Translate the *meaning* and *intent*, not just the words
+- Use natural, fluent, and idiomatic language in the target language
+- Avoid robotic, literal, or stiff phrasing
+- Preserve code snippets, URLs, and specific proper nouns (names of people/places) exactly as is
 - Keep formatting (markdown, line breaks, bullets) intact`;
 
     const scenarioInstructions = this.getScenarioInstructions(scenario, context);
@@ -352,16 +353,15 @@ ${scenarioInstructions}`;
         return `SCENARIO: Video Transcript Translation
 ${context?.videoTitle ? `VIDEO TITLE: "${context.videoTitle}"\n` : ''}
 GUIDELINES:
-- IMPORTANT: Correct apparent mistranscriptions when video context provides the proper term (e.g., if transcript says "Palunteer" but video title mentions "Palantir", use "Palantir")
-- Preserve speaker attribution and timestamps if present
-- Maintain conversational flow and natural speech patterns
-- Keep technical terms related to the video topic in their original form when appropriate
-- Handle filler words and informal speech naturally in the target language
-- Preserve paragraph breaks and speaker changes
+- **Natural Flow:** Make the translation sound like a native speaker talking naturally. Rephrase sentences if needed to fit target language grammar and flow.
+- **Filler Words:** Remove filler words (um, uh, like, you know) and false starts to improve readability and flow.
+- **Mistranscriptions:** Use context to correct obvious speech-to-text errors.
+- **Technical Terms:** Translate technical terms into their standard local equivalents. Only keep English if it is the strict industry standard in the target language.
+- **Structure:** Preserve paragraph breaks and speaker changes.
 
 EXAMPLE:
 Input: "So, um, what we're doing here with React hooks is..."
-Output (zh-CN): "所以，嗯，我们在这里使用 React hooks 所做的是..."`;
+Output (zh-CN): "我们在这里使用 React hooks 做的是..."`;
 
       case 'chat':
         return `SCENARIO: Chat Message Translation
