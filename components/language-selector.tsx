@@ -183,8 +183,9 @@ export function LanguageSelector({
 
   // Handle language selection
   const handleLanguageSelect = useCallback((langCode: string) => {
-    // Handle auth check
-    if (!isAuthenticated && langCode !== 'en') {
+    // Handle auth check - only require auth for non-native, non-English languages
+    const langOption = languagesWithNativeStatus.find(l => l.code === langCode);
+    if (!isAuthenticated && !langOption?.isNative && langCode !== 'en') {
       onRequestSignIn?.();
       return;
     }
@@ -209,7 +210,7 @@ export function LanguageSelector({
 
     setIsMenuOpen(false);
     setLanguageSearch("");
-  }, [isAuthenticated, currentLanguageCode, selectedLanguage, activeTab, onLanguageChange, onTabSwitch, onRequestSignIn]);
+  }, [isAuthenticated, languagesWithNativeStatus, currentLanguageCode, selectedLanguage, activeTab, onLanguageChange, onTabSwitch, onRequestSignIn]);
 
   // Handle outside click - close menu without tab switch
   useEffect(() => {
@@ -280,7 +281,7 @@ export function LanguageSelector({
           <ChevronDown
             className="h-3 w-3 opacity-50"
             style={{
-              transform: isMenuOpen ? "rotate(0deg)" : "rotate(180deg)",
+              transform: isMenuOpen ? "rotate(180deg)" : "rotate(0deg)",
               transition: "transform 200ms cubic-bezier(0.4, 0, 0.2, 1)",
             }}
           />

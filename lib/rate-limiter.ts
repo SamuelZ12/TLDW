@@ -225,6 +225,12 @@ export const RATE_LIMITS = {
     maxRequests: 30 // 30 messages per minute
   },
 
+  // Suggested questions (lightweight, chat-like operation)
+  SUGGESTED_QUESTIONS: {
+    windowMs: 60 * 1000, // 1 minute
+    maxRequests: 20 // 20 requests per minute
+  },
+
   // Subscription tier video generation limits (rolling 30-day window)
   VIDEO_GENERATION_FREE_UNREGISTERED: {
     windowMs: 30 * 24 * 60 * 60 * 1000, // 30 days

@@ -5,6 +5,7 @@ import { RATE_LIMITS } from '@/lib/rate-limiter';
 import { generateAIResponse } from '@/lib/ai-client';
 import { suggestedQuestionsSchema } from '@/lib/schemas';
 import { buildSuggestedQuestionFallbacks } from '@/lib/suggested-question-fallback';
+import { getLanguageName } from '@/lib/language-utils';
 
 function formatTranscriptForContext(segments: TranscriptSegment[]): string {
   return segments.map(s => {
@@ -24,6 +25,8 @@ async function handler(request: NextRequest) {
       count,
       exclude,
       lastQuestion,
+      language,
+      targetLanguage
     } = await request.json();
 
     if (!transcript || !Array.isArray(transcript)) {
@@ -61,8 +64,21 @@ async function handler(request: NextRequest) {
         }).join('\n')
       : 'None provided';
 
+    // targetLanguage takes precedence over language (transcript source language)
+    // targetLanguage is the user's selected translation language
+    const effectiveLanguage = targetLanguage || language;
+    const languageInstruction = effectiveLanguage
+      ? (() => {
+          const langName = getLanguageName(effectiveLanguage);
+          const context = targetLanguage
+            ? `in ${langName} (the user's selected language)`
+            : `in ${langName} to match the transcript language`;
+          return `\n<languageRequirement>IMPORTANT: You MUST generate all questions ${context}.</languageRequirement>\n`;
+        })()
+      : '';
+
     const prompt = `<task>
-<role>You craft grounded follow-up questions for viewers after watching a video.</role>
+<role>You craft grounded follow-up questions for viewers after watching a video.</role>${languageInstruction}
 <context>
 <videoTitle>${videoTitle || 'Untitled Video'}</videoTitle>
 <coveredHighlights>
@@ -163,9 +179,9 @@ ${fullTranscript}
   }
 }
 
-// Apply security with generation rate limits
+// Apply security with dedicated rate limit for suggested questions
 export const POST = withSecurity(handler, {
-  rateLimit: RATE_LIMITS.AUTH_GENERATION, // Use authenticated rate limit
+  rateLimit: RATE_LIMITS.SUGGESTED_QUESTIONS, // Lightweight, chat-like operation
   maxBodySize: 10 * 1024 * 1024, // 10MB for large transcripts
   allowedMethods: ['POST']
 });

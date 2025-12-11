@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, X } from "lucide-react";
-import { TranscriptSegment } from "@/lib/types";
+import { TranscriptSegment, TranslationRequestHandler } from "@/lib/types";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import {
@@ -45,6 +45,8 @@ interface ImageCheatsheetCardProps {
     aspectRatio: string;
     style: string;
   }) => void;
+  selectedLanguage?: string | null;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 interface LimitResponse {
@@ -58,6 +60,19 @@ interface LimitResponse {
   reason?: string | null;
 }
 
+// Default English labels
+const DEFAULT_LABELS = {
+  generateCheatsheetImage: "Generate cheatsheet image",
+  generatingCheatsheet: "Generating cheatsheet...",
+  selectAspectRatioStyle: "Select aspect ratio & style",
+  limitReached: "Limit reached",
+  aspectRatio: "Aspect ratio",
+  style: "Style",
+  generate: "Generate",
+  cancel: "Cancel",
+  left: "left",
+};
+
 export function ImageCheatsheetCard({
   transcript,
   videoId,
@@ -66,6 +81,8 @@ export function ImageCheatsheetCard({
   isAuthenticated,
   onRequestSignIn,
   onImageGenerated,
+  selectedLanguage,
+  onRequestTranslation,
 }: ImageCheatsheetCardProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCheckingLimit, setIsCheckingLimit] = useState(false);
@@ -76,6 +93,58 @@ export function ImageCheatsheetCard({
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<string>("9:16");
   const [style, setStyle] = useState<string>("neo-brutalism");
+
+  // Translation state
+  const [translatedLabels, setTranslatedLabels] = useState(DEFAULT_LABELS);
+
+  // Translate labels when language changes
+  useEffect(() => {
+    if (!selectedLanguage || !onRequestTranslation) {
+      setTranslatedLabels(DEFAULT_LABELS);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const translateLabels = async () => {
+      const translations = await Promise.all([
+        onRequestTranslation(DEFAULT_LABELS.generateCheatsheetImage, `ui_cheatsheet:generateCheatsheetImage:${selectedLanguage}`),
+        onRequestTranslation(DEFAULT_LABELS.generatingCheatsheet, `ui_cheatsheet:generatingCheatsheet:${selectedLanguage}`),
+        onRequestTranslation(DEFAULT_LABELS.selectAspectRatioStyle, `ui_cheatsheet:selectAspectRatioStyle:${selectedLanguage}`),
+        onRequestTranslation(DEFAULT_LABELS.limitReached, `ui_cheatsheet:limitReached:${selectedLanguage}`),
+        onRequestTranslation(DEFAULT_LABELS.aspectRatio, `ui_cheatsheet:aspectRatio:${selectedLanguage}`),
+        onRequestTranslation(DEFAULT_LABELS.style, `ui_cheatsheet:style:${selectedLanguage}`),
+        onRequestTranslation(DEFAULT_LABELS.generate, `ui_cheatsheet:generate:${selectedLanguage}`),
+        onRequestTranslation(DEFAULT_LABELS.cancel, `ui_cheatsheet:cancel:${selectedLanguage}`),
+        onRequestTranslation(DEFAULT_LABELS.left, `ui_cheatsheet:left:${selectedLanguage}`),
+      ]);
+
+      if (!isCancelled) {
+        setTranslatedLabels({
+          generateCheatsheetImage: translations[0],
+          generatingCheatsheet: translations[1],
+          selectAspectRatioStyle: translations[2],
+          limitReached: translations[3],
+          aspectRatio: translations[4],
+          style: translations[5],
+          generate: translations[6],
+          cancel: translations[7],
+          left: translations[8],
+        });
+      }
+    };
+
+    translateLabels().catch((err) => {
+      console.error("Failed to translate cheatsheet labels:", err);
+      if (!isCancelled) {
+        setTranslatedLabels(DEFAULT_LABELS);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedLanguage, onRequestTranslation]);
 
   const limitReached = useMemo(() => {
     if (!isAuthenticated) return false;
@@ -212,16 +281,16 @@ export function ImageCheatsheetCard({
   ]);
 
   const buttonText = useMemo(() => {
-    if (isGenerating) return "Generating cheatsheet...";
-    if (isConfiguring) return "Select aspect ratio & style";
-    if (!isAuthenticated) return "Generate cheatsheet image";
-    if (isCheckingLimit) return "Generate cheatsheet...";
-    if (limitReached) return "Limit reached";
+    if (isGenerating) return translatedLabels.generatingCheatsheet;
+    if (isConfiguring) return translatedLabels.selectAspectRatioStyle;
+    if (!isAuthenticated) return translatedLabels.generateCheatsheetImage;
+    if (isCheckingLimit) return translatedLabels.generatingCheatsheet;
+    if (limitReached) return translatedLabels.limitReached;
     if (remaining !== null && remaining !== undefined) {
-      return `Generate cheatsheet (${remaining} left)`;
+      return `${translatedLabels.generateCheatsheetImage} (${remaining} ${translatedLabels.left})`;
     }
-    return "Generate cheatsheet image";
-  }, [isGenerating, isConfiguring, isAuthenticated, isCheckingLimit, limitReached, remaining]);
+    return translatedLabels.generateCheatsheetImage;
+  }, [isGenerating, isConfiguring, isAuthenticated, isCheckingLimit, limitReached, remaining, translatedLabels]);
 
   return (
     <div className="flex w-full flex-col items-end gap-2">
@@ -246,7 +315,7 @@ export function ImageCheatsheetCard({
         <div className="w-full max-w-[80%] self-end rounded-[18px] border border-neutral-200 bg-white p-3 shadow-[0_8px_0_#00000012]">
           <div className="grid gap-3">
             <div className="flex flex-col gap-1">
-              <Label className="text-[11px] text-neutral-600">Aspect ratio</Label>
+              <Label className="text-[11px] text-neutral-600">{translatedLabels.aspectRatio}</Label>
               <Select value={aspectRatio} onValueChange={setAspectRatio}>
                 <SelectTrigger className="h-9 text-xs bg-white">
                   <SelectValue placeholder="Choose aspect ratio" />
@@ -262,7 +331,7 @@ export function ImageCheatsheetCard({
           </div>
 
           <div className="flex flex-col gap-1">
-            <Label className="text-[11px] text-neutral-600">Style</Label>
+            <Label className="text-[11px] text-neutral-600">{translatedLabels.style}</Label>
             <Select value={style} onValueChange={setStyle}>
               <SelectTrigger className="h-9 text-xs bg-white">
                 <SelectValue placeholder="Choose style" />
@@ -287,7 +356,7 @@ export function ImageCheatsheetCard({
               {isGenerating ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
               ) : null}
-              Generate
+              {translatedLabels.generate}
             </Button>
             <Button
               size="sm"
@@ -296,7 +365,7 @@ export function ImageCheatsheetCard({
               onClick={() => setIsConfiguring(false)}
               disabled={isGenerating}
             >
-              Cancel
+              {translatedLabels.cancel}
             </Button>
           </div>
         </div>

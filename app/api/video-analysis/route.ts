@@ -158,7 +158,8 @@ async function handler(req: NextRequest) {
             theme,
             excludeTopicKeys: new Set(validatedData.excludeTopicKeys ?? []),
             includeCandidatePool: false,
-            mode
+            mode,
+            language: videoInfo?.language
           }
         );
 
@@ -337,7 +338,12 @@ async function handler(req: NextRequest) {
 
       let themes: string[] = [];
       try {
-        themes = await generateThemesFromTranscript(transcript, videoInfo);
+        themes = await generateThemesFromTranscript(
+          transcript,
+          videoInfo,
+          undefined,
+          videoInfo?.language
+        );
       } catch (error) {
         console.error('Error generating themes for cached video:', error);
       }
@@ -379,7 +385,8 @@ async function handler(req: NextRequest) {
         videoInfo,
         includeCandidatePool: validatedData.includeCandidatePool,
         excludeTopicKeys: new Set(validatedData.excludeTopicKeys ?? []),
-        mode
+        mode,
+        language: videoInfo?.language
       }
     );
     const topics = generationResult.topics;
@@ -388,7 +395,12 @@ async function handler(req: NextRequest) {
 
     let themes: string[] = [];
     try {
-      themes = await generateThemesFromTranscript(transcript, videoInfo);
+      themes = await generateThemesFromTranscript(
+        transcript,
+        videoInfo,
+        undefined,
+        videoInfo?.language
+      );
     } catch (error) {
       console.error('Error generating themes:', error);
     }

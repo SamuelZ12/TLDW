@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Send, Loader2 } from "lucide-react";
-import { buildSuggestedQuestionFallbacks } from "@/lib/suggested-question-fallback";
+import { buildSuggestedQuestionFallbacks, ALL_FALLBACK_QUESTIONS } from "@/lib/suggested-question-fallback";
 import { STRICT_TIMESTAMP_RANGE_REGEX, parseTimestamp } from "@/lib/timestamp-utils";
 import { sanitizeTimestamp } from "@/lib/timestamp-normalization";
 
@@ -146,6 +146,8 @@ export function AIChat({
   const [translatedKeyTakeawaysLabel, setTranslatedKeyTakeawaysLabel] = useState(KEY_TAKEAWAYS_LABEL);
   const [translatedTopQuotesLabel, setTranslatedTopQuotesLabel] = useState(TOP_QUOTES_LABEL);
   const [translatedFollowUpQuestions, setTranslatedFollowUpQuestions] = useState<string[]>([]);
+  // Pre-translated fallback questions map (original -> translated)
+  const [translatedFallbacksMap, setTranslatedFallbacksMap] = useState<Map<string, string>>(new Map());
   const chatMessagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
@@ -344,6 +346,54 @@ export function AIChat({
   // Use translated follow-up questions for display
   const displayedFollowUpQuestions = selectedLanguage ? translatedFollowUpQuestions : followUpQuestions;
 
+  // Pre-translate all fallback questions when language changes
+  useEffect(() => {
+    if (!selectedLanguage || !onRequestTranslation) {
+      setTranslatedFallbacksMap(new Map());
+      return;
+    }
+
+    let isCancelled = false;
+
+    const translateAllFallbacks = async () => {
+      const newMap = new Map<string, string>();
+      
+      await Promise.all(
+        ALL_FALLBACK_QUESTIONS.map(async (question) => {
+          const cacheKey = `fallback-question-${selectedLanguage}-${question}`;
+          try {
+            const translated = await onRequestTranslation(question, cacheKey);
+            if (!isCancelled) {
+              newMap.set(question, translated);
+            }
+          } catch (error) {
+            console.error('Failed to translate fallback question:', error);
+            // Keep original on error
+            if (!isCancelled) {
+              newMap.set(question, question);
+            }
+          }
+        })
+      );
+
+      if (!isCancelled) {
+        setTranslatedFallbacksMap(newMap);
+      }
+    };
+
+    void translateAllFallbacks();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedLanguage, onRequestTranslation]);
+
+  // Helper to get translated fallback question
+  const getTranslatedFallback = useCallback((original: string): string => {
+    if (!selectedLanguage) return original;
+    return translatedFallbacksMap.get(original) || original;
+  }, [selectedLanguage, translatedFallbacksMap]);
+
   const fetchSuggestedQuestions = useCallback(async () => {
     setLoadingQuestions(true);
     try {
@@ -356,6 +406,7 @@ export function AIChat({
           videoTitle,
           count: 3,
           exclude: Array.from(dismissedQuestionsRef.current),
+          ...(selectedLanguage && { targetLanguage: selectedLanguage }),
         }),
       });
       
@@ -390,7 +441,7 @@ export function AIChat({
     } finally {
       setLoadingQuestions(false);
     }
-  }, [transcript, sanitizedTopicsForChat, videoTitle, applyFallbackSuggestedQuestions]);
+  }, [transcript, sanitizedTopicsForChat, videoTitle, applyFallbackSuggestedQuestions, selectedLanguage]);
   // Update suggested questions when cached questions change
   useEffect(() => {
     if (cachedSuggestedQuestions && cachedSuggestedQuestions.length > 0) {
@@ -441,6 +492,7 @@ export function AIChat({
           count: 2,
           lastQuestion,
           exclude: excludeList,
+          ...(selectedLanguage && { targetLanguage: selectedLanguage }),
         }),
       });
 
@@ -473,7 +525,7 @@ export function AIChat({
     } catch {
       return buildFallbackFollowUps();
     }
-  }, [transcript, sanitizedTopicsForChat, videoTitle, suggestedQuestions]);
+  }, [transcript, sanitizedTopicsForChat, videoTitle, suggestedQuestions, selectedLanguage]);
 
   const sendMessage = useCallback(async (messageInput?: SuggestedMessage, retryCount = 0) => {
     const isObjectInput = typeof messageInput === "object" && messageInput !== null;
@@ -1130,6 +1182,8 @@ export function AIChat({
                 isAuthenticated={isAuthenticated}
                 onRequestSignIn={onRequestSignIn}
                 onImageGenerated={handleImageGenerated}
+                selectedLanguage={selectedLanguage}
+                onRequestTranslation={onRequestTranslation}
               />
               {!hasAskedKeyTakeaways && (
                 <Button

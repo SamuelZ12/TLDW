@@ -15,7 +15,9 @@ const saveAnalysisSchema = z.object({
     duration: z.number().optional(),
     thumbnail: z.string().optional(),
     description: z.string().optional(),
-    tags: z.array(z.string()).optional()
+    tags: z.array(z.string()).optional(),
+    language: z.string().optional(),
+    availableLanguages: z.array(z.string()).optional()
   }),
   transcript: z.array(z.object({
     text: z.string(),
@@ -74,7 +76,9 @@ async function handler(req: NextRequest) {
         p_summary: summary || null,
         p_suggested_questions: suggestedQuestions || null,
         p_model_used: model,
-        p_user_id: user?.id || null
+        p_user_id: user?.id || null,
+        p_language: videoInfo.language || null,
+        p_available_languages: videoInfo.availableLanguages || null
       })
       .single();
 
