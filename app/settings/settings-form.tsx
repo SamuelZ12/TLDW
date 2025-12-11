@@ -20,7 +20,8 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Loader2, AlertCircle, CreditCard, Sparkles } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Loader2, AlertCircle, CreditCard, Sparkles, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import type { User } from '@supabase/supabase-js'
 import { csrfFetch, getCSRFToken } from '@/lib/csrf-client'
@@ -181,6 +182,10 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
   const [billingAction, setBillingAction] = useState<'subscription' | 'topup' | 'portal' | null>(null)
   const [pendingSubscription, setPendingSubscription] = useState<SubscriptionSummary | null>(null)
 
+  // Email preferences state
+  const [marketingEmailsEnabled, setMarketingEmailsEnabled] = useState(true)
+  const [emailPrefsLoading, setEmailPrefsLoading] = useState(true)
+
   const currentSubscription = pendingSubscription ?? subscription
 
   // Pre-fetch CSRF token in background for faster checkout (PERFORMANCE OPTIMIZATION)
@@ -189,6 +194,25 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
     getCSRFToken().catch((error) => {
       console.error('Failed to pre-fetch CSRF token:', error)
     })
+  }, [])
+
+  // Fetch email preferences on mount
+  useEffect(() => {
+    const fetchEmailPreferences = async () => {
+      try {
+        const response = await fetch('/api/email/preferences')
+        if (response.ok) {
+          const data = await response.json()
+          setMarketingEmailsEnabled(data.marketing_emails_enabled ?? true)
+        }
+      } catch (error) {
+        console.error('Error fetching email preferences:', error)
+      } finally {
+        setEmailPrefsLoading(false)
+      }
+    }
+
+    fetchEmailPreferences()
   }, [])
 
   useEffect(() => {
@@ -450,6 +474,35 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
     }
   }
 
+  const handleEmailPreferenceChange = async (enabled: boolean) => {
+    const previousValue = marketingEmailsEnabled
+    setMarketingEmailsEnabled(enabled)
+
+    try {
+      const response = await fetch('/api/email/preferences', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          marketing_emails_enabled: enabled,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update email preferences')
+      }
+
+      const data = await response.json()
+      toast.success(data.message || 'Email preferences updated successfully')
+    } catch (error) {
+      // Revert on error
+      setMarketingEmailsEnabled(previousValue)
+      const message = error instanceof Error ? error.message : 'Failed to update email preferences'
+      toast.error(message)
+    }
+  }
+
   const subscriptionWarnings = useMemo(() => {
     if (!currentSubscription) return []
     const warnings: Array<{ title: string; message: string; variant?: 'default' | 'destructive' }> = []
@@ -695,6 +748,36 @@ export default function SettingsForm({ user, profile, videoCount, subscription }
             )}
           </Button>
         </CardFooter>
+      </Card>
+
+      <Card className="overflow-hidden">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-xl">Email preferences</CardTitle>
+          <CardDescription className="text-sm">
+            Manage your email communication preferences.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start justify-between space-x-4">
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-2">
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <Label htmlFor="marketing-emails" className="text-base font-medium">
+                  Product updates
+                </Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Receive monthly emails about new features, improvements, and product announcements.
+              </p>
+            </div>
+            <Switch
+              id="marketing-emails"
+              checked={marketingEmailsEnabled}
+              onCheckedChange={handleEmailPreferenceChange}
+              disabled={emailPrefsLoading}
+            />
+          </div>
+        </CardContent>
       </Card>
 
       <Card className="overflow-hidden">

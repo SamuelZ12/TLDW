@@ -10,7 +10,8 @@
     "validate-env": "tsx scripts/validate-env.ts",
     "stripe:smoke": "node scripts/stripe-smoke.mjs",
     "stripe:setup-portal": "tsx scripts/setup-stripe-portal.ts",
-    "stripe:create-prices": "tsx scripts/create-new-prices.ts"
+    "stripe:create-prices": "tsx scripts/create-new-prices.ts",
+    "email:send-update": "tsx scripts/send-monthly-update.ts"
   },
   "dependencies": {
     "@google-cloud/translate": "^9.2.1",
@@ -42,6 +43,7 @@
     "jsdom": "^27.0.0",
     "lucide-react": "^0.542.0",
     "next": "15.5.7",
+    "postmark": "^4.0.5",
     "react": "19.1.2",
     "react-dom": "19.1.2",
     "react-markdown": "^10.1.0",
