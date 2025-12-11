@@ -40,8 +40,9 @@ export const videoInfoSchema = z.object({
   author: z.string().max(100).transform(val => val.trim()).optional(),
   duration: z.number().int().min(0).max(86400), // Max 24 hours
   thumbnail: z.string().url().optional(),
-  language: z.string().min(2).max(10).optional(),
-  availableLanguages: z.array(z.string().min(2).max(10)).optional()
+  // Use nullish() to accept both null and undefined (backward compat for old cached videos)
+  language: z.string().min(2).max(10).nullish().transform(v => v ?? undefined),
+  availableLanguages: z.array(z.string().min(2).max(10)).nullish().transform(v => v ?? undefined)
 });
 
 // Transcript segment validation

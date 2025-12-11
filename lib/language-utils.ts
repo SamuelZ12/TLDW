@@ -13,7 +13,12 @@ export const SUPPORTED_LANGUAGES = [
  * @param code - Language code (e.g., 'zh-CN', 'ja', 'fr')
  * @returns Natural language name (e.g., 'Simplified Chinese', 'Japanese', 'French')
  */
-export function getLanguageName(code: string): string {
+export function getLanguageName(code: string | null | undefined): string {
+  // Guard against null/undefined - return English as safe default
+  if (!code) {
+    return 'English';
+  }
+
   const language = SUPPORTED_LANGUAGES.find((lang) => lang.code === code);
   if (language) {
     return language.name;

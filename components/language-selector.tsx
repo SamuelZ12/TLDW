@@ -70,7 +70,7 @@ export function LanguageSelector({
   const allLanguages: LanguageOption[] = [...SUPPORTED_LANGUAGES];
 
   // Then add any available native languages that aren't in supported list
-  availableLanguages.forEach(code => {
+  (availableLanguages ?? []).forEach(code => {
     if (!allLanguages.find(l => l.code === code)) {
       // Best effort for name if we don't have it in our list
       // For now, we can use the code or a simple lookup if we expand getLanguageName
@@ -86,9 +86,10 @@ export function LanguageSelector({
   });
 
   // Mark native languages
+  const safeAvailableLanguages = availableLanguages ?? [];
   const languagesWithNativeStatus = allLanguages.map(lang => ({
     ...lang,
-    isNative: availableLanguages.includes(lang.code) || (lang.code === 'en' && !availableLanguages.length)
+    isNative: safeAvailableLanguages.includes(lang.code) || (lang.code === 'en' && !safeAvailableLanguages.length)
   }));
 
   // Sort: Native first, then alphabetical
