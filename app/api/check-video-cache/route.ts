@@ -104,7 +104,9 @@ async function handler(req: NextRequest) {
           title: cachedVideo.title,
           author: cachedVideo.author,
           duration: cachedVideo.duration,
-          thumbnail: cachedVideo.thumbnail_url
+          thumbnail: cachedVideo.thumbnail_url,
+          language: cachedVideo.language ?? undefined,
+          availableLanguages: cachedVideo.available_languages ?? undefined
         },
         summary: cachedVideo.summary,
         suggestedQuestions: cachedVideo.suggested_questions,

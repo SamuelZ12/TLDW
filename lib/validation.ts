@@ -39,7 +39,10 @@ export const videoInfoSchema = z.object({
   title: z.string().min(1).max(200).transform(val => val.trim()),
   author: z.string().max(100).transform(val => val.trim()).optional(),
   duration: z.number().int().min(0).max(86400), // Max 24 hours
-  thumbnail: z.string().url().optional()
+  thumbnail: z.string().url().optional(),
+  // Use nullish() to accept both null and undefined (backward compat for old cached videos)
+  language: z.string().min(2).max(10).nullish().transform(v => v ?? undefined),
+  availableLanguages: z.array(z.string().min(2).max(10)).nullish().transform(v => v ?? undefined)
 });
 
 // Transcript segment validation
@@ -130,7 +133,8 @@ export const generateTopicsRequestSchema = z.object({
   mode: topicGenerationModeSchema.optional(),
   includeCandidatePool: z.boolean().optional(),
   excludeTopicKeys: z.array(z.string().min(1).max(500)).optional(),
-  videoInfo: videoInfoSchema.optional()
+  videoInfo: videoInfoSchema.optional(),
+  language: z.string().min(2).max(10).optional()
 });
 
 export const chatRequestSchema = z.object({

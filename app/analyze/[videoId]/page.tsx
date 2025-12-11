@@ -25,6 +25,7 @@ import { useTranscriptExport } from "@/lib/hooks/use-transcript-export";
 type PageState = 'IDLE' | 'ANALYZING_NEW' | 'LOADING_CACHED';
 type AuthModalTrigger = 'generation-limit' | 'save-video' | 'manual' | 'save-note';
 import { buildVideoSlug, extractVideoId } from "@/lib/utils";
+import { getLanguageName } from "@/lib/language-utils";
 import { NO_CREDITS_USED_MESSAGE } from "@/lib/no-credits-message";
 import { useElapsedTimer } from "@/lib/hooks/use-elapsed-timer";
 import { Loader2 } from "lucide-react";
@@ -88,11 +89,9 @@ function normalizeErrorMessage(message: string | undefined, fallback: string = D
   const baseMessage = trimmed.length > 0 ? trimmed : fallback;
   const normalizedSource = `${trimmed} ${baseMessage}`.toLowerCase();
 
-  if (
-    normalizedSource.includes("user aborted request") ||
-    normalizedSource.includes("unsupported transcript language")
-  ) {
-    return "Only YouTube videos with English transcripts are supported right now. Please choose a video that has English captions enabled.";
+  // Only handle user abort - show actual API errors for transcript issues
+  if (normalizedSource.includes("user aborted request")) {
+    return "Request cancelled";
   }
 
   return baseMessage;
@@ -222,6 +221,7 @@ export default function AnalyzePage() {
   }, [baseTopics]);
   const [isLoadingThemeTopics, setIsLoadingThemeTopics] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
+  const [switchingToLanguage, setSwitchingToLanguage] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
@@ -653,7 +653,8 @@ export default function AnalyzePage() {
 
   const processVideo = useCallback(async (
     url: string,
-    selectedMode: TopicGenerationMode
+    selectedMode: TopicGenerationMode,
+    preferredLanguage?: string
   ) => {
     const currentRemaining = rateLimitInfo.remaining;
     try {
@@ -708,7 +709,10 @@ export default function AnalyzePage() {
       }
 
       // Check cache first before fetching transcript/metadata unless forced regeneration
-      if (!forceRegenerate) {
+      // Skip cache when a specific non-English language is requested (user wants a different native transcript)
+      const shouldSkipCacheForLanguage = preferredLanguage && preferredLanguage !== 'en';
+      
+      if (!forceRegenerate && !shouldSkipCacheForLanguage) {
         const cacheResponse = await fetch("/api/check-video-cache", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -781,6 +785,7 @@ export default function AnalyzePage() {
               setPageState('IDLE');
               setLoadingStage(null);
               setProcessingStartTime(null);
+              setSwitchingToLanguage(null);
 
               backgroundOperation(
                 'load-cached-themes',
@@ -821,6 +826,38 @@ export default function AnalyzePage() {
                 }
               );
 
+              // Fetch available transcript languages for cached videos
+              // This enables the language selector dropdown to show all available native languages
+              // NOTE: Only update availableLanguages, preserve the cached language value
+              backgroundOperation(
+                'fetch-available-languages',
+                async () => {
+                  const langResponse = await fetch("/api/transcript", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url, lang: 'en' }),
+                  });
+
+                  if (langResponse.ok) {
+                    const langData = await langResponse.json();
+                    const availableLanguages = langData.availableLanguages;
+                    
+                    if (availableLanguages) {
+                      setVideoInfo(prev => prev ? {
+                        ...prev,
+                        // Preserve the cached language - only update availableLanguages
+                        // If no cached language exists, use the API response as fallback
+                        language: prev.language ?? langData.language,
+                        availableLanguages: availableLanguages ?? prev.availableLanguages
+                      } : null);
+                    }
+                  }
+                },
+                (error) => {
+                  console.error("Failed to fetch available languages:", error);
+                }
+              );
+
               // Auto-start takeaways generation if not available
               if (!cacheData.summary) {
                 setShowChatTab(true);
@@ -835,7 +872,8 @@ export default function AnalyzePage() {
                       body: JSON.stringify({
                         transcript: sanitizedTranscript,
                         videoInfo: cacheData.videoInfo,
-                        videoId: extractedVideoId
+                        videoId: extractedVideoId,
+                        targetLanguage: cacheData.videoInfo?.language
                       }),
                     });
 
@@ -906,7 +944,7 @@ export default function AnalyzePage() {
       const transcriptPromise = fetch("/api/transcript", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, lang: preferredLanguage }),
         signal: transcriptController.signal,
       }).catch(err => {
         if (err.name === 'AbortError') {
@@ -945,9 +983,13 @@ export default function AnalyzePage() {
       }
 
       let fetchedTranscript;
+      let language: string | undefined;
+      let availableLanguages: string[] | undefined;
       try {
         const data = await transcriptRes.json();
         fetchedTranscript = data.transcript;
+        language = data.language;
+        availableLanguages = data.availableLanguages;
       } catch (jsonError) {
         if (jsonError instanceof Error && jsonError.name === 'AbortError') {
           throw new Error("Transcript processing timed out. The video may be too long. Please try again.");
@@ -964,7 +1006,12 @@ export default function AnalyzePage() {
         try {
           const videoInfoData = await videoInfoRes.json();
           if (videoInfoData && !videoInfoData.error) {
-            setVideoInfo(videoInfoData);
+            fetchedVideoInfo = {
+              ...videoInfoData,
+              language,
+              availableLanguages,
+            };
+            setVideoInfo(fetchedVideoInfo);
             const rawDuration = videoInfoData?.duration;
             const numericDuration =
               typeof rawDuration === "number"
@@ -975,11 +1022,14 @@ export default function AnalyzePage() {
             if (numericDuration && !Number.isNaN(numericDuration) && numericDuration > 0) {
               setVideoDuration(numericDuration);
             }
-            fetchedVideoInfo = videoInfoData;
           }
         } catch (error) {
           console.error("Failed to parse video info:", error);
         }
+      }
+      // If we didn't get video info from the separate endpoint, try to use what we have, but update the languages
+      if (!fetchedVideoInfo) {
+        setVideoInfo(prev => prev ? { ...prev, language, availableLanguages } : null);
       }
 
       // Move to understanding stage
@@ -994,7 +1044,8 @@ export default function AnalyzePage() {
           videoTitle: fetchedVideoInfo?.title,
           videoDescription: fetchedVideoInfo?.description,
           channelName: fetchedVideoInfo?.author,
-          tags: fetchedVideoInfo?.tags
+          tags: fetchedVideoInfo?.tags,
+          language: fetchedVideoInfo?.language
         }),
       })
         .then(res => {
@@ -1048,7 +1099,8 @@ export default function AnalyzePage() {
         body: JSON.stringify({
           transcript: normalizedTranscriptData,
           videoInfo: fetchedVideoInfo,
-          videoId: extractedVideoId
+          videoId: extractedVideoId,
+          targetLanguage: fetchedVideoInfo?.language
         }),
         signal: takeawaysController.signal,
       });
@@ -1205,7 +1257,9 @@ export default function AnalyzePage() {
                 title: `YouTube Video ${extractedVideoId}`,
                 author: 'Unknown',
                 duration: 0,
-                thumbnail: ''
+                thumbnail: '',
+                language,
+                availableLanguages
               },
               transcript: normalizedTranscriptData,
               topics: generatedTopics,
@@ -1235,7 +1289,8 @@ export default function AnalyzePage() {
             body: JSON.stringify({
               transcript: normalizedTranscriptData,
               topics: generatedTopics,
-              videoTitle: fetchedVideoInfo?.title
+              videoTitle: fetchedVideoInfo?.title,
+              language: fetchedVideoInfo?.language
             }),
           });
 
@@ -1316,6 +1371,7 @@ export default function AnalyzePage() {
       setGenerationStartTime(null);
       setProcessingStartTime(null);
       setIsGeneratingTakeaways(false);
+      setSwitchingToLanguage(null);
     }
   }, [
     rateLimitInfo.remaining,
@@ -1807,13 +1863,19 @@ export default function AnalyzePage() {
           )}
           <div className="flex flex-col items-center text-center">
             <Loader2 className="mb-3.5 h-7 w-7 animate-spin text-primary" />
-            <p className="text-sm font-medium text-slate-700">Analyzing video and generating highlight reels</p>
-            <p className="mt-1.5 text-xs text-slate-500">
-              {loadingStage === 'fetching' && 'Fetching transcript...'}
-              {loadingStage === 'understanding' && 'Fetching transcript...'}
-              {loadingStage === 'generating' && `Creating highlight reels... (${elapsedTime} seconds)`}
-              {loadingStage === 'processing' && `Processing and matching quotes... (${processingElapsedTime} seconds)`}
+            <p className="text-sm font-medium text-slate-700">
+              {switchingToLanguage
+                ? `Switching to ${getLanguageName(switchingToLanguage)}...`
+                : 'Analyzing video and generating highlight reels'}
             </p>
+            {!switchingToLanguage && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                {loadingStage === 'fetching' && 'Fetching transcript...'}
+                {loadingStage === 'understanding' && 'Fetching transcript...'}
+                {loadingStage === 'generating' && `Creating highlight reels... (${elapsedTime} seconds)`}
+                {loadingStage === 'processing' && `Processing and matching quotes... (${processingElapsedTime} seconds)`}
+              </p>
+            )}
           </div>
           <div className="mt-10 w-full max-w-2xl">
             <LoadingContext
@@ -1966,7 +2028,26 @@ export default function AnalyzePage() {
                   onRequestSignIn={handleAuthRequired}
                   selectedLanguage={selectedLanguage}
                   onRequestTranslation={translateWithContext}
-                  onLanguageChange={handleLanguageChange}
+                  onLanguageChange={(langCode) => {
+                    // Check if this is a request for a native transcript
+                    const availableLanguages = videoInfo?.availableLanguages || [];
+                    if (langCode && availableLanguages.includes(langCode)) {
+                      // It's a native language request
+                      if (videoInfo?.language !== langCode) {
+                         // Only re-fetch if it's different from current
+                         // Set language switching state for loading indicator
+                         setSwitchingToLanguage(langCode);
+                         processVideo(normalizedUrl, mode, langCode);
+                         // Clear any translation override
+                         handleLanguageChange(null);
+                      }
+                    } else {
+                      // It's a translation request
+                      handleLanguageChange(langCode);
+                    }
+                  }}
+                  availableLanguages={videoInfo?.availableLanguages}
+                  currentSourceLanguage={videoInfo?.language}
                   onRequestExport={handleRequestExport}
                   exportButtonState={exportButtonState}
                 />

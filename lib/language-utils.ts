@@ -13,11 +13,27 @@ export const SUPPORTED_LANGUAGES = [
  * @param code - Language code (e.g., 'zh-CN', 'ja', 'fr')
  * @returns Natural language name (e.g., 'Simplified Chinese', 'Japanese', 'French')
  */
-export function getLanguageName(code: string): string {
-  const language = SUPPORTED_LANGUAGES.find((lang) => lang.code === code);
-  if (!language) {
-    return 'English'; // Default fallback
+export function getLanguageName(code: string | null | undefined): string {
+  // Guard against null/undefined - return English as safe default
+  if (!code) {
+    return 'English';
   }
 
-  return language.name;
+  const language = SUPPORTED_LANGUAGES.find((lang) => lang.code === code);
+  if (language) {
+    return language.name;
+  }
+
+  // Try to get display name using Intl API for unsupported codes
+  try {
+    const displayName = new Intl.DisplayNames(['en'], { type: 'language' }).of(code);
+    if (displayName && displayName !== code) {
+      return displayName;
+    }
+  } catch {
+    // Intl API not available or invalid code
+  }
+
+  // Fallback to uppercase code
+  return code.toUpperCase();
 }

@@ -1,4 +1,4 @@
-const PRIMARY_FALLBACKS = [
+export const PRIMARY_FALLBACKS = [
   "What evidence backs the main claim?",
   "How do the key steps connect?",
   "Why does this insight matter now?",
@@ -6,14 +6,23 @@ const PRIMARY_FALLBACKS = [
   "How can I apply this idea today?"
 ] as const;
 
-const SUPPLEMENTAL_FALLBACKS = [
+export const SUPPLEMENTAL_FALLBACKS = [
   "Which detail should I double-check in the transcript?",
   "Where does the speaker justify this idea?"
 ] as const;
 
-const CYCLIC_FILLERS = [
+export const CYCLIC_FILLERS = [
   "What detail should I revisit in the transcript?",
   "Which statement deserves closer scrutiny?"
+] as const;
+
+/**
+ * All fallback questions combined for translation purposes
+ */
+export const ALL_FALLBACK_QUESTIONS = [
+  ...PRIMARY_FALLBACKS,
+  ...SUPPLEMENTAL_FALLBACKS,
+  ...CYCLIC_FILLERS,
 ] as const;
 
 function normalize(items?: Iterable<string>): Set<string> {

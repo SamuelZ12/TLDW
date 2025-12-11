@@ -18,43 +18,51 @@ interface TopicCardProps {
 
 export function TopicCard({ topic, isSelected, onClick, topicIndex, onPlayTopic, videoId, selectedLanguage = null, onRequestTranslation }: TopicCardProps) {
   const topicColor = getTopicHSLColor(topicIndex, videoId);
-  const [translatedTitle, setTranslatedTitle] = useState<string | null>(topic.translatedTitle || null);
+  const [translatedTitle, setTranslatedTitle] = useState<string | null>(null);
   const [isLoadingTranslation, setIsLoadingTranslation] = useState(false);
 
-  // Request translation when language is selected and not already available
+  // Single consolidated effect to handle translation when language or topic changes
+  // This fixes the race condition where separate effects could run out of order
   useEffect(() => {
-    const translationEnabled = selectedLanguage !== null;
-    if (translationEnabled && !translatedTitle && !isLoadingTranslation && onRequestTranslation) {
-      setIsLoadingTranslation(true);
-      // Cache key MUST include the source text, not the ephemeral topic id
-      // Topic ids like "topic-0" are reused across theme changes which caused
-      // collisions and stale translations bleeding across themes.
-      const cacheKey = `topic-title:${selectedLanguage}:${topic.title}`;
-      onRequestTranslation(topic.title, cacheKey, 'topic')
-        .then(translation => {
-          setTranslatedTitle(translation);
-        })
-        .catch(error => {
-          console.error('Translation failed for topic:', topic.id, error);
-        })
-        .finally(() => {
-          setIsLoadingTranslation(false);
-        });
+    // Always reset translation state when dependencies change
+    setTranslatedTitle(null);
+    setIsLoadingTranslation(false);
+
+    // No translation needed if no language selected or no translation handler
+    if (!selectedLanguage || !onRequestTranslation) {
+      return;
     }
-  }, [selectedLanguage, translatedTitle, isLoadingTranslation, onRequestTranslation, topic.title, topic.id]);
 
-  // Clear translation when language changes
-  useEffect(() => {
-    setTranslatedTitle(topic.translatedTitle || null);
-    setIsLoadingTranslation(false);
-  }, [selectedLanguage, topic.translatedTitle]);
+    // Request translation
+    setIsLoadingTranslation(true);
+    
+    // Cache key includes source text to avoid collisions when topic ids are reused
+    const cacheKey = `topic-title:${selectedLanguage}:${topic.title}`;
+    
+    let isCancelled = false;
+    
+    onRequestTranslation(topic.title, cacheKey, 'topic')
+      .then(translation => {
+        if (!isCancelled) {
+          setTranslatedTitle(translation);
+        }
+      })
+      .catch(error => {
+        if (!isCancelled) {
+          console.error('Translation failed for topic:', topic.id, error);
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingTranslation(false);
+        }
+      });
 
-  // Also clear translation state when the topic content changes (e.g., switching themes)
-  // This ensures we don't show a stale translation from a previous theme for a reused topic id.
-  useEffect(() => {
-    setTranslatedTitle(topic.translatedTitle || null);
-    setIsLoadingTranslation(false);
-  }, [topic.title]);
+    // Cleanup function to handle component unmount or dependency changes
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedLanguage, onRequestTranslation, topic.title, topic.id]);
 
   const handleClick = () => {
     onClick();

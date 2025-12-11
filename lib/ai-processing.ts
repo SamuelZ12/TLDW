@@ -15,6 +15,8 @@ import { generateAIResponse } from '@/lib/ai-client';
 import { getProviderKey } from '@/lib/ai-providers';
 import { topicGenerationSchema } from '@/lib/schemas';
 import { parseTimestampRange } from '@/lib/timestamp-utils';
+import { getLanguageName } from '@/lib/language-utils';
+import { repairJson } from '@/lib/json-utils';
 import { z } from 'zod';
 
 interface ParsedTopic {
@@ -43,6 +45,7 @@ interface GenerateTopicsOptions {
   includeCandidatePool?: boolean;
   mode?: TopicGenerationMode;
   proModel?: string;
+  language?: string;
 }
 
 interface TranscriptChunk {
@@ -203,13 +206,21 @@ function buildChunkPrompt(
   chunk: TranscriptChunk,
   maxCandidates: number,
   videoInfo?: Partial<VideoInfo>,
-  theme?: string
+  theme?: string,
+  language?: string
 ): string {
   const transcript = formatTranscriptWithTimestamps(chunk.segments);
   const chunkWindow = `[${formatTime(chunk.start)}-${formatTime(chunk.end)}]`;
   const videoInfoBlock = formatVideoInfoForPrompt(videoInfo);
   const themeInstruction = theme
     ? `  <item>Focus exclusively on material that clearly expresses the theme "${theme}". Skip anything unrelated.</item>\n`
+    : '';
+
+  const languageInstruction = language
+    ? (() => {
+        const langName = getLanguageName(language);
+        return `\n<languageRequirement>IMPORTANT: You MUST generate all content in ${langName}. All titles and quotes must be in ${langName} to match the transcript language.</languageRequirement>\n`;
+      })()
     : '';
 
   // Adapt duration guidance to short chunks (e.g., short videos)
@@ -223,7 +234,7 @@ function buildChunkPrompt(
   }
 
   return `<task>
-<role>You are an expert content strategist reviewing a portion of a video transcript.</role>
+<role>You are an expert content strategist reviewing a portion of a video transcript.</role>${languageInstruction}
 <context>
 ${videoInfoBlock}
 Chunk window: ${chunkWindow}
@@ -249,7 +260,8 @@ function buildReducePrompt(
   maxTopics: number,
   videoInfo?: Partial<VideoInfo>,
   minTopics: number = 0,
-  segmentLabel?: string
+  segmentLabel?: string,
+  language?: string
 ): string {
   const videoInfoBlock = formatVideoInfoForPrompt(videoInfo);
   const segmentContext = segmentLabel
@@ -260,6 +272,13 @@ function buildReducePrompt(
     safeMin > 0
       ? `Return between ${safeMin} and ${maxTopics} standout highlights. If fewer than ${safeMin} candidates truly meet the quality bar, respond with only the clips that do—even if that's less. Never exceed ${maxTopics}.`
       : `Return up to ${maxTopics} standout highlights that maximize diversity, insight, and narrative punch while reusing the provided quotes. It's acceptable to send back a single clip if only one deserves the spotlight.`;
+  const languageInstruction = language
+    ? (() => {
+        const langName = getLanguageName(language);
+        return `\n<languageRequirement>IMPORTANT: You MUST generate all titles in ${langName} to match the transcript language. Keep quote text and timestamps unchanged.</languageRequirement>\n`;
+      })()
+    : '';
+
   const candidateBlock = candidates
     .map((candidate, idx) => {
       const timestamp = candidate.quote?.timestamp ?? '[??:??-??:??]';
@@ -276,7 +295,7 @@ Quote text: ${quoteText}`;
     .join('\n\n');
 
   return `<task>
-<role>You are a senior editorial strategist assembling the final highlight reel lineup.</role>
+<role>You are a senior editorial strategist assembling the final highlight reel lineup.</role>${languageInstruction}
 <context>
 ${videoInfoBlock}
 You have ${candidates.length} candidate quotes extracted from the transcript.
@@ -315,6 +334,7 @@ async function reduceCandidateSubset(
     fastModel: string;
     videoInfo?: Partial<VideoInfo>;
     segmentLabel?: string;
+    language?: string;
   }
 ): Promise<ParsedTopic[]> {
   if (!candidates || candidates.length === 0) {
@@ -332,7 +352,8 @@ async function reduceCandidateSubset(
     constrainedMax,
     options.videoInfo,
     constrainedMin,
-    options.segmentLabel
+    options.segmentLabel,
+    options.language
   );
 
   const selectionSchema = createReduceSelectionSchema(constrainedMax);
@@ -471,7 +492,8 @@ async function runSinglePassTopicGeneration(
   transcriptWithTimestamps: string,
   fullText: string,
   model: string,
-  theme?: string
+  theme?: string,
+  language?: string
 ): Promise<ParsedTopic[]> {
   // Determine overall video duration to adapt duration guidance for short videos
   const totalDuration =
@@ -494,8 +516,15 @@ async function runSinglePassTopicGeneration(
       ? `<criterion name="Duration">Choose a contiguous passage up to ${Math.round(totalDuration)} seconds that stands alone.</criterion>`
       : '<criterion name="Duration" targetSeconds="60">Choose a contiguous passage around 60 seconds long (aim for 45-75 seconds) so the highlight provides full context.</criterion>';
 
+  const languageInstruction = language
+    ? (() => {
+        const langName = getLanguageName(language);
+        return `\n<languageRequirement>IMPORTANT: You MUST generate all content in ${langName}. All titles, quotes, and themes must be in ${langName} to match the transcript language.</languageRequirement>\n`;
+      })()
+    : '';
+
   const prompt = `<task>
-<role>You are an expert content strategist.</role>
+<role>You are an expert content strategist.</role>${languageInstruction}
 <goal>Analyze the provided video transcript and description to create between one and five distinct highlight reels that let a busy, intelligent viewer absorb the video's most valuable insights in minutes.</goal>
 <audience>The audience is forward-thinking and curious. They have a short attention span and expect contrarian insights, actionable mental models, and bold predictions rather than generic advice.</audience>
 <instructions>
@@ -550,28 +579,35 @@ ${transcriptWithTimestamps}
     try {
       parsedResponse = JSON.parse(response);
     } catch (error) {
-      console.warn('Failed to parse single-pass topic response as JSON', error);
+      // Try to repair JSON before falling back (handles truncated/malformed responses)
+      try {
+        const repairedResponse = repairJson(response);
+        parsedResponse = JSON.parse(repairedResponse);
+        console.log('Successfully repaired malformed JSON response');
+      } catch (repairError) {
+        console.warn('Failed to parse single-pass topic response as JSON (repair also failed)', error);
 
-      // For themed requests, avoid returning generic fallbacks that do not respect the theme.
-      if (theme) {
-        console.warn(
-          `[runSinglePassTopicGeneration] Skipping fallback after parse failure because a theme was requested: "${theme}"`
-        );
-        return [];
-      }
-
-      // Dynamic fallback: if total duration is known and short, use the full video window
-      const fallbackEnd = totalDuration > 0 ? Math.min(60, Math.round(totalDuration)) : 30;
-      const fallbackLabel = isVeryShort || isShort ? 'Full Video' : 'Full Video';
-      return [
-        {
-          title: fallbackLabel,
-          quote: {
-            timestamp: `[00:00-${formatTime(fallbackEnd)}]`,
-            text: fullText.substring(0, 200)
-          }
+        // For themed requests, avoid returning generic fallbacks that do not respect the theme.
+        if (theme) {
+          console.warn(
+            `[runSinglePassTopicGeneration] Skipping fallback after parse failure because a theme was requested: "${theme}"`
+          );
+          return [];
         }
-      ];
+
+        // Dynamic fallback: if total duration is known and short, use the full video window
+        const fallbackEnd = totalDuration > 0 ? Math.min(60, Math.round(totalDuration)) : 30;
+        const fallbackLabel = isVeryShort || isShort ? 'Full Video' : 'Full Video';
+        return [
+          {
+            title: fallbackLabel,
+            quote: {
+              timestamp: `[00:00-${formatTime(fallbackEnd)}]`,
+              text: fullText.substring(0, 200)
+            }
+          }
+        ];
+      }
     }
 
     if (!Array.isArray(parsedResponse)) {
@@ -762,7 +798,8 @@ export async function generateTopicsFromTranscript(
     excludeTopicKeys,
     includeCandidatePool,
     mode = 'smart',
-    proModel = PRO_MODEL_DEFAULT
+    proModel = PRO_MODEL_DEFAULT,
+    language
   } = options;
 
   const providerKey = getProviderKey();
@@ -793,7 +830,8 @@ export async function generateTopicsFromTranscript(
       transcriptWithTimestamps,
       fullText,
       singlePassModel,
-      theme
+      theme,
+      language
     );
 
     topicsArray = smartTopics.filter((topic) => {
@@ -821,7 +859,8 @@ export async function generateTopicsFromTranscript(
       transcriptWithTimestamps,
       fullText,
       fastModel,
-      theme
+      theme,
+      language
     );
     const filteredFullTranscriptTopics = fullTranscriptTopics.filter(
       (topic) => {
@@ -858,7 +897,8 @@ export async function generateTopicsFromTranscript(
             chunk,
             CHUNK_MAX_CANDIDATES,
             videoInfo,
-            theme
+            theme,
+            language
           );
 
           try {
@@ -985,7 +1025,8 @@ export async function generateTopicsFromTranscript(
         maxTopics: segment.maxTopics,
         fastModel,
         videoInfo,
-        segmentLabel: segment.label
+        segmentLabel: segment.label,
+        language
       })
     );
 
@@ -1014,7 +1055,8 @@ export async function generateTopicsFromTranscript(
       transcriptWithTimestamps,
       fullText,
       isSmartMode ? smartModeModel : fastModel,
-      theme
+      theme,
+      language
     );
     topicsArray = singlePassTopics.filter((topic) => {
       if (!topic.quote?.timestamp || !topic.quote.text) return false;
@@ -1348,7 +1390,8 @@ function promoteDistinctThemes(themes: string[], primaryCount = 3): string[] {
 export async function generateThemesFromTranscript(
   transcript: TranscriptSegment[],
   videoInfo?: Partial<VideoInfo>,
-  model: string = FAST_MODEL_DEFAULT
+  model: string = FAST_MODEL_DEFAULT,
+  language?: string
 ): Promise<string[]> {
   if (!transcript || transcript.length === 0) {
     return [];
@@ -1357,8 +1400,15 @@ export async function generateThemesFromTranscript(
   const transcriptWithTimestamps = formatTranscriptWithTimestamps(transcript);
   const videoInfoBlock = formatVideoInfoForPrompt(videoInfo);
 
+  const languageInstruction = language
+    ? (() => {
+        const langName = getLanguageName(language);
+        return `\n\n**IMPORTANT:** You MUST generate all keywords in ${langName} to match the transcript language.\n`;
+      })()
+    : '';
+
   const prompt = `## Persona
-You are an expert content analyst and a specialist in semantic keyword extraction. Your goal is to distill complex information into its most essential conceptual components for easy discovery.
+You are an expert content analyst and a specialist in semantic keyword extraction. Your goal is to distill complex information into its most essential conceptual components for easy discovery.${languageInstruction}
 
 ## Objective
 Analyze the provided video transcript to identify and extract its core concepts. Generate a list of 5-7 keywords or short key phrases that precisely capture the main topics discussed without overlapping. These keywords will be used to help potential viewers quickly understand the video's specific focus and determine its relevance to their interests.

@@ -21,7 +21,7 @@ function respondWithNoCredits(
 
 async function handler(request: NextRequest) {
   try {
-    const { url } = await request.json();
+    const { url, lang } = await request.json();
 
     if (!url) {
       return respondWithNoCredits({ error: 'YouTube URL is required' }, 400);
@@ -55,7 +55,9 @@ async function handler(request: NextRequest) {
 
       return NextResponse.json({
         videoId,
-        transcript: transformedTranscript
+        transcript: transformedTranscript,
+        language: mockData.lang || 'en',
+        availableLanguages: mockData.availableLangs || ['en']
       });
     }
 
@@ -65,9 +67,29 @@ async function handler(request: NextRequest) {
     }
 
     let transcriptSegments: any[] | null = null;
+    let language: string | undefined;
+    let availableLanguages: string[] | undefined;
+
     try {
+      const apiUrl = new URL('https://api.supadata.ai/v1/transcript');
+      apiUrl.searchParams.set('url', `https://www.youtube.com/watch?v=${videoId}`);
+      if (lang) {
+        apiUrl.searchParams.set('lang', lang);
+      } else {
+        // Default to English if not specified, but this might need revisiting if we want auto-detection without preference
+        // Supadata defaults to 'en' if not specified anyway, or auto-detects.
+        // If we want auto-detect, we should probably not send lang unless the user picked one.
+        // However, the original code hardcoded `&lang=en`.
+        // To support "Any language", we can omit it, OR set it to the requested one.
+        // For backward compatibility/consistency, maybe default to 'en' only if absolutely needed,
+        // but removing it allows Supadata to return whatever is native.
+        // BUT, Supadata docs say "lang: Preferred language code... If video does not have transcript in preferred language, endpoint will return transcript in first available language".
+        // So passing 'en' is safe as a default preference.
+        apiUrl.searchParams.set('lang', 'en');
+      }
+
       const response = await fetch(
-        `https://api.supadata.ai/v1/transcript?url=https://www.youtube.com/watch?v=${videoId}&lang=en`,
+        apiUrl.toString(),
         {
           method: 'GET',
           headers: {
@@ -96,7 +118,6 @@ async function handler(request: NextRequest) {
         responseText || null
       ].filter(Boolean) as string[];
 
-      const combinedErrorMessage = combinedErrorFields.join(' ').toLowerCase();
       const hasSupadataError =
         typeof parsedBody?.error === 'string' &&
         parsedBody.error.trim().length > 0;
@@ -113,11 +134,6 @@ async function handler(request: NextRequest) {
           ? parsedBody.details.trim()
           : 'No transcript is available for this video.';
 
-      const unsupportedLanguage =
-        combinedErrorMessage.includes('user aborted request') ||
-        combinedErrorMessage.includes('language') ||
-        combinedErrorMessage.includes('unsupported transcript language');
-
       if (!response.ok) {
         if (response.status === 404) {
           return respondWithNoCredits(
@@ -126,17 +142,6 @@ async function handler(request: NextRequest) {
                 'No transcript/captions available for this video. The video may not have subtitles enabled.'
             },
             404
-          );
-        }
-
-        if (unsupportedLanguage) {
-          return respondWithNoCredits(
-            {
-              error: 'Unsupported transcript language',
-              details:
-                'We currently support only YouTube videos with English transcripts. Please choose a video that has English captions enabled.'
-            },
-            400
           );
         }
 
@@ -149,19 +154,13 @@ async function handler(request: NextRequest) {
       }
 
       if (response.status === 206 || hasSupadataError) {
-        const status = unsupportedLanguage ? 400 : 404;
-        const errorPayload = unsupportedLanguage
-          ? {
-            error: 'Unsupported transcript language',
-            details:
-              'We currently support only YouTube videos with English transcripts. Please choose a video that has English captions enabled.'
-          }
-          : {
+        return respondWithNoCredits(
+          {
             error: supadataStatusMessage,
             details: supadataDetails
-          };
-
-        return respondWithNoCredits(errorPayload, status);
+          },
+          404
+        );
       }
 
       const candidateContent = Array.isArray(parsedBody?.content)
@@ -183,62 +182,11 @@ async function handler(request: NextRequest) {
       }
 
       transcriptSegments = candidateContent;
+      language = typeof parsedBody?.lang === 'string' ? parsedBody.lang : undefined;
+      availableLanguages = Array.isArray(parsedBody?.availableLangs)
+        ? parsedBody.availableLangs.filter((l): l is string => typeof l === 'string')
+        : undefined;
 
-      const reportedLanguages = transcriptSegments
-        .map((item) => {
-          if (item && typeof item === 'object') {
-            if (typeof (item as any).lang === 'string')
-              return (item as any).lang;
-            if (typeof (item as any).language === 'string')
-              return (item as any).language;
-          }
-          return null;
-        })
-        .filter(
-          (lang): lang is string =>
-            typeof lang === 'string' && lang.trim().length > 0
-        )
-        .map((lang) => lang.trim().toLowerCase());
-
-      const hasReportedEnglish = reportedLanguages.some(
-        (lang) => lang === 'en' || lang.startsWith('en-')
-      );
-      const hasReportedLanguages = reportedLanguages.length > 0;
-
-      const sampleText = transcriptSegments
-        .slice(0, 120)
-        .map((item) => {
-          if (!item || typeof item !== 'object') return '';
-          if (typeof (item as any).text === 'string') return (item as any).text;
-          if (typeof (item as any).content === 'string')
-            return (item as any).content;
-          return '';
-        })
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      const nonSpaceLength = sampleText.replace(/\s/g, '').length;
-      const englishLetterCount = (sampleText.match(/[A-Za-z]/g) ?? []).length;
-      const cjkCharacterPresent = /[\u3400-\u9FFF]/.test(sampleText);
-      const englishRatio =
-        nonSpaceLength > 0 ? englishLetterCount / nonSpaceLength : 0;
-
-      const appearsNonEnglish =
-        (hasReportedLanguages && !hasReportedEnglish) ||
-        (cjkCharacterPresent && englishRatio < 0.2) ||
-        (!hasReportedLanguages && englishRatio < 0.1 && nonSpaceLength > 0);
-
-      if (appearsNonEnglish) {
-        return respondWithNoCredits(
-          {
-            error: 'Unsupported transcript language',
-            details:
-              'We currently support only YouTube videos with English transcripts. Please choose a video that has English captions enabled.'
-          },
-          400
-        );
-      }
     } catch (fetchError) {
       const errorMessage =
         fetchError instanceof Error ? fetchError.message : '';
@@ -288,7 +236,9 @@ async function handler(request: NextRequest) {
 
     return NextResponse.json({
       videoId,
-      transcript: transformedTranscript
+      transcript: transformedTranscript,
+      language,
+      availableLanguages
     });
   } catch (error) {
     console.error('[TRANSCRIPT] Error processing transcript:', {

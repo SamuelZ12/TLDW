@@ -34,7 +34,8 @@ async function handler(request: NextRequest) {
       includeCandidatePool,
       excludeTopicKeys,
       videoInfo,
-      mode
+      mode,
+      language
     } = validatedData;
 
     // Use the shared function to generate topics
@@ -45,7 +46,8 @@ async function handler(request: NextRequest) {
         videoInfo,
         includeCandidatePool,
         excludeTopicKeys: new Set(excludeTopicKeys ?? []),
-        mode
+        mode,
+        language
       }
     );
 
