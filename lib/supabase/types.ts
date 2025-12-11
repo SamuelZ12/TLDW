@@ -21,6 +21,7 @@ export interface ProfilesRow {
   cancel_at_period_end: boolean | null;
   topic_generation_mode: 'smart' | 'fast' | null;
   topup_credits: number | null;
+  newsletter_subscribed: boolean | null;
   created_at: string | null;
   updated_at: string | null;
 }
