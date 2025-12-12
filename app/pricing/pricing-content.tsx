@@ -189,12 +189,12 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
                 </div>
                 <div className="flex items-baseline gap-2 whitespace-nowrap mb-0">
                   {billingPeriod === 'annual' && (
-                    <span className="text-[32px] font-semibold text-muted-foreground line-through">
-                      $10
+                    <span className="text-[20px] font-semibold text-muted-foreground line-through">
+                      $9.99
                     </span>
                   )}
                   <span className="text-[32px] font-semibold">
-                    {billingPeriod === 'annual' ? '$8.33' : '$10'}
+                    {billingPeriod === 'annual' ? '$8.33' : '$9.99'}
                   </span>
                   <span className="text-[14px] text-muted-foreground">
                     / month
@@ -248,7 +248,7 @@ export default function PricingContent({ isAuthenticated, tier, status, cancelAt
                 </div>
                 <div className="flex items-baseline gap-2 whitespace-nowrap mb-0">
                    <span className="text-[32px] font-semibold">
-                    $3
+                    $2.99
                   </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-0">

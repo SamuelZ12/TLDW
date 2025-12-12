@@ -257,11 +257,11 @@ async function handler(req: NextRequest) {
           statusCode = 402;
         } else if (tier === 'free') {
           upgradeMessage =
-            "You've used all 3 free videos this month. Upgrade to Pro for 100 videos/month ($10/mo).";
+            "You've used all 3 free videos this month. Upgrade to Pro for 100 videos/month ($9.99/mo).";
         } else if (tier === 'pro') {
           if (generationDecision.requiresTopupPurchase) {
             upgradeMessage =
-              'You have used all Pro videos this period. Purchase a Top-Up (+20 videos for $3) or wait for your next billing cycle.';
+              'You have used all Pro videos this period. Purchase a Top-Up (+20 videos for $2.99) or wait for your next billing cycle.';
           } else {
             upgradeMessage =
               'You have used your Pro allowance. Wait for your next billing cycle to reset.';

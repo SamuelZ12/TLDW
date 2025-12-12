@@ -41,13 +41,13 @@ export function getStripeClient(): Stripe {
  * These are configured in .env.local and created in the Stripe Dashboard
  */
 export const STRIPE_PRICE_IDS = {
-  /** Pro subscription: $10/month recurring */
+  /** Pro subscription: $9.99/month recurring */
   PRO_SUBSCRIPTION: process.env.STRIPE_PRO_PRICE_ID!,
 
-  /** Pro subscription: discounted annual option */
+  /** Pro subscription: discounted annual option ($99.99/year) */
   PRO_SUBSCRIPTION_ANNUAL: process.env.STRIPE_PRO_ANNUAL_PRICE_ID!,
 
-  /** Top-Up credits: $3 one-time for +20 video credits (USD) */
+  /** Top-Up credits: $2.99 one-time for +20 video credits (USD) */
   TOPUP_CREDITS: process.env.STRIPE_TOPUP_PRICE_ID!,
 
   /** Top-Up credits: ¥20 one-time for +20 video credits (CNY) - Optional for WeChat Pay */

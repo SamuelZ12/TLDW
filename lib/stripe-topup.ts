@@ -16,7 +16,7 @@ export interface TopupProcessingResult {
 }
 
 const DEFAULT_CREDITS = 20;
-const DEFAULT_AMOUNT_CENTS = 300;
+const DEFAULT_AMOUNT_CENTS = 299;
 const DUPLICATE_EVENT_CODE = '23505';
 
 function normalizePaymentIntentId(

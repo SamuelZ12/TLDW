@@ -77,7 +77,7 @@ function buildLimitExceededMessage(limitData?: LimitCheckResponse | null): strin
 
   if (limitData.tier === 'pro') {
     return limitData.requiresTopup
-      ? 'You have used all Pro videos this period. Purchase a Top-Up (+20 videos for $3) or wait for your next billing cycle.'
+      ? 'You have used all Pro videos this period. Purchase a Top-Up (+20 videos for $2.99) or wait for your next billing cycle.'
       : 'You have used your Pro allowance. Wait for your next billing cycle to reset.';
   }
 
