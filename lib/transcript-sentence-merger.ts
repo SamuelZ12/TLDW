@@ -6,6 +6,20 @@ const MAX_SENTENCE_DURATION_SECONDS = 24; // keep chunks short for navigation
 const MAX_SENTENCE_WORDS = 80;
 const MAX_SEGMENTS_PER_SENTENCE = 20;
 
+// Hoisted constants for performance
+const COMMON_TLDS = [
+  'com', 'org', 'net', 'edu', 'gov', 'co', 'io', 'ai', 'dev',
+  'txt', 'pdf', 'jpg', 'png', 'gif', 'doc', 'zip', 'html', 'js', 'ts'
+];
+const COMMON_ABBREVS = ['dr', 'mr', 'mrs', 'ms', 'vs', 'etc', 'inc', 'ltd', 'jr', 'sr'];
+
+// Regex constants
+const SENTENCE_PUNCTUATION_REGEX = /[.!?\u3002\uff01\uff1f\u203c\u2047\u2048]/g;
+const WHITESPACE_GLOBAL_REGEX = /\s+/g;
+const PUNCTUATION_OR_SPACE_REGEX = /[\s,;!?]/;
+const DIGIT_REGEX = /\d/;
+const NON_PERIOD_SENTENCE_ENDING_REGEX = /[!?\u3002\uff01\uff1f\u203c\u2047\u2048]$/;
+
 /**
  * Represents a merged sentence from multiple transcript segments
  */
@@ -17,7 +31,22 @@ export interface MergedSentence {
 }
 
 function countWords(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
+  if (!text) return 0;
+  // Use a more efficient counting method that avoids creating an array of strings
+  let count = 0;
+  let inWord = false;
+  const len = text.length;
+
+  for (let i = 0; i < len; i++) {
+    const isSpace = /\s/.test(text[i]);
+    if (isSpace) {
+      inWord = false;
+    } else if (!inWord) {
+      inWord = true;
+      count++;
+    }
+  }
+  return count;
 }
 
 function splitLongSentence(sentence: MergedSentence): MergedSentence[] {
@@ -31,7 +60,7 @@ function splitLongSentence(sentence: MergedSentence): MergedSentence[] {
   const pushChunk = (endIndex: number) => {
     if (chunkSegments.length === 0) return;
     chunks.push({
-      text: chunkSegments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim(),
+      text: chunkSegments.map((s) => s.text).join(' ').replace(WHITESPACE_GLOBAL_REGEX, ' ').trim(),
       startIndex: chunkStartIndex,
       endIndex,
       segments: [...chunkSegments],
@@ -81,23 +110,19 @@ function isSentenceEndingPeriod(text: string, periodIndex: number): boolean {
   const after = text.charAt(periodIndex + 1);
 
   // Decimal number: digit before and digit after (e.g., "2.2", "3.14")
-  if (/\d/.test(before) && /\d/.test(after)) {
+  if (DIGIT_REGEX.test(before) && DIGIT_REGEX.test(after)) {
     return false;
   }
 
   // Check for common TLDs and file extensions (e.g., ".com", ".org", ".txt")
   // Look at the next few characters after the period
   const afterPeriod = text.slice(periodIndex + 1, periodIndex + 5).toLowerCase();
-  const commonPatterns = [
-    'com', 'org', 'net', 'edu', 'gov', 'co', 'io', 'ai', 'dev',
-    'txt', 'pdf', 'jpg', 'png', 'gif', 'doc', 'zip', 'html', 'js', 'ts'
-  ];
 
-  for (const pattern of commonPatterns) {
+  for (const pattern of COMMON_TLDS) {
     // Check if pattern matches and is followed by space, punctuation, or end of string
     if (afterPeriod.startsWith(pattern)) {
       const charAfterPattern = text.charAt(periodIndex + 1 + pattern.length);
-      if (!charAfterPattern || /[\s,;!?]/.test(charAfterPattern)) {
+      if (!charAfterPattern || PUNCTUATION_OR_SPACE_REGEX.test(charAfterPattern)) {
         return false; // It's a TLD or file extension
       }
     }
@@ -105,9 +130,8 @@ function isSentenceEndingPeriod(text: string, periodIndex: number): boolean {
 
   // Common abbreviations (check 1-3 chars before period)
   const beforePeriod = text.slice(Math.max(0, periodIndex - 3), periodIndex).toLowerCase();
-  const commonAbbrevs = ['dr', 'mr', 'mrs', 'ms', 'vs', 'etc', 'inc', 'ltd', 'jr', 'sr'];
 
-  for (const abbrev of commonAbbrevs) {
+  for (const abbrev of COMMON_ABBREVS) {
     if (beforePeriod.endsWith(abbrev)) {
       return false;
     }
@@ -124,7 +148,7 @@ function endsWithSentence(text: string): boolean {
   const trimmed = text.trim();
 
   // Check for non-period sentence endings: question mark, exclamation, or Chinese/Japanese punctuation
-  if (/[!?\u3002\uff01\uff1f\u203c\u2047\u2048]$/.test(trimmed)) {
+  if (NON_PERIOD_SENTENCE_ENDING_REGEX.test(trimmed)) {
     return true;
   }
 
@@ -145,13 +169,12 @@ function findEarlyPunctuation(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return -1;
 
-  // Regex to find all potential sentence-ending punctuation
-  const sentencePunctuationRegex = /[.!?\u3002\uff01\uff1f\u203c\u2047\u2048]/g;
-
   // Find all punctuation positions
   const matches: number[] = [];
   let match;
-  while ((match = sentencePunctuationRegex.exec(trimmed)) !== null) {
+  // Reset lastIndex because regex is global and reused
+  SENTENCE_PUNCTUATION_REGEX.lastIndex = 0;
+  while ((match = SENTENCE_PUNCTUATION_REGEX.exec(trimmed)) !== null) {
     matches.push(match.index);
   }
 
@@ -179,7 +202,7 @@ function findEarlyPunctuation(text: string): number {
   const beforePunc = trimmed.slice(0, firstPuncIndex).trim();
 
   // Count words before punctuation
-  const wordsBefore = beforePunc ? beforePunc.split(/\s+/).length : 0;
+  const wordsBefore = countWords(beforePunc);
 
   // If 0-2 words before punctuation, this is early punctuation
   if (wordsBefore >= 0 && wordsBefore <= 2) {
@@ -197,13 +220,12 @@ function findLatePunctuation(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return -1;
 
-  // Regex to find all potential sentence-ending punctuation
-  const sentencePunctuationRegex = /[.!?\u3002\uff01\uff1f\u203c\u2047\u2048]/g;
-
   // Find all punctuation positions
   const matches: number[] = [];
   let match;
-  while ((match = sentencePunctuationRegex.exec(trimmed)) !== null) {
+  // Reset lastIndex because regex is global and reused
+  SENTENCE_PUNCTUATION_REGEX.lastIndex = 0;
+  while ((match = SENTENCE_PUNCTUATION_REGEX.exec(trimmed)) !== null) {
     matches.push(match.index);
   }
 
@@ -231,7 +253,7 @@ function findLatePunctuation(text: string): number {
   const afterPunc = trimmed.slice(lastPuncIndex + 1).trim();
 
   // Count words after punctuation
-  const wordsAfter = afterPunc ? afterPunc.split(/\s+/).length : 0;
+  const wordsAfter = countWords(afterPunc);
 
   // If 1-2 words after punctuation, we should split here
   if (wordsAfter >= 1 && wordsAfter <= 2) {
@@ -295,7 +317,7 @@ export function mergeTranscriptSegmentsIntoSentences(
 
       // Complete the current sentence
       merged.push({
-        text: currentSentence.join(' ').replace(/\s+/g, ' ').trim(),
+        text: currentSentence.join(' ').replace(WHITESPACE_GLOBAL_REGEX, ' ').trim(),
         startIndex,
         endIndex: i,
         segments: [...currentSegments]
@@ -333,7 +355,7 @@ export function mergeTranscriptSegmentsIntoSentences(
 
       // Complete the current sentence
       merged.push({
-        text: currentSentence.join(' ').replace(/\s+/g, ' ').trim(),
+        text: currentSentence.join(' ').replace(WHITESPACE_GLOBAL_REGEX, ' ').trim(),
         startIndex,
         endIndex: i,
         segments: [...currentSegments]
@@ -361,7 +383,7 @@ export function mergeTranscriptSegmentsIntoSentences(
     if (endsWithSentence(text)) {
       // Complete the current sentence
       merged.push({
-        text: currentSentence.join(' ').replace(/\s+/g, ' ').trim(),
+        text: currentSentence.join(' ').replace(WHITESPACE_GLOBAL_REGEX, ' ').trim(),
         startIndex,
         endIndex: i,
         segments: [...currentSegments]
@@ -376,7 +398,7 @@ export function mergeTranscriptSegmentsIntoSentences(
   // Handle remaining text that didn't end with sentence punctuation
   if (currentSentence.length > 0) {
     merged.push({
-      text: currentSentence.join(' ').replace(/\s+/g, ' ').trim(),
+      text: currentSentence.join(' ').replace(WHITESPACE_GLOBAL_REGEX, ' ').trim(),
       startIndex,
       endIndex: segments.length - 1,
       segments: [...currentSegments]
