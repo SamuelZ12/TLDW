@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 import { z } from 'zod';
-import { formatValidationError } from '@/lib/validation';
+import { formatValidationError, topicSchema } from '@/lib/validation';
 
 const DEFAULT_ANALYSIS_MODEL =
   process.env.AI_DEFAULT_MODEL ?? 'grok-4-fast-non-reasoning';
@@ -24,7 +24,7 @@ const saveAnalysisSchema = z.object({
     start: z.number(),
     duration: z.number()
   })),
-  topics: z.array(z.any()),
+  topics: z.array(topicSchema),
   summary: z.string().nullable().optional(),
   suggestedQuestions: z.array(z.string()).nullable().optional(),
   model: z.string().default(DEFAULT_ANALYSIS_MODEL)

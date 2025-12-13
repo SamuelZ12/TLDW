@@ -60,12 +60,15 @@ export const transcriptSchema = z.array(transcriptSegmentSchema)
 export const topicSchema = z.object({
   id: z.string().max(50),
   title: z.string().min(1).max(100),
+  translatedTitle: z.string().max(200).optional(),
   description: z.string().max(500).optional(),
+  translatedDescription: z.string().max(1000).optional(),
   duration: z.number().int().min(0),
   segments: z.array(z.object({
     start: z.number().min(0),
     end: z.number().min(0),
     text: z.string().max(10000),
+    translatedText: z.string().max(20000).optional(),
     startSegmentIdx: z.number().int().min(0).optional(),
     endSegmentIdx: z.number().int().min(0).optional(),
     startCharOffset: z.number().int().min(0).optional(),
@@ -74,9 +77,11 @@ export const topicSchema = z.object({
     confidence: z.number().min(0).max(1).optional()
   })).max(100),
   keywords: z.array(z.string()).optional(),
+  translatedKeywords: z.array(z.string()).optional(),
   quote: z.object({
     timestamp: z.string().regex(STRICT_TIMESTAMP_RANGE_REGEX),
-    text: z.string().max(5000)
+    text: z.string().max(5000),
+    translatedText: z.string().max(10000).optional()
   }).optional(),
   isCitationReel: z.boolean().optional(),
   autoPlay: z.boolean().optional()
@@ -123,8 +128,8 @@ export const videoAnalysisRequestSchema = z.object({
   theme: z.string().min(1).max(80).optional(),
   includeCandidatePool: z.boolean().optional(),
   excludeTopicKeys: z.array(z.string().min(1).max(500)).optional(),
-  summary: z.any().nullable().optional(),
-  suggestedQuestions: z.any().nullable().optional()
+  summary: z.string().nullable().optional(),
+  suggestedQuestions: z.array(z.string()).nullable().optional()
 });
 
 export const generateTopicsRequestSchema = z.object({
@@ -145,8 +150,17 @@ export const chatRequestSchema = z.object({
     id: z.string().optional(),
     role: z.enum(['user', 'assistant']),
     content: z.string(),
-    citations: z.any().optional(),
-    timestamp: z.any().optional()
+    citations: z.array(z.object({
+      number: z.number(),
+      text: z.string(),
+      start: z.number(),
+      end: z.number(),
+      startSegmentIdx: z.number(),
+      endSegmentIdx: z.number(),
+      startCharOffset: z.number(),
+      endCharOffset: z.number()
+    })).optional(),
+    timestamp: z.string().or(z.date()).optional()
   })).max(50).optional(),
   targetLanguage: z.string().min(2).max(10).optional()
 });
@@ -195,8 +209,8 @@ export const checkVideoCacheRequestSchema = z.object({
 
 export const updateVideoAnalysisRequestSchema = z.object({
   videoId: youtubeIdSchema,
-  summary: z.any().optional(),
-  suggestedQuestions: z.any().optional()
+  summary: z.string().nullable().optional(),
+  suggestedQuestions: z.array(z.string()).nullable().optional()
 });
 
 // Rate limiting validation
