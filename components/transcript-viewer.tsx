@@ -686,6 +686,25 @@ export function TranscriptViewer({
                     </TooltipContent>
                   </Tooltip>
 
+                  {/* Enhance Button */}
+                  {videoId && onTranscriptUpdate && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                         <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setIsEnhanceModalOpen(true)}
+                          className="h-6 w-6 p-0 rounded-full hover:bg-slate-200"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        <p className="text-xs">Enhance Transcript with AI</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+
                   <Button
                     variant={autoScroll ? "default" : "outline"}
                     size="sm"
@@ -713,25 +732,6 @@ export function TranscriptViewer({
                       </>
                     )}
                   </Button>
-
-                  {/* Enhance Button */}
-                  {videoId && onTranscriptUpdate && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                         <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setIsEnhanceModalOpen(true)}
-                          className="h-6 w-6 p-0 rounded-full hover:bg-slate-100 text-amber-500 hover:text-amber-600"
-                        >
-                          <Sparkles className="h-3.5 w-3.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        <p className="text-xs">Enhance Transcript with AI</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
 
                   {onRequestExport && (
                     <Tooltip>
