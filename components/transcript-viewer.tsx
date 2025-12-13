@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { SelectionActions, triggerExplainSelection, SelectionActionPayload } from "@/components/selection-actions";
 import { NoteMetadata } from "@/lib/types";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { csrfFetch } from "@/lib/csrf-client";
 
 interface TranscriptViewerProps {
   transcript: TranscriptSegment[];
@@ -539,14 +540,10 @@ export function TranscriptViewer({
 
     setIsEnhancing(true);
     try {
-      const response = await fetch('/api/transcript/enhance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId,
-          videoInfo,
-          transcript
-        })
+      const response = await csrfFetch.post('/api/transcript/enhance', {
+        videoId,
+        videoInfo,
+        transcript
       });
 
       if (!response.ok) {
