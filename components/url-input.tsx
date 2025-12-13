@@ -90,6 +90,9 @@ export function UrlInput({
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
               placeholder="Paste Youtube URL link here..."
+              aria-label="YouTube URL"
+              aria-invalid={!!error}
+              aria-describedby={error ? "url-error" : undefined}
               className="flex-1 border-0 bg-transparent text-[14px] text-[#989999] placeholder:text-[#989999] focus:outline-none"
               disabled={isLoading}
             />
@@ -129,6 +132,7 @@ export function UrlInput({
               )}
               <Button
                 type="submit"
+                aria-label={isLoading ? "Analyzing..." : "Analyze video"}
                 disabled={isLoading || !url.trim()}
                 size="icon"
                 className={cn(
@@ -149,7 +153,7 @@ export function UrlInput({
           </div>
         </Card>
         {error && (
-          <p className="text-xs text-destructive px-1">{error}</p>
+          <p id="url-error" role="alert" className="text-xs text-destructive px-1">{error}</p>
         )}
       </div>
     </form>

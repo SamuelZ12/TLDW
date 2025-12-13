@@ -102,6 +102,9 @@ export function UrlInputWithBranding({ onSubmit, isLoading = false, initialUrl, 
                   setIsFocused(false);
                 }}
                 placeholder="Paste Youtube URL link here..."
+                aria-label="YouTube URL"
+                aria-invalid={!!error}
+                aria-describedby={error ? "url-error" : undefined}
                 className="flex-1 border-0 bg-transparent text-[14px] text-[#989999] placeholder:text-[#989999] focus:outline-none min-w-0"
               />
             </div>
@@ -120,6 +123,7 @@ export function UrlInputWithBranding({ onSubmit, isLoading = false, initialUrl, 
             <Button
               type="submit"
               onClick={handleSubmit}
+              aria-label={isLoading ? "Analyzing..." : "Analyze video"}
               disabled={isLoading || !url.trim()}
               size="icon"
               className="h-7 w-7 shrink-0 rounded-full bg-[#B3B4B4] text-white hover:bg-[#9d9e9e] disabled:bg-[#B3B4B4] disabled:text-white disabled:opacity-100"
@@ -133,7 +137,7 @@ export function UrlInputWithBranding({ onSubmit, isLoading = false, initialUrl, 
           </div>
         </Card>
         {error && (
-          <p className="text-xs text-destructive px-1">{error}</p>
+          <p id="url-error" role="alert" className="text-xs text-destructive px-1">{error}</p>
         )}
       </div>
     </div>
