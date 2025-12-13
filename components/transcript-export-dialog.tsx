@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Loader2, Sparkles } from "lucide-react";
+import { Download, Loader2, Sparkles, Check, ChevronDown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -15,13 +15,25 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { TranscriptExportFormat } from "@/lib/transcript-export";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { TranscriptExportFormat, TranscriptExportMode } from "@/lib/transcript-export";
+import { SUPPORTED_LANGUAGES } from "@/lib/language-utils";
 
 interface TranscriptExportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   format: TranscriptExportFormat;
   onFormatChange: (format: TranscriptExportFormat) => void;
+  exportMode: TranscriptExportMode;
+  onExportModeChange: (mode: TranscriptExportMode) => void;
+  targetLanguage: string;
+  onTargetLanguageChange: (language: string) => void;
   includeSpeakers: boolean;
   onIncludeSpeakersChange: (value: boolean) => void;
   includeTimestamps: boolean;
@@ -58,11 +70,37 @@ const formatOptions: Array<{
   },
 ];
 
+const modeOptions: Array<{
+  value: TranscriptExportMode;
+  title: string;
+  description: string;
+}> = [
+  {
+    value: "original",
+    title: "Original",
+    description: "Export the transcript in its original language.",
+  },
+  {
+    value: "translated",
+    title: "Translated",
+    description: "Export only the translated text.",
+  },
+  {
+    value: "bilingual",
+    title: "Bilingual",
+    description: "Export both original and translated text together.",
+  },
+];
+
 export function TranscriptExportDialog({
   open,
   onOpenChange,
   format,
   onFormatChange,
+  exportMode,
+  onExportModeChange,
+  targetLanguage,
+  onTargetLanguageChange,
   includeSpeakers,
   onIncludeSpeakersChange,
   includeTimestamps,
@@ -80,7 +118,7 @@ export function TranscriptExportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
@@ -92,23 +130,76 @@ export function TranscriptExportDialog({
         </DialogHeader>
 
         <div className="space-y-6">
-          <RadioGroup value={format} onValueChange={(value) => onFormatChange(value as TranscriptExportFormat)} className="space-y-3">
-            {formatOptions.map((option) => (
-              <div
-                key={option.value}
-                className="flex items-start gap-3 rounded-2xl border border-muted bg-card/60 p-4 transition hover:border-muted-foreground/20"
-              >
-                <RadioGroupItem id={`export-format-${option.value}`} value={option.value} className="mt-1" />
-                <Label htmlFor={`export-format-${option.value}`} className="grow cursor-pointer">
-                  <div className="text-sm font-semibold text-foreground">{option.title}</div>
-                  <p className="text-xs text-muted-foreground pt-1">{option.description}</p>
-                </Label>
-              </div>
-            ))}
-          </RadioGroup>
+          {/* Format Selection */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+              Format
+            </h4>
+            <RadioGroup value={format} onValueChange={(value) => onFormatChange(value as TranscriptExportFormat)} className="space-y-3">
+              {formatOptions.map((option) => (
+                <div
+                  key={option.value}
+                  className="flex items-start gap-3 rounded-2xl border border-muted bg-card/60 p-4 transition hover:border-muted-foreground/20"
+                >
+                  <RadioGroupItem id={`export-format-${option.value}`} value={option.value} className="mt-1" />
+                  <Label htmlFor={`export-format-${option.value}`} className="grow cursor-pointer">
+                    <div className="text-sm font-semibold text-foreground">{option.title}</div>
+                    <p className="text-xs text-muted-foreground pt-1">{option.description}</p>
+                  </Label>
+                </div>
+              ))}
+            </RadioGroup>
+          </div>
 
           <Separator />
 
+          {/* Content Selection */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-medium leading-none">Content Language</h4>
+            <RadioGroup value={exportMode} onValueChange={(value) => onExportModeChange(value as TranscriptExportMode)} className="grid grid-cols-3 gap-2">
+              {modeOptions.map((option) => (
+                <Label
+                  key={option.value}
+                  htmlFor={`export-mode-${option.value}`}
+                  className={`flex flex-col items-center justify-between rounded-xl border-2 border-muted bg-transparent p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer ${exportMode === option.value ? 'border-primary bg-primary/5' : ''}`}
+                >
+                  <RadioGroupItem
+                    value={option.value}
+                    id={`export-mode-${option.value}`}
+                    className="sr-only"
+                  />
+                  <span className="text-sm font-semibold">{option.title}</span>
+                  <span className="text-[10px] text-muted-foreground text-center mt-1 leading-tight">{option.description}</span>
+                </Label>
+              ))}
+            </RadioGroup>
+
+            {exportMode !== 'original' && (
+              <div className="animate-in fade-in slide-in-from-top-2 duration-200 pt-1">
+                <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                  Target Language
+                </Label>
+                <Select value={targetLanguage} onValueChange={onTargetLanguageChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_LANGUAGES.filter(l => l.code !== 'en').map((lang) => (
+                      <SelectItem key={lang.code} value={lang.code}>
+                        {lang.name} ({lang.nativeName})
+                      </SelectItem>
+                    ))}
+                    {/* Fallback if target is English (though usually original is English) */}
+                     <SelectItem value="en">English</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
+          <Separator />
+
+          {/* Settings */}
           <div className="space-y-4">
             <div className="flex items-center justify-between rounded-2xl border border-dashed border-muted/70 bg-muted/40 px-4 py-3">
               <div className="space-y-1 pr-3">
@@ -174,7 +265,7 @@ export function TranscriptExportDialog({
             {isExporting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Preparing export…
+                {exportMode !== 'original' ? 'Translating & exporting...' : 'Preparing export…'}
               </>
             ) : (
               <>
@@ -188,4 +279,3 @@ export function TranscriptExportDialog({
     </Dialog>
   );
 }
-
