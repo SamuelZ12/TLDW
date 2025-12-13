@@ -31,29 +31,46 @@ interface Profile {
 async function sendNewsletter() {
   console.log('Starting newsletter distribution...');
 
-  // 1. Fetch subscribers
-  // We explicitly check for newsletter_subscribed being true OR null (if we want to include people before the migration who haven't opted out?
-  // No, the migration set nulls to true. So we just check for true.)
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, email')
-    .eq('newsletter_subscribed', true)
-    .not('email', 'is', null);
+  // 1. Fetch ALL subscribers using pagination
+  // Supabase has a default limit of 1000, so we need to paginate
+  console.log('Fetching all subscribers...');
 
-  if (error) {
-    console.error('Failed to fetch profiles:', error);
-    process.exit(1);
+  let allProfiles: Profile[] = [];
+  let from = 0;
+  const batchSize = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, email')
+      .eq('newsletter_subscribed', true)
+      .not('email', 'is', null)
+      .range(from, from + batchSize - 1);
+
+    if (error) {
+      console.error('Failed to fetch profiles:', error);
+      process.exit(1);
+    }
+
+    if (data && data.length > 0) {
+      allProfiles = allProfiles.concat(data as unknown as Profile[]);
+      console.log(`Fetched ${data.length} subscribers (total so far: ${allProfiles.length})...`);
+      from += batchSize;
+      hasMore = data.length === batchSize;
+    } else {
+      hasMore = false;
+    }
   }
 
-  // Cast data to Profile[] to satisfy TypeScript
-  const profiles = data as unknown as Profile[];
+  const profiles = allProfiles;
 
   if (!profiles || profiles.length === 0) {
     console.log('No subscribers found.');
     return;
   }
 
-  console.log(`Found ${profiles.length} subscribers.`);
+  console.log(`Found ${profiles.length} total subscribers.`);
 
   let successCount = 0;
   let errorCount = 0;
@@ -72,7 +89,7 @@ async function sendNewsletter() {
         "To": profile.email,
         "Subject": subject,
         "HtmlBody": htmlBody,
-        "MessageStream": "outbound"
+        "MessageStream": "broadcast"  // Fixed: Use broadcast stream for newsletters
       });
       console.log(`[OK] Sent to ${profile.email}`);
       successCount++;
