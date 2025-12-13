@@ -1,9 +1,12 @@
 import type { TranscriptSegment, Topic } from '@/lib/types';
 
 export type TranscriptExportFormat = 'txt' | 'srt' | 'csv';
+export type TranscriptExportMode = 'original' | 'translated' | 'bilingual';
 
 export interface TranscriptExportOptions {
   format: TranscriptExportFormat;
+  exportMode?: TranscriptExportMode;
+  translatedTranscript?: string[]; // Array of translated texts parallel to the transcript
   includeSpeakers?: boolean;
   includeTimestamps?: boolean;
   videoTitle?: string;
@@ -94,6 +97,8 @@ function generateTxtContent(
   hasSpeakerLabels: boolean
 ): string {
   const lines: string[] = [];
+  const exportMode = options.exportMode || 'original';
+  const translations = options.translatedTranscript || [];
 
   if (options.videoTitle) {
     lines.push(options.videoTitle.trim());
@@ -105,7 +110,13 @@ function generateTxtContent(
     lines.push('');
   }
 
-  for (const segment of transcript) {
+  for (let i = 0; i < transcript.length; i++) {
+    const segment = transcript[i];
+    const originalText = sanitizeText(segment.text ?? '');
+
+    // Skip empty segments
+    if (!originalText) continue;
+
     const timeLabel = options.includeTimestamps
       ? `[${formatClockTime(segment.start)}] `
       : '';
@@ -117,10 +128,19 @@ function generateTxtContent(
           })()
         : '';
 
-    const text = sanitizeText(segment.text ?? '');
-    if (!text) continue;
+    const translatedText = translations[i] ? sanitizeText(translations[i]) : originalText;
 
-    lines.push(`${timeLabel}${speakerLabel}${text}`);
+    if (exportMode === 'original') {
+      lines.push(`${timeLabel}${speakerLabel}${originalText}`);
+    } else if (exportMode === 'translated') {
+      // Use translated text, fallback to original if missing
+      lines.push(`${timeLabel}${speakerLabel}${translatedText}`);
+    } else if (exportMode === 'bilingual') {
+      // Interleaved: Original first, then translation on next line (indented or just below)
+      lines.push(`${timeLabel}${speakerLabel}${originalText}`);
+      lines.push(`${options.includeTimestamps ? '           ' : ''}${translatedText}`);
+      lines.push(''); // Add extra spacing for bilingual to separate blocks
+    }
   }
 
   return lines.join('\n');
@@ -131,22 +151,32 @@ function generateSrtContent(
   options: TranscriptExportOptions,
   hasSpeakerLabels: boolean
 ): string {
+  const exportMode = options.exportMode || 'original';
+  const translations = options.translatedTranscript || [];
+
   return transcript
     .map((segment, index) => {
       const start = formatSrtTimestamp(segment.start);
       const end = formatSrtTimestamp(segment.start + segment.duration);
       const speaker =
         options.includeSpeakers && hasSpeakerLabels ? getSegmentSpeaker(segment) : undefined;
-      const text = sanitizeText(segment.text ?? '');
 
-      if (!text) {
-        return null;
+      const originalText = sanitizeText(segment.text ?? '');
+      if (!originalText) return null;
+
+      const translatedText = translations[index] ? sanitizeText(translations[index]) : originalText;
+
+      let displayText = originalText;
+      if (exportMode === 'translated') {
+        displayText = translatedText;
+      } else if (exportMode === 'bilingual') {
+        displayText = `${originalText}\n${translatedText}`;
       }
 
       const lines = [
         `${index + 1}`,
         `${start} --> ${end}`,
-        speaker ? `${speaker}: ${text}` : text,
+        speaker ? `${speaker}: ${displayText}` : displayText,
       ];
 
       return lines.join('\n');
@@ -174,6 +204,8 @@ function generateCsvContent(
   hasSpeakerLabels: boolean
 ): string {
   const rows: string[] = [];
+  const exportMode = options.exportMode || 'original';
+  const translations = options.translatedTranscript || [];
 
   const includeTimestamps = Boolean(options.includeTimestamps);
   const includeSpeakers = Boolean(options.includeSpeakers && hasSpeakerLabels);
@@ -186,15 +218,25 @@ function generateCsvContent(
   if (includeSpeakers) {
     header.push('speaker');
   }
+
   header.push('text');
+
+  if (exportMode === 'bilingual') {
+    header.push('translated_text');
+  }
+
   if (includeTopics) {
     header.push('topic');
   }
   rows.push(header.join(','));
 
-  for (const segment of transcript) {
-    const text = sanitizeText(segment.text ?? '');
-    if (!text) continue;
+  for (let i = 0; i < transcript.length; i++) {
+    const segment = transcript[i];
+    const originalText = sanitizeText(segment.text ?? '');
+
+    if (!originalText) continue;
+
+    const translatedText = translations[i] ? sanitizeText(translations[i]) : originalText;
 
     const values: string[] = [];
     if (includeTimestamps) {
@@ -203,7 +245,16 @@ function generateCsvContent(
     if (includeSpeakers) {
       values.push(getSegmentSpeaker(segment) ?? '');
     }
-    values.push(escapeCsvValue(text));
+
+    if (exportMode === 'translated') {
+      values.push(escapeCsvValue(translatedText));
+    } else {
+      values.push(escapeCsvValue(originalText));
+    }
+
+    if (exportMode === 'bilingual') {
+      values.push(escapeCsvValue(translatedText));
+    }
 
     if (includeTopics) {
       const topicTitle = findTopicForSegment(segment, options.topics);
@@ -262,6 +313,10 @@ export function createTranscriptExport(
     );
   }
 
+  if (options.exportMode && options.exportMode !== 'original') {
+     filenameParts.push(options.exportMode);
+  }
+
   const filename = `${filenameParts.join('-') || DEFAULT_FILENAME}.${extension}`;
   const blob = new Blob([content], { type: mimeType });
 
@@ -271,4 +326,3 @@ export function createTranscriptExport(
 export function hasSpeakerMetadata(transcript: TranscriptSegment[]): boolean {
   return transcript.some((segment) => Boolean(getSegmentSpeaker(segment)));
 }
-

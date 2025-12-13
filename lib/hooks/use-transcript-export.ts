@@ -1,9 +1,9 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { createTranscriptExport, type TranscriptExportFormat } from '@/lib/transcript-export';
+import { createTranscriptExport, type TranscriptExportFormat, type TranscriptExportMode } from '@/lib/transcript-export';
 import { isProSubscriptionActive, type SubscriptionStatusResponse } from './use-subscription';
-import type { TranscriptSegment, Topic, VideoInfo } from '@/lib/types';
+import type { TranscriptSegment, Topic, VideoInfo, TranslationRequestHandler } from '@/lib/types';
 
 interface UseTranscriptExportOptions {
   videoId: string | null;
@@ -16,6 +16,8 @@ interface UseTranscriptExportOptions {
   isCheckingSubscription: boolean;
   fetchSubscriptionStatus: (options?: { force?: boolean }) => Promise<SubscriptionStatusResponse | null>;
   onAuthRequired: () => void;
+  onRequestTranslation: TranslationRequestHandler;
+  translationCache: Map<string, string>;
 }
 
 export function useTranscriptExport({
@@ -29,11 +31,15 @@ export function useTranscriptExport({
   isCheckingSubscription,
   fetchSubscriptionStatus,
   onAuthRequired,
+  onRequestTranslation,
+  translationCache,
 }: UseTranscriptExportOptions) {
   const router = useRouter();
 
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<TranscriptExportFormat>('txt');
+  const [exportMode, setExportMode] = useState<TranscriptExportMode>('original');
+  const [targetLanguage, setTargetLanguage] = useState<string>('es'); // Default to Spanish
   const [includeTimestamps, setIncludeTimestamps] = useState(true);
   const [includeSpeakers, setIncludeSpeakers] = useState(false);
   const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
@@ -58,6 +64,8 @@ export function useTranscriptExport({
     if (!open) {
       setExportErrorMessage(null);
       setExportDisableMessage(null);
+      // Reset non-essential state
+      setExportMode('original');
     }
   }, []);
 
@@ -139,8 +147,47 @@ export function useTranscriptExport({
     setExportErrorMessage(null);
 
     try {
+      let translatedTranscript: string[] = [];
+
+      // Handle translation if required
+      if (exportMode !== 'original') {
+        const translations: string[] = new Array(transcript.length).fill('');
+
+        // 1. Identify missing translations
+        const segmentsToTranslate: { index: number; text: string }[] = [];
+
+        transcript.forEach((segment, index) => {
+           const cacheKey = `transcript:${index}:${targetLanguage}`;
+           if (translationCache.has(cacheKey)) {
+             translations[index] = translationCache.get(cacheKey)!;
+           } else {
+             segmentsToTranslate.push({ index, text: segment.text });
+           }
+        });
+
+        // 2. Request missing translations (grouped by TranslationBatcher internally)
+        if (segmentsToTranslate.length > 0) {
+          const promises = segmentsToTranslate.map(async ({ index, text }) => {
+            try {
+              const cacheKey = `transcript:${index}:${targetLanguage}`;
+              const translation = await onRequestTranslation(text, cacheKey, 'transcript');
+              translations[index] = translation;
+            } catch (err) {
+              console.error(`Failed to translate segment ${index}`, err);
+              translations[index] = text; // Fallback to original
+            }
+          });
+
+          await Promise.all(promises);
+        }
+
+        translatedTranscript = translations;
+      }
+
       const { blob, filename } = createTranscriptExport(transcript, {
         format: exportFormat,
+        exportMode,
+        translatedTranscript,
         includeSpeakers: includeSpeakers && hasSpeakerData,
         includeTimestamps: exportFormat === 'srt' ? true : includeTimestamps,
         videoTitle: videoInfo?.title,
@@ -174,11 +221,15 @@ export function useTranscriptExport({
     transcript,
     fetchSubscriptionStatus,
     exportFormat,
+    exportMode,
+    targetLanguage,
     includeSpeakers,
     hasSpeakerData,
     includeTimestamps,
     videoInfo,
     topics,
+    onRequestTranslation,
+    translationCache
   ]);
 
   const handleUpgradeClick = useCallback(() => {
@@ -252,6 +303,8 @@ export function useTranscriptExport({
   return {
     isExportDialogOpen,
     exportFormat,
+    exportMode,
+    targetLanguage,
     includeTimestamps,
     includeSpeakers,
     exportErrorMessage,
@@ -260,6 +313,8 @@ export function useTranscriptExport({
     showExportUpsell,
     exportButtonState,
     setExportFormat,
+    setExportMode,
+    setTargetLanguage,
     setIncludeTimestamps,
     setIncludeSpeakers,
     setShowExportUpsell,
