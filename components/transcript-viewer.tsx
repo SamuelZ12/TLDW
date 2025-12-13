@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { TranscriptSegment, Topic, Citation, TranslationRequestHandler } from "@/lib/types";
+import { TranscriptSegment, Topic, Citation, TranslationRequestHandler, VideoInfo } from "@/lib/types";
 import { getTopicHSLColor, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Eye, EyeOff, ChevronDown, Download, Loader2, Search, ChevronUp, X } from "lucide-react";
+import { Eye, EyeOff, ChevronDown, Download, Loader2, Search, ChevronUp, X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { SelectionActions, triggerExplainSelection, SelectionActionPayload } from "@/components/selection-actions";
 import { NoteMetadata } from "@/lib/types";
+import { EnhanceTranscriptDialog } from "@/components/enhance-transcript-dialog";
+import { useEnhanceTranscript } from "@/lib/hooks/use-enhance-transcript";
 
 interface TranscriptViewerProps {
   transcript: TranscriptSegment[];
@@ -31,6 +33,8 @@ interface TranscriptViewerProps {
     badgeLabel?: string;
     isLoading?: boolean;
   };
+  onTranscriptUpdate?: (newTranscript: TranscriptSegment[]) => void;
+  videoInfo?: VideoInfo | null;
 }
 
 export function TranscriptViewer({
@@ -46,6 +50,8 @@ export function TranscriptViewer({
   onRequestTranslation,
   onRequestExport,
   exportButtonState,
+  onTranscriptUpdate,
+  videoInfo,
 }: TranscriptViewerProps) {
   const highlightedRefs = useRef<(HTMLDivElement | null)[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -65,6 +71,14 @@ export function TranscriptViewer({
   const [searchResults, setSearchResults] = useState<{ segmentIndex: number; startIndex: number; endIndex: number }[]>([]);
   const [currentResultIndex, setCurrentResultIndex] = useState(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Enhance state
+  const [showEnhanceDialog, setShowEnhanceDialog] = useState(false);
+  const { isEnhancing, startEnhancement } = useEnhanceTranscript({
+    videoId: videoId || '',
+    onTranscriptUpdate: (newTranscript) => onTranscriptUpdate?.(newTranscript),
+    videoInfo
+  });
 
   const selectedTopicIndex = selectedTopic
     ? topics.findIndex((topic) => topic.id === selectedTopic.id)
@@ -272,9 +286,6 @@ export function TranscriptViewer({
   }, [isSearchOpen]);
 
   // Jump to first result when search results change (if user typed something new)
-  // But careful not to jump unexpectedly if just typing more characters of same word?
-  // For now, let's just stick to the first result being selected but maybe not auto-scrolled unless requested.
-  // Actually, standard behavior is usually jump to first match.
   useEffect(() => {
       if (searchResults.length > 0 && currentResultIndex === 0) {
           const result = searchResults[0];
@@ -366,8 +377,6 @@ export function TranscriptViewer({
       let lastIndex = 0;
 
       // Sort matches by start index to handle them in order
-      // (Though our search logic generates them in order anyway)
-
       segmentSearchResults.forEach(match => {
         // Text before match
         if (match.startIndex > lastIndex) {
@@ -413,8 +422,6 @@ export function TranscriptViewer({
     for (const highlightSeg of segmentsToHighlight) {
       // Use segment indices with character offsets for precise matching
       if (highlightSeg.startSegmentIdx !== undefined && highlightSeg.endSegmentIdx !== undefined) {
-
-        // Skip this debug logging - removed for cleaner output
 
         // Skip segments that are before the start or after the end
         if (segmentIndex < highlightSeg.startSegmentIdx || segmentIndex > highlightSeg.endSegmentIdx) {
@@ -521,46 +528,21 @@ export function TranscriptViewer({
     return null;
   };
 
-  // Find the single best matching segment for the current time
-  const getCurrentSegmentIndex = (): number => {
-    if (currentTime === 0) return -1;
-
-    // Find all segments that contain the current time
-    const matchingIndices: number[] = [];
-    transcript.forEach((segment, index) => {
-      if (currentTime >= segment.start && currentTime < segment.start + segment.duration) {
-        matchingIndices.push(index);
-      }
-    });
-
-    // If no matches, return -1
-    if (matchingIndices.length === 0) return -1;
-
-    // If only one match, return it
-    if (matchingIndices.length === 1) return matchingIndices[0];
-
-    // If multiple matches, return the one whose start time is closest to current time
-    return matchingIndices.reduce((closest, current) => {
-      const closestDiff = Math.abs(transcript[closest].start - currentTime);
-      const currentDiff = Math.abs(transcript[current].start - currentTime);
-      return currentDiff < closestDiff ? current : closest;
-    });
-  };
-
   const handleSegmentClick = (segment: TranscriptSegment, e: React.MouseEvent) => {
-    // Check if there is a text selection (dragging)
     const selection = window.getSelection();
     if (selection && selection.toString().length > 0) {
       return; // Do nothing if text is selected
     }
-
-    // Check if the user is dragging (moved mouse significantly between down and up)
-    // Actually, selection check handles this mostly, but if they drag and don't select anything (empty selection)?
-    // The requirement is "dragging to select text". If they drag but select nothing, maybe they still meant to drag?
-    // But usually click implies mousedown and mouseup at same location.
-
-    // Seek to the start of the segment
     onTimestampClick(segment.start);
+  };
+
+  const handleConfirmEnhance = async () => {
+    // Keep dialog open to show loading state if needed, or close it when streaming starts?
+    // Let's close dialog but show spinner in the button if we wanted,
+    // but the hook exposes isEnhancing.
+    // However, the streaming happens immediately.
+    setShowEnhanceDialog(false);
+    startEnhancement(transcript);
   };
 
   return (
@@ -625,6 +607,30 @@ export function TranscriptViewer({
             ) : (
               <>
                 <div className="flex items-center gap-1.5">
+                  {/* Enhance Button */}
+                  {videoId && onTranscriptUpdate && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowEnhanceDialog(true)}
+                          disabled={isEnhancing}
+                          className="h-6 w-6 p-0 rounded-full hover:bg-indigo-50 text-indigo-600"
+                        >
+                          {isEnhancing ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        <p className="text-xs">{isEnhancing ? "Enhancing..." : "Enhance with AI"}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+
                   {selectedTopic && !selectedTopic.isCitationReel && (
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -764,7 +770,6 @@ export function TranscriptViewer({
           <div
             className="p-6 space-y-1"
             ref={(el) => {
-              // Get the viewport element from ScrollArea - it's the data-radix-scroll-area-viewport element
               if (el) {
                 const viewport = el.closest('[data-radix-scroll-area-viewport]');
                 if (viewport && viewport instanceof HTMLElement) {
@@ -814,14 +819,14 @@ export function TranscriptViewer({
               }}
               source="transcript"
             />
-            {transcript.length === 0 ? (
+            {transcript.length === 0 && !isEnhancing ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 No transcript available
               </div>
             ) : (
               (() => {
-                // Calculate current segment index once for all segments
                 const currentSegmentIndex = getCurrentSegmentIndex();
+                let lastSpeaker: string | undefined = undefined;
 
                 return transcript.map((segment, index) => {
                   const highlightedText = getHighlightedText(segment, index);
@@ -834,127 +839,149 @@ export function TranscriptViewer({
                   const hasTranslationError = translationErrors.has(index);
                   const translationEnabled = selectedLanguage !== null;
 
-                  // Request translation if enabled and not already cached/loading/errored
+                  // Determine if we need to show speaker label
+                  // Show if speaker changes or if it's the first segment
+                  const showSpeaker = segment.speaker && segment.speaker !== lastSpeaker;
+                  if (segment.speaker) lastSpeaker = segment.speaker;
+
                   if (translationEnabled && !translation && !isLoadingTranslation && !hasTranslationError) {
                     requestTranslation(index);
                   }
 
                   return (
-                    <div
-                      key={index}
-                      data-segment-index={index}
-                      ref={(el) => {
-                        // Store refs properly
-                        if (el) {
-                          if (hasHighlight && !highlightedRefs.current.includes(el)) {
-                            highlightedRefs.current.push(el);
-                          }
-                          if (isCurrent) {
-                            currentSegmentRef.current = el;
-                          }
-                        }
-                      }}
-                      className={cn(
-                        "group relative px-2.5 py-1.5 rounded-xl transition-all duration-200 cursor-pointer hover:bg-slate-50",
-                        translationEnabled && "space-y-1"
+                    <div key={index}>
+                      {showSpeaker && (
+                         <div className="mt-4 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                           {segment.speaker}
+                         </div>
                       )}
-                      onClick={(e) => handleSegmentClick(segment, e)}
-                    >
-                      {/* Original text */}
-                      <p
-                        className={cn(
-                          "text-sm leading-relaxed",
-                          isCurrent ? "text-foreground font-medium" : "text-muted-foreground",
-                          translationEnabled && "opacity-90"
-                        )}
-                      >
-                        {highlightedText ? (
-                          highlightedText.highlightedParts.map((part, partIndex) => {
-                            const isSearchMatch = 'isSearchMatch' in part && part.isSearchMatch;
-                            const isCurrentSearchMatch = 'isCurrentSearchMatch' in part && part.isCurrentSearchMatch;
-                            const isCitation = 'isCitation' in part && part.isCitation;
-
-                            let style = undefined;
-                            if (part.highlighted) {
-                              if (isSearchMatch) {
-                                style = {
-                                  backgroundColor: isCurrentSearchMatch ? 'hsl(40, 100%, 50%)' : 'hsl(48, 100%, 80%)',
-                                  color: isCurrentSearchMatch ? 'white' : 'black',
-                                  padding: '0 1px',
-                                  borderRadius: '2px',
-                                };
-                              } else if (isCitation || selectedTopic?.isCitationReel) {
-                                style = {
-                                  backgroundColor: 'hsl(48, 100%, 85%)',
-                                  padding: '1px 3px',
-                                  borderRadius: '3px',
-                                  boxShadow: '0 0 0 1px hsl(48, 100%, 50%, 0.3)',
-                                };
-                              } else if (selectedTopicColor) {
-                                style = {
-                                  backgroundColor: `hsl(${selectedTopicColor} / 0.2)`,
-                                  padding: '0 2px',
-                                  borderRadius: '2px',
-                                };
-                              }
+                      <div
+                        data-segment-index={index}
+                        ref={(el) => {
+                          if (el) {
+                            if (hasHighlight && !highlightedRefs.current.includes(el)) {
+                              highlightedRefs.current.push(el);
                             }
-
-                            return (
-                              <span
-                                key={partIndex}
-                                className={part.highlighted ? "text-foreground" : ""}
-                                style={style}
-                              >
-                                {part.text}
-                              </span>
-                            );
-                          })
-                        ) : (
-                          segment.text
+                            if (isCurrent) {
+                              currentSegmentRef.current = el;
+                            }
+                          }
+                        }}
+                        className={cn(
+                          "group relative px-2.5 py-1.5 rounded-xl transition-all duration-200 cursor-pointer hover:bg-slate-50",
+                          translationEnabled && "space-y-1"
                         )}
-                      </p>
-
-                      {/* Translated text */}
-                      {translationEnabled && (
-                        <div className="flex items-start gap-2">
-                          <p
-                            className={cn(
-                              "text-sm leading-relaxed flex-1",
-                              isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
-                            )}
-                          >
-                            {isLoadingTranslation ? (
-                              <span className="text-muted-foreground italic">Translating...</span>
-                            ) : hasTranslationError ? (
-                              <span className="text-red-500/70 italic text-xs">Translation failed</span>
-                            ) : translation ? (
-                              translation
-                            ) : (
-                              <span className="text-muted-foreground/50 italic">Translation pending...</span>
-                            )}
-                          </p>
-                          {hasTranslationError && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                requestTranslation(index);
-                              }}
-                              className="text-xs text-blue-500 hover:text-blue-600 underline shrink-0"
-                            >
-                              Retry
-                            </button>
+                        onClick={(e) => handleSegmentClick(segment, e)}
+                      >
+                        {/* Original text */}
+                        <p
+                          className={cn(
+                            "text-sm leading-relaxed",
+                            isCurrent ? "text-foreground font-medium" : "text-muted-foreground",
+                            translationEnabled && "opacity-90"
                           )}
-                        </div>
-                      )}
+                        >
+                          {highlightedText ? (
+                            highlightedText.highlightedParts.map((part, partIndex) => {
+                              const isSearchMatch = 'isSearchMatch' in part && part.isSearchMatch;
+                              const isCurrentSearchMatch = 'isCurrentSearchMatch' in part && part.isCurrentSearchMatch;
+                              const isCitation = 'isCitation' in part && part.isCitation;
 
+                              let style = undefined;
+                              if (part.highlighted) {
+                                if (isSearchMatch) {
+                                  style = {
+                                    backgroundColor: isCurrentSearchMatch ? 'hsl(40, 100%, 50%)' : 'hsl(48, 100%, 80%)',
+                                    color: isCurrentSearchMatch ? 'white' : 'black',
+                                    padding: '0 1px',
+                                    borderRadius: '2px',
+                                  };
+                                } else if (isCitation || selectedTopic?.isCitationReel) {
+                                  style = {
+                                    backgroundColor: 'hsl(48, 100%, 85%)',
+                                    padding: '1px 3px',
+                                    borderRadius: '3px',
+                                    boxShadow: '0 0 0 1px hsl(48, 100%, 50%, 0.3)',
+                                  };
+                                } else if (selectedTopicColor) {
+                                  style = {
+                                    backgroundColor: `hsl(${selectedTopicColor} / 0.2)`,
+                                    padding: '0 2px',
+                                    borderRadius: '2px',
+                                  };
+                                }
+                              }
+
+                              return (
+                                <span
+                                  key={partIndex}
+                                  className={part.highlighted ? "text-foreground" : ""}
+                                  style={style}
+                                >
+                                  {part.text}
+                                </span>
+                              );
+                            })
+                          ) : (
+                            segment.text
+                          )}
+                        </p>
+
+                        {/* Translated text */}
+                        {translationEnabled && (
+                          <div className="flex items-start gap-2">
+                            <p
+                              className={cn(
+                                "text-sm leading-relaxed flex-1",
+                                isCurrent ? "text-foreground font-medium" : "text-muted-foreground"
+                              )}
+                            >
+                              {isLoadingTranslation ? (
+                                <span className="text-muted-foreground italic">Translating...</span>
+                              ) : hasTranslationError ? (
+                                <span className="text-red-500/70 italic text-xs">Translation failed</span>
+                              ) : translation ? (
+                                translation
+                              ) : (
+                                <span className="text-muted-foreground/50 italic">Translation pending...</span>
+                              )}
+                            </p>
+                            {hasTranslationError && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  requestTranslation(index);
+                                }}
+                                className="text-xs text-blue-500 hover:text-blue-600 underline shrink-0"
+                              >
+                                Retry
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                      </div>
                     </div>
                   );
                 });
               })()
             )}
+            {/* Show loader at bottom if enhancing is in progress but we might have empty or partial transcript */}
+            {isEnhancing && (
+              <div className="flex justify-center py-4">
+                <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+              </div>
+            )}
           </div>
         </ScrollArea>
       </div>
+
+      <EnhanceTranscriptDialog
+        open={showEnhanceDialog}
+        onOpenChange={setShowEnhanceDialog}
+        onConfirm={handleConfirmEnhance}
+        isLoading={isEnhancing}
+      />
     </TooltipProvider>
   );
 }

@@ -29,5 +29,5 @@ export interface ProviderAdapter {
   readonly name: string;
   readonly defaultModel: string;
   generate(params: ProviderGenerateParams): Promise<ProviderGenerateResult>;
+  generateStream?(params: ProviderGenerateParams): Promise<ReadableStream<Uint8Array>>;
 }
-

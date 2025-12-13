@@ -294,5 +294,40 @@ export function createGeminiAdapter(): ProviderAdapter {
         }`
       );
     },
+
+    async generateStream(params: ProviderGenerateParams): Promise<ReadableStream<Uint8Array>> {
+      const models = buildModelList(params.model);
+      const modelName = models[0]; // For streaming, we might stick to the preferred or first model for simplicity
+      const generationConfig = buildGenerationConfig(params);
+
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig,
+      });
+
+      try {
+        const streamResult = await model.generateContentStream(params.prompt);
+
+        return new ReadableStream({
+          async start(controller) {
+            const encoder = new TextEncoder();
+            try {
+              for await (const chunk of streamResult.stream) {
+                const text = chunk.text();
+                if (text) {
+                  controller.enqueue(encoder.encode(text));
+                }
+              }
+              controller.close();
+            } catch (error) {
+              controller.error(error);
+            }
+          },
+        });
+      } catch (error) {
+        console.error('[Gemini] Stream generation failed:', error);
+        throw error;
+      }
+    }
   };
 }
