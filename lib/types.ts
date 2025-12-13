@@ -166,5 +166,6 @@ export type TranslationScenario = 'transcript' | 'chat' | 'topic' | 'general';
 export type TranslationRequestHandler = (
   text: string,
   cacheKey: string,
-  scenario?: TranslationScenario
+  scenario?: TranslationScenario,
+  targetLanguage?: string
 ) => Promise<string>;

@@ -170,7 +170,7 @@ export function useTranscriptExport({
           const promises = segmentsToTranslate.map(async ({ index, text }) => {
             try {
               const cacheKey = `transcript:${index}:${targetLanguage}`;
-              const translation = await onRequestTranslation(text, cacheKey, 'transcript');
+              const translation = await onRequestTranslation(text, cacheKey, 'transcript', targetLanguage);
               translations[index] = translation;
             } catch (err) {
               console.error(`Failed to translate segment ${index}`, err);

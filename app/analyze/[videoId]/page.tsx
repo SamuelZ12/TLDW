@@ -272,8 +272,8 @@ export default function AnalyzePage() {
 
   // Create unified translation handler with videoInfo context
   const translateWithContext: TranslationRequestHandler = useCallback(
-    (text: string, cacheKey: string, scenario?) => {
-      return handleRequestTranslation(text, cacheKey, scenario, videoInfo);
+    (text: string, cacheKey: string, scenario?, targetLanguage?) => {
+      return handleRequestTranslation(text, cacheKey, scenario, videoInfo, targetLanguage);
     },
     [handleRequestTranslation, videoInfo]
   );

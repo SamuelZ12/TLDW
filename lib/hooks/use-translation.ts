@@ -14,9 +14,12 @@ export function useTranslation() {
     text: string,
     cacheKey: string,
     scenario?: TranslationScenario,
-    videoInfo?: VideoInfo | null
+    videoInfo?: VideoInfo | null,
+    targetLanguage?: string
   ): Promise<string> => {
-    if (!selectedLanguage) return text;
+    // Use explicit targetLanguage if provided, otherwise fall back to selectedLanguage state
+    const langToUse = targetLanguage ?? selectedLanguage;
+    if (!langToUse) return text;
 
     if (!translationBatcherRef.current) {
       translationBatcherRef.current = new TranslationBatcher(
@@ -62,7 +65,7 @@ export function useTranslation() {
     const translation = await translationBatcherRef.current.translate(
       text,
       cacheKey,
-      selectedLanguage,
+      langToUse,
       context
     );
 
