@@ -363,6 +363,8 @@ export default function AnalyzePage() {
   const {
     isExportDialogOpen,
     exportFormat,
+    exportMode,
+    targetLanguage,
     includeTimestamps,
     includeSpeakers,
     exportErrorMessage,
@@ -371,6 +373,8 @@ export default function AnalyzePage() {
     showExportUpsell,
     exportButtonState,
     setExportFormat,
+    setExportMode,
+    setTargetLanguage,
     setIncludeTimestamps,
     setIncludeSpeakers,
     setShowExportUpsell,
@@ -389,6 +393,8 @@ export default function AnalyzePage() {
     isCheckingSubscription,
     fetchSubscriptionStatus,
     onAuthRequired: handleAuthRequired,
+    onRequestTranslation: translateWithContext,
+    translationCache: translationCache,
   });
 
   const [rateLimitInfo, setRateLimitInfo] = useState<{
@@ -2082,6 +2088,10 @@ export default function AnalyzePage() {
         onOpenChange={handleExportDialogOpenChange}
         format={exportFormat}
         onFormatChange={setExportFormat}
+        exportMode={exportMode}
+        onExportModeChange={setExportMode}
+        targetLanguage={targetLanguage}
+        onTargetLanguageChange={setTargetLanguage}
         includeSpeakers={includeSpeakers}
         onIncludeSpeakersChange={(value) => setIncludeSpeakers(value && hasSpeakerData)}
         includeTimestamps={includeTimestamps}
