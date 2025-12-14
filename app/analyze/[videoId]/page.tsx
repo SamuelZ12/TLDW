@@ -267,6 +267,7 @@ export default function AnalyzePage() {
     selectedLanguage,
     translationCache,
     handleRequestTranslation,
+    handleBulkTranslation,
     handleLanguageChange,
   } = useTranslation();
 
@@ -372,6 +373,7 @@ export default function AnalyzePage() {
     isExportingTranscript,
     showExportUpsell,
     exportButtonState,
+    translationProgress,
     setExportFormat,
     setExportMode,
     setTargetLanguage,
@@ -394,6 +396,7 @@ export default function AnalyzePage() {
     fetchSubscriptionStatus,
     onAuthRequired: handleAuthRequired,
     onRequestTranslation: translateWithContext,
+    onBulkTranslation: handleBulkTranslation,
     translationCache: translationCache,
   });
 
@@ -2104,6 +2107,7 @@ export default function AnalyzePage() {
         hasSpeakerData={hasSpeakerData}
         willConsumeTopup={subscriptionStatus?.willConsumeTopup}
         videoTitle={videoInfo?.title}
+        translationProgress={translationProgress}
       />
       <TranscriptExportUpsell
         open={showExportUpsell}

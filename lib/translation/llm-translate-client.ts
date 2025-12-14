@@ -63,8 +63,8 @@ export class LLMTranslateClient implements TranslationProvider {
     }
 
     // For large batches, split into smaller chunks to improve reliability
-    // Reduced from 50 to 25 to prevent JSON truncation and parsing errors
-    const MAX_BATCH_SIZE = 25;
+    // Increased from 25 to 35 for better throughput while maintaining reliability
+    const MAX_BATCH_SIZE = 35;
     if (texts.length > MAX_BATCH_SIZE) {
       console.log(
         `[LLM Translation] Large batch (${texts.length} items), splitting into chunks of ${MAX_BATCH_SIZE}`

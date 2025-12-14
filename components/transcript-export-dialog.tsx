@@ -46,6 +46,7 @@ interface TranscriptExportDialogProps {
   hasSpeakerData?: boolean;
   willConsumeTopup?: boolean;
   videoTitle?: string;
+  translationProgress?: { completed: number; total: number } | null;
 }
 
 const formatOptions: Array<{
@@ -113,6 +114,7 @@ export function TranscriptExportDialog({
   hasSpeakerData = false,
   willConsumeTopup = false,
   videoTitle,
+  translationProgress,
 }: TranscriptExportDialogProps) {
   const title = videoTitle ? `Export ${videoTitle}` : "Export transcript";
 
@@ -265,7 +267,11 @@ export function TranscriptExportDialog({
             {isExporting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {exportMode !== 'original' ? 'Translating & exporting...' : 'Preparing export…'}
+                {translationProgress
+                  ? `Translating ${translationProgress.completed} / ${translationProgress.total}...`
+                  : exportMode !== 'original'
+                  ? 'Translating & exporting...'
+                  : 'Preparing export…'}
               </>
             ) : (
               <>

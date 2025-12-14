@@ -89,7 +89,7 @@ async function handler(request: NextRequest) {
     const translationClient = getTranslationClient();
 
     const CHUNK_SIZE = 100; // keep provider calls reasonable
-    const CONCURRENCY = 4; // parallel calls without overwhelming provider
+    const CONCURRENCY = 6; // increased from 4 for faster parallel processing
 
     function chunk<T>(arr: T[], size: number): T[][] {
       const out: T[][] = [];
@@ -103,6 +103,9 @@ async function handler(request: NextRequest) {
     // Run with basic concurrency control
     let index = 0;
     async function worker() {
+      // Add random jitter (0-100ms) to prevent thundering herd
+      await new Promise(r => setTimeout(r, Math.random() * 100));
+
       while (index < chunks.length) {
         const myIndex = index++;
         const translated = await translationClient.translateBatch(

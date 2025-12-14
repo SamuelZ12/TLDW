@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { createTranscriptExport, type TranscriptExportFormat, type TranscriptExportMode } from '@/lib/transcript-export';
 import { isProSubscriptionActive, type SubscriptionStatusResponse } from './use-subscription';
 import type { TranscriptSegment, Topic, VideoInfo, TranslationRequestHandler } from '@/lib/types';
+import type { BulkTranslationHandler } from './use-translation';
 
 interface UseTranscriptExportOptions {
   videoId: string | null;
@@ -17,6 +18,7 @@ interface UseTranscriptExportOptions {
   fetchSubscriptionStatus: (options?: { force?: boolean }) => Promise<SubscriptionStatusResponse | null>;
   onAuthRequired: () => void;
   onRequestTranslation: TranslationRequestHandler;
+  onBulkTranslation: BulkTranslationHandler;
   translationCache: Map<string, string>;
 }
 
@@ -32,6 +34,7 @@ export function useTranscriptExport({
   fetchSubscriptionStatus,
   onAuthRequired,
   onRequestTranslation,
+  onBulkTranslation,
   translationCache,
 }: UseTranscriptExportOptions) {
   const router = useRouter();
@@ -46,6 +49,10 @@ export function useTranscriptExport({
   const [exportDisableMessage, setExportDisableMessage] = useState<string | null>(null);
   const [isExportingTranscript, setIsExportingTranscript] = useState(false);
   const [showExportUpsell, setShowExportUpsell] = useState(false);
+  const [translationProgress, setTranslationProgress] = useState<{
+    completed: number;
+    total: number;
+  } | null>(null);
 
   useEffect(() => {
     if (exportFormat === 'srt' && !includeTimestamps) {
@@ -165,20 +172,22 @@ export function useTranscriptExport({
            }
         });
 
-        // 2. Request missing translations (grouped by TranslationBatcher internally)
+        // 2. Request missing translations using bulk API for faster processing
         if (segmentsToTranslate.length > 0) {
-          const promises = segmentsToTranslate.map(async ({ index, text }) => {
-            try {
-              const cacheKey = `transcript:${index}:${targetLanguage}`;
-              const translation = await onRequestTranslation(text, cacheKey, 'transcript', targetLanguage);
-              translations[index] = translation;
-            } catch (err) {
-              console.error(`Failed to translate segment ${index}`, err);
-              translations[index] = text; // Fallback to original
-            }
-          });
+          const translationMap = await onBulkTranslation(
+            segmentsToTranslate,
+            targetLanguage,
+            'transcript',
+            videoInfo,
+            (completed, total) => setTranslationProgress({ completed, total })
+          );
 
-          await Promise.all(promises);
+          // Apply results from bulk translation
+          for (const [index, translation] of translationMap) {
+            translations[index] = translation;
+          }
+
+          setTranslationProgress(null);
         }
 
         translatedTranscript = translations;
@@ -228,7 +237,7 @@ export function useTranscriptExport({
     includeTimestamps,
     videoInfo,
     topics,
-    onRequestTranslation,
+    onBulkTranslation,
     translationCache
   ]);
 
@@ -312,6 +321,7 @@ export function useTranscriptExport({
     isExportingTranscript,
     showExportUpsell,
     exportButtonState,
+    translationProgress,
     setExportFormat,
     setExportMode,
     setTargetLanguage,
