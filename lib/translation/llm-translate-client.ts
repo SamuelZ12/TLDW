@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { generateAIResponse } from '@/lib/ai-client';
+import { getLanguageName } from '@/lib/language-utils';
 import type { TranslationProvider, TranslationContext, TranslationScenario } from './types';
 
 /**
@@ -13,6 +14,15 @@ const batchTranslationSchema = z.object({
  * Delimiter used for line-delimited translation format
  */
 const TRANSLATION_DELIMITER = '<<<TRANSLATION>>>';
+
+/**
+ * Result of a translation attempt that may be partial
+ */
+interface TranslationResult {
+  translations: (string | null)[]; // null means translation failed for this index
+  successCount: number;
+  failedIndices: number[];
+}
 
 /**
  * LLM-based translation client that uses AI providers (Gemini/Grok)
@@ -75,7 +85,7 @@ export class LLMTranslateClient implements TranslationProvider {
   }
 
   /**
-   * Internal method to translate a batch with retry logic
+   * Internal method to translate a batch with retry logic and partial result recovery
    */
   private async translateBatchInternal(
     texts: string[],
@@ -84,58 +94,104 @@ export class LLMTranslateClient implements TranslationProvider {
     attempt: number = 1
   ): Promise<string[]> {
     const MAX_RETRIES = 2;
-    const prompt = this.buildLineDelimitedPrompt(texts, targetLanguage, context);
+    // Use indexed prompt for better parsing reliability
+    const prompt = this.buildIndexedPrompt(texts, targetLanguage, context);
 
     try {
       const response = await generateAIResponse(prompt, {
         temperature: this.temperature,
-        maxOutputTokens: 16384, // Increased from 8192 to prevent truncation
-        // Don't use zodSchema for line-delimited format
+        maxOutputTokens: 16384,
         metadata: {
           operation: 'translation',
           scenario: context?.scenario ?? 'general',
           targetLanguage,
           textCount: texts.length,
           attempt,
-          format: 'line-delimited',
+          format: 'indexed',
         },
       });
 
-      // Parse line-delimited response
-      const translations = this.parseLineDelimitedResponse(response, texts.length);
+      // Try indexed parsing first (more reliable)
+      let result = this.parseIndexedResponse(response, texts.length);
 
-      // Validate we got the same number of translations
-      if (translations.length !== texts.length) {
-        const error = new Error(
-          `Translation count mismatch: expected ${texts.length}, got ${translations.length}`
-        );
-
-        // Retry with smaller batch if count mismatch on first attempt
-        if (attempt <= MAX_RETRIES) {
-          console.warn(
-            `[LLM Translation] Count mismatch on attempt ${attempt}, retrying... (expected: ${texts.length}, got: ${translations.length})`
-          );
-
-          // If still getting wrong count, try splitting the batch
-          if (attempt === MAX_RETRIES && texts.length > 10) {
-            console.log('[LLM Translation] Splitting batch into smaller chunks after retry failure');
-            const mid = Math.floor(texts.length / 2);
-            const [first, second] = await Promise.all([
-              this.translateBatchInternal(texts.slice(0, mid), targetLanguage, context, 1),
-              this.translateBatchInternal(texts.slice(mid), targetLanguage, context, 1),
-            ]);
-            return [...first, ...second];
-          }
-
-          // Simple retry with same batch
-          await new Promise((resolve) => setTimeout(resolve, 500 * attempt)); // backoff
-          return this.translateBatchInternal(texts, targetLanguage, context, attempt + 1);
+      // If indexed parsing got nothing, try legacy delimiter parsing as fallback
+      if (result.successCount === 0) {
+        console.warn('[LLM Translation] Indexed parsing failed, trying delimiter fallback');
+        const legacyTranslations = this.parseLineDelimitedResponse(response, texts.length);
+        if (legacyTranslations.length > 0) {
+          result = {
+            translations: legacyTranslations.map(t => t || null),
+            successCount: legacyTranslations.filter(Boolean).length,
+            failedIndices: legacyTranslations
+              .map((t, i) => t ? -1 : i)
+              .filter(i => i >= 0),
+          };
         }
-
-        throw error;
       }
 
-      return translations;
+      // Perfect match - return immediately
+      if (result.successCount === texts.length) {
+        console.log(`[LLM Translation] ✓ All ${texts.length} translations successful`);
+        return result.translations as string[];
+      }
+
+      // Calculate success rate
+      const successRate = result.successCount / texts.length;
+
+      // Complete failure - retry the whole batch
+      if (result.successCount === 0 && attempt <= MAX_RETRIES) {
+        console.warn(`[LLM Translation] Complete failure on attempt ${attempt}, retrying...`);
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+        return this.translateBatchInternal(texts, targetLanguage, context, attempt + 1);
+      }
+
+      // Partial success with significant failures - retry just the failed items
+      if (
+        successRate < 0.9 &&
+        attempt <= MAX_RETRIES &&
+        result.failedIndices.length > 0 &&
+        result.failedIndices.length <= 10
+      ) {
+        console.warn(
+          `[LLM Translation] Partial success (${result.successCount}/${texts.length}) on attempt ${attempt}, retrying ${result.failedIndices.length} failed items...`
+        );
+
+        const failedTexts = result.failedIndices.map(i => texts[i]);
+        try {
+          const retriedTranslations = await this.translateBatchInternal(
+            failedTexts,
+            targetLanguage,
+            context,
+            attempt + 1
+          );
+
+          // Merge retried results back
+          retriedTranslations.forEach((translation, idx) => {
+            const originalIndex = result.failedIndices[idx];
+            result.translations[originalIndex] = translation;
+          });
+
+          result.successCount = result.translations.filter(t => t !== null).length;
+        } catch (retryError) {
+          console.warn('[LLM Translation] Retry of failed items also failed, using partial results');
+        }
+      }
+
+      // Return what we have, filling nulls with original text
+      const finalTranslations = result.translations.map((translation, index) =>
+        translation ?? texts[index]
+      );
+
+      const fallbackCount = texts.length - result.successCount;
+      if (fallbackCount > 0) {
+        console.warn(
+          `[LLM Translation] Returning ${result.successCount}/${texts.length} translations (${fallbackCount} fell back to original)`
+        );
+      } else {
+        console.log(`[LLM Translation] ✓ All ${texts.length} translations successful after retry`);
+      }
+
+      return finalTranslations;
     } catch (error) {
       console.error('[LLM Translation] Error:', {
         message: error instanceof Error ? error.message : String(error),
@@ -143,20 +199,16 @@ export class LLMTranslateClient implements TranslationProvider {
         attempt,
       });
 
-      // Retry on parsing errors if we haven't exceeded MAX_RETRIES
-      if (
-        attempt <= MAX_RETRIES &&
-        error instanceof Error &&
-        (error.message.includes('mismatch') || error.message.includes('parse'))
-      ) {
-        console.warn(`[LLM Translation] Retrying due to parsing error on attempt ${attempt}`);
-        await new Promise((resolve) => setTimeout(resolve, 500 * attempt)); // backoff
+      // On complete error, retry if attempts remain
+      if (attempt <= MAX_RETRIES) {
+        console.warn(`[LLM Translation] Retrying due to error on attempt ${attempt}`);
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
         return this.translateBatchInternal(texts, targetLanguage, context, attempt + 1);
       }
 
-      throw new Error(
-        `LLM translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      // Final fallback: return original texts (never throw)
+      console.error('[LLM Translation] All retries exhausted, returning original texts');
+      return texts;
     }
   }
 
@@ -221,7 +273,84 @@ export class LLMTranslateClient implements TranslationProvider {
   }
 
   /**
+   * Parse indexed translation response with explicit markers
+   * Returns partial results with null for missing translations
+   */
+  private parseIndexedResponse(response: string, expectedCount: number): TranslationResult {
+    const translations: (string | null)[] = new Array(expectedCount).fill(null);
+    const failedIndices: number[] = [];
+    let successCount = 0;
+
+    // Pattern: [OUTPUT_N]...[/OUTPUT_N] - handles multiline content
+    const pattern = /\[OUTPUT_(\d+)\]([\s\S]*?)\[\/OUTPUT_\1\]/g;
+    let match;
+
+    while ((match = pattern.exec(response)) !== null) {
+      const index = parseInt(match[1], 10);
+      const content = match[2].trim();
+
+      if (index >= 0 && index < expectedCount) {
+        translations[index] = content;
+        successCount++;
+      }
+    }
+
+    // Identify failed indices
+    for (let i = 0; i < expectedCount; i++) {
+      if (translations[i] === null) {
+        failedIndices.push(i);
+      }
+    }
+
+    return { translations, successCount, failedIndices };
+  }
+
+  /**
+   * Build indexed prompt for translation (more robust than delimiter format)
+   */
+  private buildIndexedPrompt(
+    texts: string[],
+    targetLanguage: string,
+    context?: TranslationContext
+  ): string {
+    const scenario = context?.scenario ?? 'general';
+    const systemInstructions = this.getSystemInstructions(scenario, context);
+    const languageName = getLanguageName(targetLanguage);
+
+    // Create numbered list with explicit markers
+    const textsList = texts.map((text, i) =>
+      `[INPUT_${i}]\n${text}\n[/INPUT_${i}]`
+    ).join('\n\n');
+
+    return `${systemInstructions}
+
+TARGET LANGUAGE: ${languageName}
+
+TRANSLATE EXACTLY ${texts.length} TEXTS BELOW.
+
+${textsList}
+
+OUTPUT FORMAT REQUIREMENTS:
+1. For each input, output: [OUTPUT_N] then the translation, then [/OUTPUT_N]
+2. N must match the input index (0 to ${texts.length - 1})
+3. Output ALL ${texts.length} translations in numerical order
+4. Do NOT add explanations, labels, or extra content
+5. For empty inputs, output empty content between tags
+
+EXAMPLE OUTPUT FORMAT:
+[OUTPUT_0]
+First translated text here
+[/OUTPUT_0]
+[OUTPUT_1]
+Second translated text here
+[/OUTPUT_1]
+
+NOW OUTPUT ALL ${texts.length} TRANSLATIONS:`;
+  }
+
+  /**
    * Build line-delimited prompt for translation (more robust than JSON)
+   * @deprecated Use buildIndexedPrompt instead - kept as fallback
    */
   private buildLineDelimitedPrompt(
     texts: string[],
@@ -231,19 +360,22 @@ export class LLMTranslateClient implements TranslationProvider {
     const scenario = context?.scenario ?? 'general';
     const systemInstructions = this.getSystemInstructions(scenario, context);
 
+    // Convert language code to human-readable name for clearer LLM instructions
+    const languageName = getLanguageName(targetLanguage);
+
     // Create numbered list of texts - using different format to avoid confusion
     const textsList = texts.map((text, i) => `TEXT ${i}:\n${text}`).join('\n\n');
 
     return `${systemInstructions}
 
-TARGET LANGUAGE: ${targetLanguage}
+TARGET LANGUAGE: ${languageName}
 
 YOU MUST TRANSLATE EXACTLY ${texts.length} TEXTS BELOW.
 
 ${textsList}
 
 CRITICAL OUTPUT FORMAT REQUIREMENTS:
-1. Translate ALL ${texts.length} texts above into ${targetLanguage}
+1. Translate ALL ${texts.length} texts above into ${languageName}
 2. Output ONLY the translated text itself - NO LABELS, NO NUMBERS, NO PREFIXES
 3. Separate each translation with the delimiter: ${TRANSLATION_DELIMITER}
 4. Maintain the EXACT same order as the input
@@ -281,6 +413,9 @@ NOW OUTPUT ONLY THE ${texts.length} PURE TRANSLATIONS WITH NO LABELS:`;
     const scenario = context?.scenario ?? 'general';
     const systemInstructions = this.getSystemInstructions(scenario, context);
 
+    // Convert language code to human-readable name for clearer LLM instructions
+    const languageName = getLanguageName(targetLanguage);
+
     // Format texts with indices for clarity and count verification
     const indexedTexts = texts.map((text, i) => ({
       index: i,
@@ -290,13 +425,13 @@ NOW OUTPUT ONLY THE ${texts.length} PURE TRANSLATIONS WITH NO LABELS:`;
 
     return `${systemInstructions}
 
-TARGET LANGUAGE: ${targetLanguage}
+TARGET LANGUAGE: ${languageName}
 
 TEXTS TO TRANSLATE (${texts.length} items):
 ${textsJson}
 
 CRITICAL REQUIREMENTS:
-1. You MUST translate ALL ${texts.length} texts
+1. You MUST translate ALL ${texts.length} texts into ${languageName}
 2. Return EXACTLY ${texts.length} translations in the same order
 3. Each translation must correspond to the text at the same index
 4. DO NOT merge, skip, or add extra translations
