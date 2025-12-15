@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 
+interface UpdateResult {
+  success: boolean;
+  video_id: string | null;
+}
+
 async function handler(req: NextRequest) {
   try {
     const {
@@ -19,25 +24,28 @@ async function handler(req: NextRequest) {
 
     const supabase = await createClient();
 
-    // Update the existing video analysis with summary and/or suggested questions
-    const updateData: any = {
-      updated_at: new Date().toISOString()
-    };
+    // Get authenticated user (required by SECURITY_PRESETS.AUTHENTICATED)
+    const {
+      data: { user },
+      error: authError
+    } = await supabase.auth.getUser();
 
-    if (summary !== undefined) {
-      updateData.summary = summary;
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
     }
 
-    if (suggestedQuestions !== undefined) {
-      updateData.suggested_questions = suggestedQuestions;
-    }
-
-    const { data: updatedVideo, error: updateError } = await supabase
-      .from('video_analyses')
-      .update(updateData)
-      .eq('youtube_id', videoId)
-      .select()
-      .single();
+    // Use secure update function with ownership verification
+    const { data: result, error: updateError } = await supabase
+      .rpc('update_video_analysis_secure', {
+        p_youtube_id: videoId,
+        p_user_id: user.id,
+        p_summary: summary ?? null,
+        p_suggested_questions: suggestedQuestions ?? null
+      })
+      .single<UpdateResult>();
 
     if (updateError) {
       console.error('Error updating video analysis:', updateError);
@@ -47,9 +55,17 @@ async function handler(req: NextRequest) {
       );
     }
 
+    // Check if update was authorized
+    if (!result?.success) {
+      return NextResponse.json(
+        { error: 'Not authorized to update this video analysis' },
+        { status: 403 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      data: updatedVideo
+      videoId: result.video_id
     });
 
   } catch (error) {
@@ -61,4 +77,5 @@ async function handler(req: NextRequest) {
   }
 }
 
-export const POST = withSecurity(handler, SECURITY_PRESETS.PUBLIC);
+// Require authentication and CSRF protection for state-changing operations
+export const POST = withSecurity(handler, SECURITY_PRESETS.AUTHENTICATED);

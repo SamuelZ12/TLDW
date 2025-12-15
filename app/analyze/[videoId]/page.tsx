@@ -35,6 +35,7 @@ import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
 import { TranscriptExportUpsell } from "@/components/transcript-export-upsell";
 import { useAuth } from "@/contexts/auth-context";
 import { backgroundOperation, AbortManager } from "@/lib/promise-utils";
+import { csrfFetch } from "@/lib/csrf-client";
 import { toast } from "sonner";
 import { hasSpeakerMetadata } from "@/lib/transcript-export";
 import { buildSuggestedQuestionFallbacks } from "@/lib/suggested-question-fallback";
@@ -890,18 +891,18 @@ export default function AnalyzePage() {
                       const { summaryContent: generatedTakeaways } = await summaryRes.json();
                       setTakeawaysContent(generatedTakeaways);
 
-                      // Update the video analysis with the takeaways
+                      // Update the video analysis with the takeaways (requires auth + ownership)
                       await backgroundOperation(
                         'update-cached-takeaways',
                         async () => {
-                          await fetch("/api/update-video-analysis", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              videoId: extractedVideoId,
-                              summary: generatedTakeaways
-                            }),
+                          const res = await csrfFetch.post("/api/update-video-analysis", {
+                            videoId: extractedVideoId,
+                            summary: generatedTakeaways
                           });
+                          // 401/403 is expected for anonymous users or non-owners
+                          if (!res.ok && res.status !== 401 && res.status !== 403) {
+                            throw new Error('Failed to update takeaways');
+                          }
                         }
                       );
                       return generatedTakeaways;
@@ -1253,40 +1254,8 @@ export default function AnalyzePage() {
       // Rate limit is handled server-side now
       checkRateLimit();
 
-      // Save complete analysis to database in background
-      backgroundOperation(
-        'save-complete-analysis',
-        async () => {
-          const response = await fetch("/api/save-analysis", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              videoId: extractedVideoId,
-              videoInfo: fetchedVideoInfo || {
-                title: `YouTube Video ${extractedVideoId}`,
-                author: 'Unknown',
-                duration: 0,
-                thumbnail: '',
-                language,
-                availableLanguages
-              },
-              transcript: normalizedTranscriptData,
-              topics: generatedTopics,
-              summary: generatedTakeaways
-            }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-            const message = buildApiErrorMessage(errorData, "Failed to save analysis");
-            throw new Error(message);
-          }
-        },
-        (error) => {
-          console.error('Failed to save analysis to database:', error);
-          toast.error('Unable to save video analysis. Your results are still visible.');
-        }
-      );
+      // NOTE: Video analysis is now saved server-side in /api/video-analysis
+      // to prevent client-side cache poisoning attacks
 
       // Generate suggested questions
       backgroundOperation(
@@ -1341,20 +1310,17 @@ export default function AnalyzePage() {
 
           applyCachedQuestions(normalizedQuestions);
 
-          // Update video analysis with suggested questions
+          // Update video analysis with suggested questions (requires auth + ownership)
           await backgroundOperation(
             'update-questions',
             async () => {
-              const updateRes = await fetch("/api/update-video-analysis", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  videoId: extractedVideoId,
-                  suggestedQuestions: normalizedQuestions
-                }),
+              const updateRes = await csrfFetch.post("/api/update-video-analysis", {
+                videoId: extractedVideoId,
+                suggestedQuestions: normalizedQuestions
               });
 
-              if (!updateRes.ok && updateRes.status !== 404) {
+              // 401/403 is expected for anonymous users or non-owners
+              if (!updateRes.ok && updateRes.status !== 404 && updateRes.status !== 401 && updateRes.status !== 403) {
                 throw new Error('Failed to update suggested questions');
               }
             }

@@ -298,7 +298,7 @@ async function handler(req: NextRequest) {
     if (!forceRegenerate && cachedVideo && cachedVideo.topics) {
       // If user is logged in, track their access to this video atomically
       if (user) {
-        await supabase.rpc('upsert_video_analysis_with_user_link', {
+        await supabase.rpc('insert_video_analysis_server', {
           p_youtube_id: videoId,
           p_title: cachedVideo.title,
           p_author: cachedVideo.author,
@@ -306,10 +306,12 @@ async function handler(req: NextRequest) {
           p_thumbnail_url: cachedVideo.thumbnail_url,
           p_transcript: cachedVideo.transcript,
           p_topics: cachedVideo.topics,
-          p_summary: cachedVideo.summary || null, // Ensure null instead of undefined
+          p_summary: cachedVideo.summary || null,
           p_suggested_questions: cachedVideo.suggested_questions || null,
           p_model_used: cachedVideo.model_used,
-          p_user_id: user.id
+          p_user_id: user.id,
+          p_language: cachedVideo.language || null,
+          p_available_languages: cachedVideo.available_languages || null
         });
       }
 
@@ -426,6 +428,28 @@ async function handler(req: NextRequest) {
 
     if (!user && guestState) {
       await recordGuestUsage(guestState, { supabase });
+    }
+
+    // Save analysis to database (server-side) - prevents client-side cache poisoning
+    try {
+      await supabase.rpc('insert_video_analysis_server', {
+        p_youtube_id: videoId,
+        p_title: videoInfo?.title || `YouTube Video ${videoId}`,
+        p_author: videoInfo?.author || null,
+        p_duration: videoInfo?.duration || null,
+        p_thumbnail_url: videoInfo?.thumbnail || null,
+        p_transcript: transcript,
+        p_topics: topics,
+        p_summary: null, // Summary generated separately via /api/generate-summary
+        p_suggested_questions: null,
+        p_model_used: modelUsed,
+        p_user_id: user?.id || null,
+        p_language: videoInfo?.language || null,
+        p_available_languages: videoInfo?.availableLanguages || null
+      });
+    } catch (saveError) {
+      // Log but don't fail the request - user should still see their results
+      console.error('Failed to save video analysis to cache:', saveError);
     }
 
     const response = NextResponse.json({
