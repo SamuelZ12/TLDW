@@ -64,12 +64,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session?.user ?? null)
     })
 
-    // Listen for tab visibility changes to refresh session
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Listen for tab visibility changes to refresh session (client-side only)
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
 
     return () => {
       subscription.unsubscribe();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
     }
   }, [supabase.auth, handleVisibilityChange])
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
+import { SafePortal } from "@/lib/safe-portal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Languages, ChevronDown, CheckCircle2, Circle, Search, Sparkles } from "lucide-react";
@@ -349,14 +349,15 @@ function LanguageSelectorMenu({
     };
   }, [chevronRef]);
 
-  return createPortal(
-    <div
-      ref={menuRef}
-      className="fixed z-50 w-[260px] rounded-2xl border bg-popover p-0 text-popover-foreground shadow-md outline-none animate-in fade-in-0 zoom-in-95"
-      style={{
-        top: `${position.top}px`,
-        left: `${position.left}px`,
-      }}
+  return (
+    <SafePortal>
+      <div
+        ref={menuRef}
+        className="fixed z-50 w-[260px] rounded-2xl border bg-popover p-0 text-popover-foreground shadow-md outline-none animate-in fade-in-0 zoom-in-95"
+        style={{
+          top: `${position.top}px`,
+          left: `${position.left}px`,
+        }}
       onMouseEnter={onMenuMouseEnter}
       onMouseLeave={onMenuMouseLeave}
     >
@@ -451,7 +452,7 @@ function LanguageSelectorMenu({
           );
         })}
       </div>
-    </div>,
-    document.body
+    </div>
+    </SafePortal>
   );
 }

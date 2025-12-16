@@ -177,8 +177,8 @@ export function YouTubePlayer({
     if ((window as any).YT && (window as any).YT.Player) {
       initializePlayer();
     } else {
-      // Only add script if it doesn't exist
-      if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      // Only add script if it doesn't exist and document.body is available
+      if (typeof document !== 'undefined' && document.body && !document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
         const tag = document.createElement("script");
         tag.src = "https://www.youtube.com/iframe_api";
         document.body.appendChild(tag);

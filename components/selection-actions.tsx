@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
+import { SafePortal } from "@/lib/safe-portal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { NoteMetadata } from "@/lib/types";
@@ -187,46 +187,47 @@ export function SelectionActions({
   const top = rect.top + window.scrollY - 48;
   const left = rect.left + window.scrollX + rect.width / 2;
 
-  return createPortal(
-    <Card
-      className={cn(
-        "fixed z-[9999] flex flex-row items-center gap-1 rounded-xl border border-border/40 bg-primary/5 backdrop-blur-md shadow-lg",
-        "transition-opacity animate-in fade-in",
-        "px-3 py-1.5",
-      )}
-      style={{
-        top: Math.max(top, 12),
-        left,
-        transform: "translateX(-50%)",
-      }}
-      onMouseDown={(event) => event.stopPropagation()}
-    >
-      {onExplain && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2.5 text-sm font-normal rounded-lg transition-all duration-200 hover:bg-primary/10 hover:scale-105 hover:text-foreground"
-          disabled={isProcessing}
-          onClick={() => handleAction("explain")}
-        >
-          Explain
-        </Button>
-      )}
-      {onExplain && onTakeNote && (
-        <div className="h-6 w-px bg-border/60" />
-      )}
-      {onTakeNote && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2.5 text-sm font-normal rounded-lg transition-all duration-200 hover:bg-primary/10 hover:scale-105 hover:text-foreground"
-          disabled={isProcessing}
-          onClick={() => handleAction("note")}
-        >
-          Take Notes
-        </Button>
-      )}
-    </Card>,
-    document.body
+  return (
+    <SafePortal>
+      <Card
+        className={cn(
+          "fixed z-[9999] flex flex-row items-center gap-1 rounded-xl border border-border/40 bg-primary/5 backdrop-blur-md shadow-lg",
+          "transition-opacity animate-in fade-in",
+          "px-3 py-1.5",
+        )}
+        style={{
+          top: Math.max(top, 12),
+          left,
+          transform: "translateX(-50%)",
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        {onExplain && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-sm font-normal rounded-lg transition-all duration-200 hover:bg-primary/10 hover:scale-105 hover:text-foreground"
+            disabled={isProcessing}
+            onClick={() => handleAction("explain")}
+          >
+            Explain
+          </Button>
+        )}
+        {onExplain && onTakeNote && (
+          <div className="h-6 w-px bg-border/60" />
+        )}
+        {onTakeNote && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-sm font-normal rounded-lg transition-all duration-200 hover:bg-primary/10 hover:scale-105 hover:text-foreground"
+            disabled={isProcessing}
+            onClick={() => handleAction("note")}
+          >
+            Take Notes
+          </Button>
+        )}
+      </Card>
+    </SafePortal>
   );
 }
