@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { Topic, TranscriptSegment } from "@/lib/types";
+import { Topic, TranscriptSegment, TranslationRequestHandler } from "@/lib/types";
 import { getTopicHSLColor } from "@/lib/utils";
 import { TopicCard } from "@/components/topic-card";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,8 @@ interface VideoProgressBarProps {
   transcript?: TranscriptSegment[];
   isLoadingThemeTopics?: boolean;
   videoId?: string;
+  selectedLanguage?: string | null;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 export function VideoProgressBar({
@@ -30,6 +32,8 @@ export function VideoProgressBar({
   transcript,
   isLoadingThemeTopics = false,
   videoId,
+  selectedLanguage = null,
+  onRequestTranslation,
 }: VideoProgressBarProps) {
   const progressBarRef = useRef<HTMLDivElement>(null);
   const hasDuration = videoDuration > 0;
@@ -37,12 +41,12 @@ export function VideoProgressBar({
   const handleBackgroundClick = (e: React.MouseEvent<HTMLDivElement>) => {
     // Clicking empty space seeks to that position
     if (!progressBarRef.current) return;
-    
+
     const rect = progressBarRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const percentage = clickX / rect.width;
     const clickTime = percentage * videoDuration;
-    
+
     onSeek(clickTime);
   };
 
@@ -82,14 +86,14 @@ export function VideoProgressBar({
   // Flatten segments for rendering without nested maps
   const allSegments = hasDuration
     ? topics.flatMap((topic, topicIndex) =>
-        topic.segments.map((segment, segmentIndex) => ({
-          key: `${topic.id}-${segmentIndex}`,
-          topic,
-          topicIndex,
-          segment,
-          segmentIndex,
-        }))
-      )
+      topic.segments.map((segment, segmentIndex) => ({
+        key: `${topic.id}-${segmentIndex}`,
+        topic,
+        topicIndex,
+        segment,
+        segmentIndex,
+      }))
+    )
     : [];
 
   const getSegmentStyles = (segment: Topic['segments'][number]) => {
@@ -170,13 +174,15 @@ export function VideoProgressBar({
 
             return (
               <TopicCard
-                key={topic.id}
+                key={`${topic.id}:${topic.title}`}
                 topic={topic}
                 isSelected={isSelected}
                 onClick={() => onTopicSelect?.(topic)}
                 topicIndex={index}
                 onPlayTopic={() => onPlayTopic?.(topic)}
                 videoId={videoId}
+                selectedLanguage={selectedLanguage}
+                onRequestTranslation={onRequestTranslation}
               />
             );
           })}

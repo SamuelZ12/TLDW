@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TranscriptSegment } from '@/lib/types';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
-import { generateWithFallback } from '@/lib/gemini-client';
+import { generateAIResponse } from '@/lib/ai-client';
 import { quickPreviewSchema } from '@/lib/schemas';
+import { safeJsonParse } from '@/lib/json-utils';
+import { getLanguageName } from '@/lib/language-utils';
 
 function buildFallbackPreview(options: {
   videoTitle?: string;
@@ -34,7 +36,7 @@ function buildFallbackPreview(options: {
 
 async function handler(request: NextRequest) {
   try {
-    const { transcript, videoTitle, videoDescription, channelName, tags } = await request.json();
+    const { transcript, videoTitle, videoDescription, channelName, tags, language } = await request.json();
 
     if (!transcript || !Array.isArray(transcript)) {
       return NextResponse.json(
@@ -82,8 +84,13 @@ async function handler(request: NextRequest) {
       });
     }
 
+    // Build language instruction if the transcript is in a non-English language
+    const languageInstruction = language && language !== 'en'
+      ? `\n<languageRequirement>IMPORTANT: Generate the overview in ${getLanguageName(language)} to match the video's language.</languageRequirement>`
+      : '';
+
     const prompt = `<task>
-<role>You are an expert content editor writing a fast, engaging preview for a video.</role>
+<role>You are an expert content editor writing a fast, engaging preview for a video.</role>${languageInstruction}
 <context>
 <metadata>
 ${videoTitle ? `Title: ${videoTitle}` : 'Title: Unknown'}
@@ -108,14 +115,12 @@ ${trimmedPreview}
     let preview: string | undefined;
 
     try {
-      const response = await generateWithFallback(prompt, {
-        generationConfig: {
-          temperature: 0.7
-        },
+      const response = await generateAIResponse(prompt, {
+        temperature: 0.7,
         zodSchema: quickPreviewSchema
       });
       if (response) {
-        const parsed = quickPreviewSchema.parse(JSON.parse(response));
+        const parsed = quickPreviewSchema.parse(safeJsonParse(response));
         preview = parsed.overview.trim();
       }
     } catch (aiError: any) {

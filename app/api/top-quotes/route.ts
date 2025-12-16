@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TranscriptSegment, VideoInfo } from '@/lib/types';
 import { withSecurity } from '@/lib/security-middleware';
 import { RATE_LIMITS } from '@/lib/rate-limiter';
-import { generateWithFallback } from '@/lib/gemini-client';
+import { generateAIResponse } from '@/lib/ai-client';
 import { topQuotesSchema } from '@/lib/schemas';
 import { formatTranscriptWithTimestamps, formatVideoInfoBlock } from '@/lib/prompts/takeaways';
+import { getLanguageName } from '@/lib/language-utils';
 
 function buildTopQuotesPrompt(transcript: TranscriptSegment[], videoInfo: Partial<VideoInfo> | undefined) {
   const transcriptBlock = formatTranscriptWithTimestamps(transcript);
@@ -46,7 +47,7 @@ function buildQuotesMarkdown(quotes: Array<{ title: string; quote: string; times
 
 async function handler(request: NextRequest) {
   try {
-    const { transcript, videoInfo } = await request.json();
+    const { transcript, videoInfo, targetLanguage } = await request.json();
 
     if (!Array.isArray(transcript) || transcript.length === 0) {
       return NextResponse.json({ error: 'Valid transcript is required' }, { status: 400 });
@@ -56,13 +57,21 @@ async function handler(request: NextRequest) {
       return NextResponse.json({ error: 'Video information is required' }, { status: 400 });
     }
 
-    const prompt = buildTopQuotesPrompt(transcript as TranscriptSegment[], videoInfo as Partial<VideoInfo>);
+    const basePrompt = buildTopQuotesPrompt(transcript as TranscriptSegment[], videoInfo as Partial<VideoInfo>);
 
-    const response = await generateWithFallback(prompt, {
+    // Build language instruction if targetLanguage is provided
+    const languageInstruction = targetLanguage
+      ? (() => {
+          const langName = getLanguageName(targetLanguage);
+          return `\n<languageRequirement>IMPORTANT: You MUST respond in ${langName}. All text in the "title" and "quote" fields must be in ${langName}.</languageRequirement>\n`;
+        })()
+      : '';
+
+    const prompt = basePrompt.replace('</task>', `${languageInstruction}</task>`);
+
+    const response = await generateAIResponse(prompt, {
       zodSchema: topQuotesSchema,
-      generationConfig: {
-        temperature: 0.4
-      }
+      temperature: 0.4
     });
 
     const parsed = JSON.parse(response);

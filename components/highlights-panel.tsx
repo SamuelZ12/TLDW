@@ -1,11 +1,19 @@
 "use client";
 
-import { Topic, TranscriptSegment } from "@/lib/types";
+import { useState, useEffect } from "react";
+import { Topic, TranscriptSegment, TranslationRequestHandler } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { VideoProgressBar } from "@/components/video-progress-bar";
 import { formatDuration, cn } from "@/lib/utils";
 import { Play, Pause, Loader2 } from "lucide-react";
+
+// Default English labels
+const DEFAULT_LABELS = {
+  playAll: "Play All",
+  stop: "Stop",
+  generatingYourReels: "Generating your reels...",
+};
 
 interface HighlightsPanelProps {
   topics: Topic[];
@@ -21,6 +29,8 @@ interface HighlightsPanelProps {
   transcript?: TranscriptSegment[];
   isLoadingThemeTopics?: boolean;
   videoId?: string;
+  selectedLanguage?: string | null;
+  onRequestTranslation?: TranslationRequestHandler;
 }
 
 export function HighlightsPanel({
@@ -37,7 +47,49 @@ export function HighlightsPanel({
   transcript = [],
   isLoadingThemeTopics = false,
   videoId,
+  selectedLanguage = null,
+  onRequestTranslation,
 }: HighlightsPanelProps) {
+  // Translation state
+  const [translatedLabels, setTranslatedLabels] = useState(DEFAULT_LABELS);
+
+  // Translate labels when language changes
+  useEffect(() => {
+    if (!selectedLanguage || !onRequestTranslation) {
+      setTranslatedLabels(DEFAULT_LABELS);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const translateLabels = async () => {
+      const translations = await Promise.all([
+        onRequestTranslation(DEFAULT_LABELS.playAll, `ui_highlights:playAll:${selectedLanguage}`),
+        onRequestTranslation(DEFAULT_LABELS.stop, `ui_highlights:stop:${selectedLanguage}`),
+        onRequestTranslation(DEFAULT_LABELS.generatingYourReels, `ui_highlights:generatingYourReels:${selectedLanguage}`),
+      ]);
+
+      if (!isCancelled) {
+        setTranslatedLabels({
+          playAll: translations[0],
+          stop: translations[1],
+          generatingYourReels: translations[2],
+        });
+      }
+    };
+
+    translateLabels().catch((err) => {
+      console.error("Failed to translate highlights panel labels:", err);
+      if (!isCancelled) {
+        setTranslatedLabels(DEFAULT_LABELS);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedLanguage, onRequestTranslation]);
+
   return (
     <Card className="overflow-hidden p-0 border-0 relative">
       <div className={cn(
@@ -55,6 +107,8 @@ export function HighlightsPanel({
           transcript={transcript}
           isLoadingThemeTopics={isLoadingThemeTopics}
           videoId={videoId}
+          selectedLanguage={selectedLanguage}
+          onRequestTranslation={onRequestTranslation}
         />
 
         <div className="mt-3 flex items-center justify-between">
@@ -73,12 +127,12 @@ export function HighlightsPanel({
               {isPlayingAll ? (
                 <>
                   <Pause className="h-3 w-3 mr-1" />
-                  Stop
+                  {translatedLabels.stop}
                 </>
               ) : (
                 <>
                   <Play className="h-3 w-3 mr-1" />
-                  Play All
+                  {translatedLabels.playAll}
                 </>
               )}
             </Button>
@@ -91,7 +145,7 @@ export function HighlightsPanel({
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 pointer-events-none">
           <Loader2 className="h-5 w-5 animate-spin text-primary" />
           <p className="text-sm font-medium text-foreground">
-            Generating your reels...
+            {translatedLabels.generatingYourReels}
           </p>
         </div>
       )}

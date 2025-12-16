@@ -284,7 +284,7 @@ export function findTextInTranscript(
             endCharOffset: transcript[i].text.length,
             matchStrategy: 'fuzzy-ngram',
             similarity,
-            confidence: score / targetWords.length // Ratio of matched words
+            confidence: Math.min(1.0, score / targetWords.length) // Ratio of matched words, clamped to [0, 1]
           };
         }
       }

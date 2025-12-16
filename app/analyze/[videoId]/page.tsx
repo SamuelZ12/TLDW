@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { RightColumnTabs, type RightColumnTabsHandle } from "@/components/right-column-tabs";
 import { YouTubePlayer } from "@/components/youtube-player";
 import { HighlightsPanel } from "@/components/highlights-panel";
@@ -10,41 +10,89 @@ import { LoadingTips } from "@/components/loading-tips";
 import { VideoSkeleton } from "@/components/video-skeleton";
 import Link from "next/link";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { Topic, TranscriptSegment, VideoInfo, Citation, PlaybackCommand, Note, NoteSource, NoteMetadata, TopicCandidate, TopicGenerationMode } from "@/lib/types";
+import { Topic, TranscriptSegment, VideoInfo, Citation, PlaybackCommand, Note, NoteSource, NoteMetadata, TopicCandidate, TopicGenerationMode, TranslationRequestHandler } from "@/lib/types";
 import { normalizeWhitespace } from "@/lib/quote-matcher";
 import { hydrateTopicsWithTranscript, normalizeTranscript } from "@/lib/topic-utils";
 import { SelectionActionPayload, EXPLAIN_SELECTION_EVENT } from "@/components/selection-actions";
 import { fetchNotes, saveNote } from "@/lib/notes-client";
 import { EditingNote } from "@/components/notes-panel";
 import { useModePreference } from "@/lib/hooks/use-mode-preference";
+import { useTranslation } from "@/lib/hooks/use-translation";
+import { useSubscription } from "@/lib/hooks/use-subscription";
+import { useTranscriptExport } from "@/lib/hooks/use-transcript-export";
 
 // Page state for better UX
 type PageState = 'IDLE' | 'ANALYZING_NEW' | 'LOADING_CACHED';
 type AuthModalTrigger = 'generation-limit' | 'save-video' | 'manual' | 'save-note';
-import { extractVideoId } from "@/lib/utils";
+import { buildVideoSlug, extractVideoId } from "@/lib/utils";
+import { getLanguageName } from "@/lib/language-utils";
+import { NO_CREDITS_USED_MESSAGE } from "@/lib/no-credits-message";
 import { useElapsedTimer } from "@/lib/hooks/use-elapsed-timer";
 import { Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { AuthModal } from "@/components/auth-modal";
+import { TranscriptExportDialog } from "@/components/transcript-export-dialog";
+import { TranscriptExportUpsell } from "@/components/transcript-export-upsell";
 import { useAuth } from "@/contexts/auth-context";
 import { backgroundOperation, AbortManager } from "@/lib/promise-utils";
+import { csrfFetch } from "@/lib/csrf-client";
 import { toast } from "sonner";
+import { hasSpeakerMetadata } from "@/lib/transcript-export";
 import { buildSuggestedQuestionFallbacks } from "@/lib/suggested-question-fallback";
 
-const GUEST_LIMIT_MESSAGE = "You've used today's free analysis. Sign in to keep going.";
-const AUTH_LIMIT_MESSAGE = "You get 5 videos per day. Come back tomorrow.";
+const GUEST_LIMIT_MESSAGE = "You've used your free preview. Create a free account for 3 videos/month.";
+const AUTH_LIMIT_MESSAGE = "You've used all 3 free videos this month. Upgrade to Pro for 100 videos/month.";
 const DEFAULT_CLIENT_ERROR = "Something went wrong. Please try again.";
+
+type LimitCheckResponse = {
+  canGenerate: boolean;
+  isAuthenticated: boolean;
+  tier?: 'free' | 'pro' | 'anonymous';
+  reason?: string | null;
+  requiresTopup?: boolean;
+  requiresAuth?: boolean;
+  status?: string | null;
+  warning?: string | null;
+  unlimited?: boolean;
+  willConsumeTopup?: boolean;
+  resetAt?: string | null;
+  usage?: {
+    totalRemaining?: number | null;
+    counted?: number | null;
+    cached?: number | null;
+    baseLimit?: number | null;
+    baseRemaining?: number | null;
+    topupRemaining?: number | null;
+  } | null;
+};
+
+
+function buildLimitExceededMessage(limitData?: LimitCheckResponse | null): string {
+  if (!limitData) {
+    return AUTH_LIMIT_MESSAGE;
+  }
+
+  if (limitData.reason === 'SUBSCRIPTION_INACTIVE') {
+    return 'Your subscription is not active. Visit the billing portal to reactivate and continue generating videos.';
+  }
+
+  if (limitData.tier === 'pro') {
+    return limitData.requiresTopup
+      ? 'You have used all Pro videos this period. Purchase a Top-Up (+20 videos for $2.99) or wait for your next billing cycle.'
+      : 'You have used your Pro allowance. Wait for your next billing cycle to reset.';
+  }
+
+  return AUTH_LIMIT_MESSAGE;
+}
 
 function normalizeErrorMessage(message: string | undefined, fallback: string = DEFAULT_CLIENT_ERROR): string {
   const trimmed = typeof message === "string" ? message.trim() : "";
   const baseMessage = trimmed.length > 0 ? trimmed : fallback;
   const normalizedSource = `${trimmed} ${baseMessage}`.toLowerCase();
 
-  if (
-    normalizedSource.includes("user aborted request") ||
-    normalizedSource.includes("unsupported transcript language")
-  ) {
-    return "Only YouTube videos with English transcripts are supported right now. Please choose a video that has English captions enabled.";
+  // Only handle user abort - show actual API errors for transcript issues
+  if (normalizedSource.includes("user aborted request")) {
+    return "Request cancelled";
   }
 
   return baseMessage;
@@ -65,19 +113,68 @@ function buildApiErrorMessage(errorData: unknown, fallback: string): string {
       ? record.details.trim()
       : "";
 
-  if (errorText && detailsText) {
-    return normalizeErrorMessage(`${errorText}: ${detailsText}`, fallback);
+  const combinedMessage =
+    errorText && detailsText
+      ? `${errorText}: ${detailsText}`
+      : detailsText || errorText || undefined;
+
+  const baseMessage = normalizeErrorMessage(combinedMessage, fallback);
+
+  const creditsMessage =
+    typeof record.creditsMessage === "string" && record.creditsMessage.trim().length > 0
+      ? record.creditsMessage.trim()
+      : record.noCreditsUsed
+        ? NO_CREDITS_USED_MESSAGE
+        : "";
+
+  if (!creditsMessage) {
+    return baseMessage;
   }
 
-  if (detailsText) {
-    return normalizeErrorMessage(detailsText, fallback);
-  }
+  const alreadyIncludes = baseMessage.toLowerCase().includes(creditsMessage.toLowerCase());
+  return alreadyIncludes ? baseMessage : `${baseMessage}\n${creditsMessage}`;
+}
 
-  if (errorText) {
-    return normalizeErrorMessage(errorText, fallback);
+function parseDurationSeconds(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed) && Number.isFinite(parsed)) return parsed;
   }
+  return null;
+}
 
-  return normalizeErrorMessage(undefined, fallback);
+function isFlattenedTranscript(
+  transcript: TranscriptSegment[],
+  videoInfo?: VideoInfo | null,
+): boolean {
+  if (!Array.isArray(transcript) || transcript.length === 0) return false;
+  // If we already have several segments, it's probably fine
+  if (transcript.length > 3) return false;
+
+  const lastSegment = transcript[transcript.length - 1];
+  const transcriptDuration = lastSegment
+    ? lastSegment.start + (lastSegment.duration || 0)
+    : 0;
+
+  const numericDuration = parseDurationSeconds(videoInfo?.duration);
+  const referenceDuration =
+    numericDuration && numericDuration > 0 ? numericDuration : transcriptDuration;
+
+  const totalWords = transcript.reduce((sum, seg) => {
+    const words = typeof seg.text === "string"
+      ? seg.text.trim().split(/\s+/).filter(Boolean).length
+      : 0;
+    return sum + words;
+  }, 0);
+
+  // Heuristic: very few segments that each cover nearly the whole video and a lot of text
+  return (
+    transcript.length <= 2 &&
+    referenceDuration > 120 &&
+    transcriptDuration >= referenceDuration * 0.9 &&
+    totalWords > 150
+  );
 }
 
 export default function AnalyzePage() {
@@ -89,7 +186,10 @@ export default function AnalyzePage() {
   const cachedParam = searchParams?.get('cached');
   const cachedParamValue = cachedParam?.toLowerCase();
   const isCachedQuery = cachedParamValue === 'true' || cachedParamValue === '1';
+  const regenParam = searchParams?.get('regen');
+  const forceRegenerate = (regenParam?.toLowerCase() === '1' || regenParam?.toLowerCase() === 'true');
   const authErrorParam = searchParams?.get('auth_error');
+  const slugParam = searchParams?.get('slug') ?? null;
   const [pageState, setPageState] = useState<PageState>(() =>
     (routeVideoId || urlParam)
       ? (isCachedQuery ? 'LOADING_CACHED' : 'ANALYZING_NEW')
@@ -111,8 +211,18 @@ export default function AnalyzePage() {
   const [themeTopicsMap, setThemeTopicsMap] = useState<Record<string, Topic[]>>({});
   const [themeCandidateMap, setThemeCandidateMap] = useState<Record<string, TopicCandidate[]>>({});
   const [usedTopicKeys, setUsedTopicKeys] = useState<Set<string>>(new Set());
+  const baseTopicKeySet = useMemo(() => {
+    const keys = new Set<string>();
+    baseTopics.forEach((topic) => {
+      if (topic.quote?.timestamp && topic.quote.text) {
+        keys.add(`${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`);
+      }
+    });
+    return keys;
+  }, [baseTopics]);
   const [isLoadingThemeTopics, setIsLoadingThemeTopics] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
+  const [switchingToLanguage, setSwitchingToLanguage] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
@@ -126,6 +236,7 @@ export default function AnalyzePage() {
   const rightColumnTabsRef = useRef<RightColumnTabsHandle>(null);
   const abortManager = useRef(new AbortManager());
   const selectedThemeRef = useRef<string | null>(null);
+  const seoPathRef = useRef<string | null>(null);
   const nextThemeRequestIdRef = useRef(0);
   const activeThemeRequestIdRef = useRef<number | null>(null);
   const pendingThemeRequestsRef = useRef(new Map<string, number>());
@@ -142,7 +253,7 @@ export default function AnalyzePage() {
   const memoizedSetIsPlayingAll = useCallback((value: boolean) => {
     setIsPlayingAll(value);
   }, []);
-  
+
   // Takeaways generation state
   const [, setTakeawaysContent] = useState<string | null>(null);
   const [, setIsGeneratingTakeaways] = useState<boolean>(false);
@@ -152,6 +263,54 @@ export default function AnalyzePage() {
   // Cached suggested questions
   const [cachedSuggestedQuestions, setCachedSuggestedQuestions] = useState<string[] | null>(null);
 
+  // Use custom hooks for translation
+  const {
+    selectedLanguage,
+    translationCache,
+    handleRequestTranslation,
+    handleBulkTranslation,
+    handleLanguageChange,
+  } = useTranslation();
+
+  // Create unified translation handler with videoInfo context
+  const translateWithContext: TranslationRequestHandler = useCallback(
+    (text: string, cacheKey: string, scenario?, targetLanguage?) => {
+      return handleRequestTranslation(text, cacheKey, scenario, videoInfo, targetLanguage);
+    },
+    [handleRequestTranslation, videoInfo]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const effectiveVideoId = routeVideoId || videoId;
+    if (!effectiveVideoId) {
+      return;
+    }
+
+    const normalizedSlugParam = slugParam?.trim() || null;
+    const derivedSlug = normalizedSlugParam
+      ? normalizedSlugParam
+      : (videoInfo?.title ? buildVideoSlug(videoInfo.title, effectiveVideoId) : null);
+
+    if (!derivedSlug) {
+      return;
+    }
+
+    const targetPath = `/v/${derivedSlug}`;
+
+    if (seoPathRef.current === targetPath || window.location.pathname === targetPath) {
+      seoPathRef.current = targetPath;
+      return;
+    }
+
+    const newUrl = `${targetPath}${window.location.search}`;
+    window.history.replaceState(window.history.state, '', newUrl);
+    seoPathRef.current = targetPath;
+  }, [routeVideoId, videoId, videoInfo?.title, slugParam]);
+
   // Use custom hook for timer logic
   const elapsedTime = useElapsedTimer(generationStartTime);
   const processingElapsedTime = useElapsedTimer(processingStartTime);
@@ -160,6 +319,88 @@ export default function AnalyzePage() {
   const { user } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalTrigger, setAuthModalTrigger] = useState<AuthModalTrigger>('generation-limit');
+
+  // Store current video data in sessionStorage before auth
+  const storeCurrentVideoForAuth = useCallback((id?: string) => {
+    const targetVideoId = id ?? videoId;
+    if (targetVideoId && !user) {
+      try {
+        sessionStorage.setItem('pendingVideoId', targetVideoId);
+      } catch (error) {
+        console.error('Failed to persist pending video ID:', error);
+      }
+    }
+  }, [user, videoId]);
+
+  const handleAuthRequired = useCallback(() => {
+    storeCurrentVideoForAuth();
+    setAuthModalTrigger('manual');
+    setAuthModalOpen(true);
+  }, [storeCurrentVideoForAuth]);
+
+  // Use custom hook for subscription
+  const {
+    subscriptionStatus,
+    isCheckingSubscription,
+    fetchSubscriptionStatus,
+  } = useSubscription({
+    user,
+    onAuthRequired: handleAuthRequired,
+  });
+
+  // Ensure we fetch subscription status early so Pro users aren't blocked
+  useEffect(() => {
+    if (user && !subscriptionStatus && !isCheckingSubscription) {
+      fetchSubscriptionStatus().catch((err) => {
+        console.error('Failed to prefetch subscription status:', err);
+      });
+    }
+  }, [user, subscriptionStatus, isCheckingSubscription, fetchSubscriptionStatus]);
+
+  // Translation is available to all authenticated users (Free + Pro)
+
+  const hasSpeakerData = useMemo(() => hasSpeakerMetadata(transcript), [transcript]);
+
+  // Use custom hook for transcript export
+  const {
+    isExportDialogOpen,
+    exportFormat,
+    exportMode,
+    targetLanguage,
+    includeTimestamps,
+    includeSpeakers,
+    exportErrorMessage,
+    exportDisableMessage,
+    isExportingTranscript,
+    showExportUpsell,
+    exportButtonState,
+    translationProgress,
+    setExportFormat,
+    setExportMode,
+    setTargetLanguage,
+    setIncludeTimestamps,
+    setIncludeSpeakers,
+    setShowExportUpsell,
+    handleExportDialogOpenChange,
+    handleRequestExport,
+    handleConfirmExport,
+    handleUpgradeClick,
+  } = useTranscriptExport({
+    videoId,
+    transcript,
+    topics,
+    videoInfo,
+    user,
+    hasSpeakerData,
+    subscriptionStatus,
+    isCheckingSubscription,
+    fetchSubscriptionStatus,
+    onAuthRequired: handleAuthRequired,
+    onRequestTranslation: translateWithContext,
+    onBulkTranslation: handleBulkTranslation,
+    translationCache: translationCache,
+  });
+
   const [rateLimitInfo, setRateLimitInfo] = useState<{
     remaining: number | null;
     resetAt: Date | null;
@@ -187,19 +428,6 @@ export default function AnalyzePage() {
   const clearPlaybackCommand = useCallback(() => {
     setPlaybackCommand(null);
   }, []);
-
-  // Store current video data in sessionStorage before auth
-  const storeCurrentVideoForAuth = useCallback((id?: string) => {
-    const targetVideoId = id ?? videoId;
-    if (targetVideoId && !user) {
-      try {
-        sessionStorage.setItem('pendingVideoId', targetVideoId);
-        console.log('Stored video for post-auth linking:', targetVideoId);
-      } catch (error) {
-        console.error('Failed to persist pending video ID:', error);
-      }
-    }
-  }, [user, videoId]);
 
   const promptSignInForNotes = useCallback(() => {
     if (user) return;
@@ -239,7 +467,7 @@ export default function AnalyzePage() {
   );
 
   // Check for pending video linking after auth
-  const checkPendingVideoLink = async (retryCount = 0) => {
+  const checkPendingVideoLink = useCallback(async (retryCount = 0) => {
     // Check both sessionStorage and current videoId state
     const pendingVideoId = sessionStorage.getItem('pendingVideoId');
     const currentVideoId = videoId;
@@ -296,37 +524,44 @@ export default function AnalyzePage() {
           setTimeout(() => {
             checkPendingVideoLink(retryCount + 1);
           }, 1000 * (retryCount + 1));
+        } else if (response.status === 503 && retryCount < 2) {
+          // User profile not ready yet, retry after a short delay
+          console.log(`Profile not ready, retrying in ${2000 * (retryCount + 1)}ms...`);
+          setTimeout(() => {
+            checkPendingVideoLink(retryCount + 1);
+          }, 2000 * (retryCount + 1));
         } else {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('Failed to link video:', errorData);
+          const errorText = await response.text().catch(() => 'Unknown error');
+          console.error('Failed to link video:', response.status, errorText);
           // Don't remove pendingVideoId on error, so it can be retried later
         }
       } catch (error) {
         console.error('Error linking video:', error);
       }
     }
-  };
+  }, [videoId, user]);
 
-  const checkRateLimit = useCallback(async () => {
+  const checkRateLimit = useCallback(async (): Promise<LimitCheckResponse | null> => {
     try {
       const response = await fetch('/api/check-limit');
-      const data = await response.json();
+      const data: LimitCheckResponse = await response.json();
 
-      setAuthLimitReached(Boolean(data?.isAuthenticated && data?.canGenerate === false));
+      setAuthLimitReached(Boolean(data?.isAuthenticated && data?.canGenerate === false && data?.reason === 'LIMIT_REACHED'));
 
-      if (Object.prototype.hasOwnProperty.call(data ?? {}, 'remaining')) {
-        const remainingValue =
-          typeof data.remaining === 'number'
-            ? data.remaining
-            : data.remaining === null
-              ? null
-              : -1;
+      const usage = data?.usage;
+      const remainingValue =
+        typeof usage?.totalRemaining === 'number'
+          ? usage.totalRemaining
+          : usage?.totalRemaining === null
+            ? null
+            : -1;
 
-        setRateLimitInfo({
-          remaining: remainingValue,
-          resetAt: data.resetAt ? new Date(data.resetAt) : null
-        });
-      }
+      const resetTimestamp = data?.resetAt ?? null;
+
+      setRateLimitInfo({
+        remaining: remainingValue,
+        resetAt: resetTimestamp ? new Date(resetTimestamp) : null,
+      });
 
       return data;
     } catch (error) {
@@ -350,7 +585,7 @@ export default function AnalyzePage() {
         checkPendingVideoLink();
       }, 1500);
     }
-  }, [user, videoId]); // Properly track both dependencies
+  }, [user, videoId, checkPendingVideoLink]);
 
   // Cleanup AbortManager on component unmount
   useEffect(() => {
@@ -384,22 +619,36 @@ export default function AnalyzePage() {
   // Check if user can generate based on server-side rate limits
   const checkGenerationLimit = useCallback((
     pendingVideoId?: string,
-    remainingOverride?: number | null
+    remainingOverride?: number | null,
+    latestLimitData?: LimitCheckResponse | null
   ): boolean => {
     if (user) {
-      if (authLimitReached) {
+      const limitReached =
+        latestLimitData?.isAuthenticated
+          ? latestLimitData.canGenerate === false
+          : authLimitReached;
+
+      if (limitReached) {
+        const limitMessage = buildLimitExceededMessage(latestLimitData);
         setIsRateLimitError(true);
-        setError(AUTH_LIMIT_MESSAGE);
-        toast.error(AUTH_LIMIT_MESSAGE);
+        setError(limitMessage);
+        toast.error(limitMessage);
         return false;
       }
       return true;
     }
 
-    const effectiveRemaining =
+    let effectiveRemaining =
       typeof remainingOverride === 'number' || remainingOverride === null
         ? remainingOverride
         : rateLimitInfo.remaining;
+
+    if (!latestLimitData?.isAuthenticated) {
+      const totalRemaining = latestLimitData?.usage?.totalRemaining;
+      if (typeof totalRemaining === 'number' || totalRemaining === null) {
+        effectiveRemaining = totalRemaining;
+      }
+    }
 
     if (
       typeof effectiveRemaining === 'number' &&
@@ -414,7 +663,8 @@ export default function AnalyzePage() {
 
   const processVideo = useCallback(async (
     url: string,
-    selectedMode: TopicGenerationMode
+    selectedMode: TopicGenerationMode,
+    preferredLanguage?: string
   ) => {
     const currentRemaining = rateLimitInfo.remaining;
     try {
@@ -468,186 +718,227 @@ export default function AnalyzePage() {
         setVideoId(extractedVideoId);
       }
 
-      // Check cache first before fetching transcript/metadata
-      const cacheResponse = await fetch("/api/check-video-cache", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
-      });
+      // Check cache first before fetching transcript/metadata unless forced regeneration
+      // Skip cache when a specific non-English language is requested (user wants a different native transcript)
+      const shouldSkipCacheForLanguage = preferredLanguage && preferredLanguage !== 'en';
+      
+      if (!forceRegenerate && !shouldSkipCacheForLanguage) {
+        const cacheResponse = await fetch("/api/check-video-cache", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url })
+        });
 
-      if (cacheResponse.ok) {
-        const cacheData = await cacheResponse.json();
+        if (cacheResponse.ok) {
+          const cacheData = await cacheResponse.json();
 
-        if (cacheData.cached) {
-          // For cached videos, we're already in LOADING_CACHED state if isCached was true
-          // Otherwise, set it now
-          setPageState('LOADING_CACHED');
+          if (cacheData.cached) {
+            const sanitizedTranscript = normalizeTranscript(cacheData.transcript);
+            const flattenedTranscript = isFlattenedTranscript(sanitizedTranscript, cacheData.videoInfo);
 
-          const sanitizedTranscript = normalizeTranscript(cacheData.transcript);
-          const hydratedTopics = hydrateTopicsWithTranscript(
-            Array.isArray(cacheData.topics) ? cacheData.topics : [],
-            sanitizedTranscript,
-          );
+            if (!flattenedTranscript) {
+              // For cached videos, we're already in LOADING_CACHED state if isCached was true
+              // Otherwise, set it now
+              setPageState('LOADING_CACHED');
 
-          // Load all cached data
-          setTranscript(sanitizedTranscript);
+              const hydratedTopics = hydrateTopicsWithTranscript(
+                Array.isArray(cacheData.topics) ? cacheData.topics : [],
+                sanitizedTranscript,
+              );
 
-          const cachedVideoInfo = cacheData.videoInfo ?? null;
-          if (cachedVideoInfo) {
-            setVideoInfo(cachedVideoInfo);
-            const rawDuration = (cachedVideoInfo as { duration?: number | string | null }).duration;
-            const numericDuration =
-              typeof rawDuration === "number"
-                ? rawDuration
-                : typeof rawDuration === "string"
-                  ? Number(rawDuration)
-                  : null;
-            if (numericDuration && !Number.isNaN(numericDuration) && numericDuration > 0) {
-              setVideoDuration(numericDuration);
-            }
-          } else {
-            setVideoInfo(null);
-          }
+              // Load all cached data
+              setTranscript(sanitizedTranscript);
 
-          setTopics(hydratedTopics);
-          setBaseTopics(hydratedTopics);
-          const initialKeys = new Set<string>();
-          hydratedTopics.forEach(topic => {
-            if (topic.quote?.timestamp && topic.quote.text) {
-              const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
-              initialKeys.add(key);
-            }
-          });
-          setUsedTopicKeys(initialKeys);
-          setSelectedTopic(hydratedTopics.length > 0 ? hydratedTopics[0] : null);
-
-          // Set cached takeaways and questions
-          if (cacheData.summary) {
-            setTakeawaysContent(cacheData.summary);
-            setShowChatTab(true);
-            setIsGeneratingTakeaways(false);
-          }
-          if (cacheData.suggestedQuestions) {
-            setCachedSuggestedQuestions(cacheData.suggestedQuestions);
-          }
-
-          // Store video ID for potential post-auth linking (for cached videos)
-          storeCurrentVideoForAuth(extractedVideoId);
-
-          // Set page state back to idle
-          setPageState('IDLE');
-          setLoadingStage(null);
-          setProcessingStartTime(null);
-
-          backgroundOperation(
-            'load-cached-themes',
-            async () => {
-              const response = await fetch("/api/video-analysis", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  videoId: extractedVideoId,
-                  videoInfo: cacheData.videoInfo,
-                  transcript: sanitizedTranscript,
-                  model: 'gemini-2.5-flash',
-                  includeCandidatePool: true,
-                  mode: selectedMode
-                }),
-              });
-
-              if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-                const message = buildApiErrorMessage(errorData, "Failed to generate themes");
-                throw new Error(message);
-              }
-
-              const data = await response.json();
-              if (Array.isArray(data.themes)) {
-                setThemes(data.themes);
-              }
-              if (Array.isArray(data.topicCandidates)) {
-                setThemeCandidateMap(prev => ({
-                  ...prev,
-                  __default: data.topicCandidates
-                }));
-              }
-              return data.themes;
-            },
-            (error) => {
-              console.error("Failed to generate themes for cached video:", error);
-            }
-          );
-
-          // Auto-start takeaways generation if not available
-          if (!cacheData.summary) {
-            setShowChatTab(true);
-            setIsGeneratingTakeaways(true);
-
-            backgroundOperation(
-              'generate-cached-takeaways',
-              async () => {
-                const summaryRes = await fetch("/api/generate-summary", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    transcript: sanitizedTranscript,
-                    videoInfo: cacheData.videoInfo,
-                    videoId: extractedVideoId
-                  }),
-                });
-
-                if (summaryRes.ok) {
-                  const { summaryContent: generatedTakeaways } = await summaryRes.json();
-                  setTakeawaysContent(generatedTakeaways);
-
-                  // Update the video analysis with the takeaways
-                  await backgroundOperation(
-                    'update-cached-takeaways',
-                    async () => {
-                      await fetch("/api/update-video-analysis", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          videoId: extractedVideoId,
-                          summary: generatedTakeaways
-                        }),
-                      });
-                    }
-                  );
-                  return generatedTakeaways;
-                } else {
-                  const errorData = await summaryRes.json().catch(() => ({ error: "Unknown error" }));
-                  const message = buildApiErrorMessage(errorData, "Failed to generate takeaways");
-                  throw new Error(message);
+              const cachedVideoInfo = cacheData.videoInfo ?? null;
+              if (cachedVideoInfo) {
+                setVideoInfo(cachedVideoInfo);
+                const rawDuration = (cachedVideoInfo as { duration?: number | string | null }).duration;
+                const numericDuration =
+                  typeof rawDuration === "number"
+                    ? rawDuration
+                    : typeof rawDuration === "string"
+                      ? Number(rawDuration)
+                      : null;
+                if (numericDuration && !Number.isNaN(numericDuration) && numericDuration > 0) {
+                  setVideoDuration(numericDuration);
                 }
-              },
-              (error) => {
-                setTakeawaysError(error.message || "Failed to generate takeaways. Please try again.");
+              } else {
+                setVideoInfo(null);
               }
-            ).finally(() => {
-              setIsGeneratingTakeaways(false);
-            });
-          }
 
-          return; // Exit early - no need to fetch anything else
+              setTopics(hydratedTopics);
+              setBaseTopics(hydratedTopics);
+              const initialKeys = new Set<string>();
+              hydratedTopics.forEach(topic => {
+                if (topic.quote?.timestamp && topic.quote.text) {
+                  const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
+                  initialKeys.add(key);
+                }
+              });
+              setUsedTopicKeys(initialKeys);
+              setSelectedTopic(hydratedTopics.length > 0 ? hydratedTopics[0] : null);
+
+              // Set cached takeaways and questions
+              if (cacheData.summary) {
+                setTakeawaysContent(cacheData.summary);
+                setShowChatTab(true);
+                setIsGeneratingTakeaways(false);
+              }
+              if (cacheData.suggestedQuestions) {
+                setCachedSuggestedQuestions(cacheData.suggestedQuestions);
+              }
+
+              // Store video ID for potential post-auth linking (for cached videos)
+              storeCurrentVideoForAuth(extractedVideoId);
+
+              // Set page state back to idle
+              setPageState('IDLE');
+              setLoadingStage(null);
+              setProcessingStartTime(null);
+              setSwitchingToLanguage(null);
+
+              backgroundOperation(
+                'load-cached-themes',
+                async () => {
+                  const response = await fetch("/api/video-analysis", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      videoId: extractedVideoId,
+                      videoInfo: cacheData.videoInfo,
+                      transcript: sanitizedTranscript,
+                      includeCandidatePool: true,
+                      mode: selectedMode,
+                      forceRegenerate: false
+                    }),
+                  });
+
+                  if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+                    const message = buildApiErrorMessage(errorData, "Failed to generate themes");
+                    throw new Error(message);
+                  }
+
+                  const data = await response.json();
+                  if (Array.isArray(data.themes)) {
+                    setThemes(data.themes);
+                  }
+                  if (Array.isArray(data.topicCandidates)) {
+                    setThemeCandidateMap(prev => ({
+                      ...prev,
+                      __default: data.topicCandidates
+                    }));
+                  }
+                  return data.themes;
+                },
+                (error) => {
+                  console.error("Failed to generate themes for cached video:", error);
+                }
+              );
+
+              // Fetch available transcript languages for cached videos
+              // This enables the language selector dropdown to show all available native languages
+              // NOTE: Only update availableLanguages, preserve the cached language value
+              backgroundOperation(
+                'fetch-available-languages',
+                async () => {
+                  const langResponse = await fetch("/api/transcript", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url, lang: 'en' }),
+                  });
+
+                  if (langResponse.ok) {
+                    const langData = await langResponse.json();
+                    const availableLanguages = langData.availableLanguages;
+                    
+                    if (availableLanguages) {
+                      setVideoInfo(prev => prev ? {
+                        ...prev,
+                        // Preserve the cached language - only update availableLanguages
+                        // If no cached language exists, use the API response as fallback
+                        language: prev.language ?? langData.language,
+                        availableLanguages: availableLanguages ?? prev.availableLanguages
+                      } : null);
+                    }
+                  }
+                },
+                (error) => {
+                  console.error("Failed to fetch available languages:", error);
+                }
+              );
+
+              // Auto-start takeaways generation if not available
+              if (!cacheData.summary) {
+                setShowChatTab(true);
+                setIsGeneratingTakeaways(true);
+
+                backgroundOperation(
+                  'generate-cached-takeaways',
+                  async () => {
+                    const summaryRes = await fetch("/api/generate-summary", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        transcript: sanitizedTranscript,
+                        videoInfo: cacheData.videoInfo,
+                        videoId: extractedVideoId,
+                        targetLanguage: cacheData.videoInfo?.language
+                      }),
+                    });
+
+                    if (summaryRes.ok) {
+                      const { summaryContent: generatedTakeaways } = await summaryRes.json();
+                      setTakeawaysContent(generatedTakeaways);
+
+                      // Update the video analysis with the takeaways (requires auth + ownership)
+                      await backgroundOperation(
+                        'update-cached-takeaways',
+                        async () => {
+                          const res = await csrfFetch.post("/api/update-video-analysis", {
+                            videoId: extractedVideoId,
+                            summary: generatedTakeaways
+                          });
+                          // 401/403 is expected for anonymous users or non-owners
+                          if (!res.ok && res.status !== 401 && res.status !== 403) {
+                            throw new Error('Failed to update takeaways');
+                          }
+                        }
+                      );
+                      return generatedTakeaways;
+                    } else {
+                      const errorData = await summaryRes.json().catch(() => ({ error: "Unknown error" }));
+                      const message = buildApiErrorMessage(errorData, "Failed to generate takeaways");
+                      throw new Error(message);
+                    }
+                  },
+                  (error) => {
+                    setTakeawaysError(error.message || "Failed to generate takeaways. Please try again.");
+                  }
+                ).finally(() => {
+                  setIsGeneratingTakeaways(false);
+                });
+              }
+
+              return; // Exit early - no need to fetch anything else
+            } else {
+              console.warn("Cached transcript looks flattened; re-running full analysis.");
+            }
+          }
         }
       }
 
       let effectiveRemaining = currentRemaining;
+      const latestLimitData = await checkRateLimit();
 
-      if (!user) {
-        const latestLimitData = await checkRateLimit();
-        if (latestLimitData && Object.prototype.hasOwnProperty.call(latestLimitData, 'remaining')) {
-          effectiveRemaining =
-            typeof latestLimitData.remaining === 'number'
-              ? latestLimitData.remaining
-              : latestLimitData.remaining === null
-                ? null
-                : effectiveRemaining;
+      if (!user && latestLimitData) {
+        const totalRemaining = latestLimitData.usage?.totalRemaining;
+        if (typeof totalRemaining === 'number' || totalRemaining === null) {
+          effectiveRemaining = totalRemaining;
         }
       }
 
-      if (!checkGenerationLimit(extractedVideoId, effectiveRemaining)) {
+      if (!checkGenerationLimit(extractedVideoId, effectiveRemaining, latestLimitData)) {
         return;
       }
 
@@ -663,7 +954,7 @@ export default function AnalyzePage() {
       const transcriptPromise = fetch("/api/transcript", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, lang: preferredLanguage }),
         signal: transcriptController.signal,
       }).catch(err => {
         if (err.name === 'AbortError') {
@@ -702,9 +993,13 @@ export default function AnalyzePage() {
       }
 
       let fetchedTranscript;
+      let language: string | undefined;
+      let availableLanguages: string[] | undefined;
       try {
         const data = await transcriptRes.json();
         fetchedTranscript = data.transcript;
+        language = data.language;
+        availableLanguages = data.availableLanguages;
       } catch (jsonError) {
         if (jsonError instanceof Error && jsonError.name === 'AbortError') {
           throw new Error("Transcript processing timed out. The video may be too long. Please try again.");
@@ -721,7 +1016,12 @@ export default function AnalyzePage() {
         try {
           const videoInfoData = await videoInfoRes.json();
           if (videoInfoData && !videoInfoData.error) {
-            setVideoInfo(videoInfoData);
+            fetchedVideoInfo = {
+              ...videoInfoData,
+              language,
+              availableLanguages,
+            };
+            setVideoInfo(fetchedVideoInfo);
             const rawDuration = videoInfoData?.duration;
             const numericDuration =
               typeof rawDuration === "number"
@@ -732,16 +1032,19 @@ export default function AnalyzePage() {
             if (numericDuration && !Number.isNaN(numericDuration) && numericDuration > 0) {
               setVideoDuration(numericDuration);
             }
-            fetchedVideoInfo = videoInfoData;
           }
         } catch (error) {
           console.error("Failed to parse video info:", error);
         }
       }
+      // If we didn't get video info from the separate endpoint, try to use what we have, but update the languages
+      if (!fetchedVideoInfo) {
+        setVideoInfo(prev => prev ? { ...prev, language, availableLanguages } : null);
+      }
 
       // Move to understanding stage
       setLoadingStage('understanding');
-      
+
       // Generate quick preview (non-blocking)
       fetch("/api/quick-preview", {
         method: "POST",
@@ -751,7 +1054,8 @@ export default function AnalyzePage() {
           videoTitle: fetchedVideoInfo?.title,
           videoDescription: fetchedVideoInfo?.description,
           channelName: fetchedVideoInfo?.author,
-          tags: fetchedVideoInfo?.tags
+          tags: fetchedVideoInfo?.tags,
+          language: fetchedVideoInfo?.language
         }),
       })
         .then(res => {
@@ -770,7 +1074,7 @@ export default function AnalyzePage() {
         .catch((error) => {
           console.error('Error generating quick preview:', error);
         });
-      
+
       // Initiate parallel API requests for topics and takeaways
       setLoadingStage('generating');
       setGenerationStartTime(Date.now());
@@ -787,8 +1091,8 @@ export default function AnalyzePage() {
           videoId: extractedVideoId,
           videoInfo: fetchedVideoInfo,
           transcript: normalizedTranscriptData,
-          model: 'gemini-2.5-flash',
-          mode: selectedMode
+          mode: selectedMode,
+          forceRegenerate
         }),
         signal: topicsController.signal,
       }).catch(err => {
@@ -805,7 +1109,8 @@ export default function AnalyzePage() {
         body: JSON.stringify({
           transcript: normalizedTranscriptData,
           videoInfo: fetchedVideoInfo,
-          videoId: extractedVideoId
+          videoId: extractedVideoId,
+          targetLanguage: fetchedVideoInfo?.language
         }),
         signal: takeawaysController.signal,
       });
@@ -814,76 +1119,89 @@ export default function AnalyzePage() {
       setShowChatTab(true);
       setIsGeneratingTakeaways(true);
 
-      // Wait for both to complete using Promise.allSettled
-      const [topicsResult, takeawaysResult] = await Promise.allSettled([
-        topicsPromise,
-        takeawaysPromise
-      ]);
+      const toSettled = <T,>(promise: Promise<T>) =>
+        promise.then(
+          (value) => ({ status: 'fulfilled', value } as const),
+          (reason) => ({ status: 'rejected', reason } as const)
+        );
+
+      const topicsSettledPromise = toSettled(topicsPromise);
+      const takeawaysSettledPromise = toSettled(takeawaysPromise);
+
+      const topicsResult = await topicsSettledPromise;
+      if (topicsResult.status === 'rejected') {
+        takeawaysController.abort();
+        await takeawaysSettledPromise;
+        throw topicsResult.reason;
+      }
+
+      const topicsRes = topicsResult.value;
+      if (!topicsRes.ok) {
+        const errorData = await topicsRes.json().catch(() => ({ error: "Unknown error" }));
+        const requiresAuth = Boolean((errorData as any)?.requiresAuth);
+        const authMessage =
+          typeof (errorData as any)?.message === "string"
+            ? (errorData as any).message
+            : undefined;
+
+        if (requiresAuth || topicsRes.status === 401 || topicsRes.status === 403) {
+          takeawaysController.abort();
+          await takeawaysSettledPromise;
+          redirectToAuthForLimit(
+            authMessage,
+            extractedVideoId
+          );
+          return;
+        }
+
+        if (topicsRes.status === 429) {
+          setIsRateLimitError(true);
+          checkRateLimit();
+          takeawaysController.abort();
+          await takeawaysSettledPromise;
+
+          const limitMessageRaw =
+            typeof (errorData as any)?.message === "string"
+              ? (errorData as any).message.trim()
+              : "";
+
+          const limitErrorRaw =
+            typeof (errorData as any)?.error === "string"
+              ? (errorData as any).error.trim()
+              : "";
+
+          const limitMessage =
+            limitMessageRaw.length > 0
+              ? limitMessageRaw
+              : limitErrorRaw.length > 0
+                ? limitErrorRaw
+                : AUTH_LIMIT_MESSAGE;
+
+          throw new Error(limitMessage);
+        }
+
+        takeawaysController.abort();
+        await takeawaysSettledPromise;
+        const message = buildApiErrorMessage(errorData, "Failed to generate topics");
+        throw new Error(message);
+      }
+
+      const topicsData = await topicsRes.json();
+      const rawTopics = Array.isArray(topicsData.topics) ? topicsData.topics : [];
+      const generatedTopics: Topic[] = hydrateTopicsWithTranscript(rawTopics, normalizedTranscriptData);
+      const generatedThemes: string[] = Array.isArray(topicsData.themes) ? topicsData.themes : [];
+      const rawCandidates: TopicCandidate[] = Array.isArray(topicsData.topicCandidates) ? topicsData.topicCandidates : [];
+      const generatedCandidates: TopicCandidate[] = rawCandidates.map(candidate => ({
+        ...candidate,
+        key: `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`
+      }));
+
+      const takeawaysResult = await takeawaysSettledPromise;
 
       // Move to processing stage
       setLoadingStage('processing');
       setGenerationStartTime(null);
       setProcessingStartTime(Date.now());
-
-      // Process topics result
-      let generatedTopics: Topic[] = [];
-      let generatedThemes: string[] = [];
-      let generatedCandidates: TopicCandidate[] = [];
-      if (topicsResult.status === 'fulfilled') {
-        const topicsRes = topicsResult.value;
-
-        if (!topicsRes.ok) {
-          const errorData = await topicsRes.json().catch(() => ({ error: "Unknown error" }));
-          const requiresAuth = Boolean((errorData as any)?.requiresAuth);
-
-          if (topicsRes.status === 429 && requiresAuth) {
-            redirectToAuthForLimit(
-              typeof (errorData as any)?.message === "string" ? (errorData as any).message : undefined,
-              extractedVideoId
-            );
-            return;
-          }
-
-          if (topicsRes.status === 429) {
-            setIsRateLimitError(true);
-            checkRateLimit();
-
-            const limitMessageRaw =
-              typeof (errorData as any)?.message === "string"
-                ? (errorData as any).message.trim()
-                : "";
-
-            const limitErrorRaw =
-              typeof (errorData as any)?.error === "string"
-                ? (errorData as any).error.trim()
-                : "";
-
-            const limitMessage =
-              limitMessageRaw.length > 0
-                ? limitMessageRaw
-                : limitErrorRaw.length > 0
-                  ? limitErrorRaw
-                  : AUTH_LIMIT_MESSAGE;
-
-            throw new Error(limitMessage);
-          }
-
-          const message = buildApiErrorMessage(errorData, "Failed to generate topics");
-          throw new Error(message);
-        }
-
-        const topicsData = await topicsRes.json();
-        const rawTopics = Array.isArray(topicsData.topics) ? topicsData.topics : [];
-        generatedTopics = hydrateTopicsWithTranscript(rawTopics, normalizedTranscriptData);
-        generatedThemes = Array.isArray(topicsData.themes) ? topicsData.themes : [];
-        generatedCandidates = Array.isArray(topicsData.topicCandidates) ? topicsData.topicCandidates : [];
-        generatedCandidates = generatedCandidates.map(candidate => ({
-          ...candidate,
-          key: `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`
-        }));
-      } else {
-        throw topicsResult.reason;
-      }
 
       // Process takeaways result from parallel execution
       let generatedTakeaways = null;
@@ -936,39 +1254,8 @@ export default function AnalyzePage() {
       // Rate limit is handled server-side now
       checkRateLimit();
 
-      // Save complete analysis to database in background
-      backgroundOperation(
-        'save-complete-analysis',
-        async () => {
-          const response = await fetch("/api/save-analysis", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              videoId: extractedVideoId,
-              videoInfo: fetchedVideoInfo || {
-                title: `YouTube Video ${extractedVideoId}`,
-                author: 'Unknown',
-                duration: 0,
-                thumbnail: ''
-              },
-              transcript: normalizedTranscriptData,
-              topics: generatedTopics,
-              summary: generatedTakeaways,
-              model: 'gemini-2.5-flash'
-            }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-            const message = buildApiErrorMessage(errorData, "Failed to save analysis");
-            throw new Error(message);
-          }
-        },
-        (error) => {
-          console.error('Failed to save analysis to database:', error);
-          toast.error('Unable to save video analysis. Your results are still visible.');
-        }
-      );
+      // NOTE: Video analysis is now saved server-side in /api/video-analysis
+      // to prevent client-side cache poisoning attacks
 
       // Generate suggested questions
       backgroundOperation(
@@ -980,7 +1267,8 @@ export default function AnalyzePage() {
             body: JSON.stringify({
               transcript: normalizedTranscriptData,
               topics: generatedTopics,
-              videoTitle: fetchedVideoInfo?.title
+              videoTitle: fetchedVideoInfo?.title,
+              language: fetchedVideoInfo?.language
             }),
           });
 
@@ -1012,8 +1300,8 @@ export default function AnalyzePage() {
 
           const questions = Array.isArray((parsed as any)?.questions)
             ? (parsed as any).questions
-                .filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0)
-                .map((item: string) => item.trim())
+              .filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0)
+              .map((item: string) => item.trim())
             : [];
 
           const normalizedQuestions = questions.length > 0
@@ -1022,20 +1310,17 @@ export default function AnalyzePage() {
 
           applyCachedQuestions(normalizedQuestions);
 
-          // Update video analysis with suggested questions
+          // Update video analysis with suggested questions (requires auth + ownership)
           await backgroundOperation(
             'update-questions',
             async () => {
-              const updateRes = await fetch("/api/update-video-analysis", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  videoId: extractedVideoId,
-                  suggestedQuestions: normalizedQuestions
-                }),
+              const updateRes = await csrfFetch.post("/api/update-video-analysis", {
+                videoId: extractedVideoId,
+                suggestedQuestions: normalizedQuestions
               });
 
-              if (!updateRes.ok && updateRes.status !== 404) {
+              // 401/403 is expected for anonymous users or non-owners
+              if (!updateRes.ok && updateRes.status !== 404 && updateRes.status !== 401 && updateRes.status !== 403) {
                 throw new Error('Failed to update suggested questions');
               }
             }
@@ -1047,7 +1332,7 @@ export default function AnalyzePage() {
           console.error("Failed to generate suggested questions:", error);
         }
       );
-      
+
     } catch (err) {
       setError(
         normalizeErrorMessage(
@@ -1060,6 +1345,8 @@ export default function AnalyzePage() {
       setLoadingStage(null);
       setGenerationStartTime(null);
       setProcessingStartTime(null);
+      setIsGeneratingTakeaways(false);
+      setSwitchingToLanguage(null);
     }
   }, [
     rateLimitInfo.remaining,
@@ -1092,7 +1379,7 @@ export default function AnalyzePage() {
     // Reset Play All mode when clicking a citation
     setIsPlayingAll(false);
     setPlayAllIndex(0);
-    
+
     setSelectedTopic(null);
     setCitationHighlight(citation);
 
@@ -1186,11 +1473,7 @@ export default function AnalyzePage() {
       setPlayAllIndex(0);
       setIsLoadingThemeTopics(false);
       activeThemeRequestIdRef.current = null;
-      setUsedTopicKeys(new Set(
-        baseTopics
-          .filter((topic): topic is Topic & { quote: { timestamp: string; text: string } } => !!topic.quote?.timestamp && !!topic.quote.text)
-          .map(topic => `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`)
-      ));
+      setUsedTopicKeys(new Set(baseTopicKeySet));
     };
 
     if (!themeLabel) {
@@ -1248,7 +1531,7 @@ export default function AnalyzePage() {
       setIsLoadingThemeTopics(true);
       const requestKey = `theme-topics:${normalizedTheme}:${requestId}`;
       const controller = abortManager.current.createController(requestKey);
-      const exclusionKeys = Array.from(usedTopicKeys).map((key) => key.slice(0, 500));
+      const exclusionKeys = Array.from(baseTopicKeySet).map((key) => key.slice(0, 500));
 
       try {
         const response = await fetch("/api/video-analysis", {
@@ -1258,7 +1541,6 @@ export default function AnalyzePage() {
             videoId,
             videoInfo,
             transcript,
-            model: 'gemini-2.5-flash',
             theme: normalizedTheme,
             excludeTopicKeys: exclusionKeys,
             mode
@@ -1273,6 +1555,12 @@ export default function AnalyzePage() {
         }
 
         const data = await response.json();
+
+        // Check if the API returned an error (e.g., no content found for theme)
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
         const hydratedThemeTopics = hydrateTopicsWithTranscript(Array.isArray(data.topics) ? data.topics : [], transcript);
         const candidatePool = Array.isArray(data.topicCandidates) ? data.topicCandidates : undefined;
         setThemeCandidateMap(prev => ({
@@ -1354,6 +1642,7 @@ export default function AnalyzePage() {
     transcript,
     selectedTheme,
     baseTopics,
+    baseTopicKeySet,
     themeTopicsMap,
     usedTopicKeys,
     mode,
@@ -1366,7 +1655,7 @@ export default function AnalyzePage() {
     const adjustRightColumnHeight = () => {
       const videoContainer = document.getElementById("video-container");
       const rightColumnContainer = document.getElementById("right-column-container");
-      
+
       if (videoContainer && rightColumnContainer) {
         const videoHeight = videoContainer.offsetHeight;
         setTranscriptHeight(`${videoHeight}px`);
@@ -1378,7 +1667,7 @@ export default function AnalyzePage() {
 
     // Adjust on window resize
     window.addEventListener("resize", adjustRightColumnHeight);
-    
+
     // Also observe video container for size changes
     const resizeObserver = new ResizeObserver(adjustRightColumnHeight);
     const videoContainer = document.getElementById("video-container");
@@ -1464,7 +1753,7 @@ export default function AnalyzePage() {
     });
   }, [promptSignInForNotes, user]);
 
-  const handleSaveEditingNote = useCallback(async (noteText: string) => {
+  const handleSaveEditingNote = useCallback(async ({ noteText, selectedText }: { noteText: string; selectedText: string }) => {
     if (!editingNote || !videoId) return;
 
     // Use source from editing note or determine from metadata
@@ -1477,11 +1766,19 @@ export default function AnalyzePage() {
       source = "transcript";
     }
 
+    const normalizedSelected = selectedText.trim();
+    const mergedMetadata = normalizedSelected
+      ? {
+        ...(editingNote.metadata ?? {}),
+        selectedText: normalizedSelected,
+      }
+      : editingNote.metadata ?? undefined;
+
     await handleSaveNote({
       text: noteText,
       source,
       sourceId: editingNote.metadata?.chat?.messageId ?? null,
-      metadata: editingNote.metadata,
+      metadata: mergedMetadata,
     });
 
     // Clear editing state
@@ -1541,13 +1838,19 @@ export default function AnalyzePage() {
           )}
           <div className="flex flex-col items-center text-center">
             <Loader2 className="mb-3.5 h-7 w-7 animate-spin text-primary" />
-            <p className="text-sm font-medium text-slate-700">Analyzing video and generating highlight reels</p>
-            <p className="mt-1.5 text-xs text-slate-500">
-              {loadingStage === 'fetching' && 'Fetching transcript...'}
-              {loadingStage === 'understanding' && 'Fetching transcript...'}
-              {loadingStage === 'generating' && `Creating highlight reels... (${elapsedTime} seconds)`}
-              {loadingStage === 'processing' && `Processing and matching quotes... (${processingElapsedTime} seconds)`}
+            <p className="text-sm font-medium text-slate-700">
+              {switchingToLanguage
+                ? `Switching to ${getLanguageName(switchingToLanguage)}...`
+                : 'Analyzing video and generating highlight reels'}
             </p>
+            {!switchingToLanguage && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                {loadingStage === 'fetching' && 'Fetching transcript...'}
+                {loadingStage === 'understanding' && 'Fetching transcript...'}
+                {loadingStage === 'generating' && `Creating highlight reels... (${elapsedTime} seconds)`}
+                {loadingStage === 'processing' && `Processing and matching quotes... (${processingElapsedTime} seconds)`}
+              </p>
+            )}
           </div>
           <div className="mt-10 w-full max-w-2xl">
             <LoadingContext
@@ -1567,7 +1870,7 @@ export default function AnalyzePage() {
             <div className="space-y-4">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900">
-                  {isRateLimitError ? 'Daily limit reached' : 'We couldn\'t finish analyzing this video'}
+                  {isRateLimitError ? 'Monthly limit reached' : 'We couldn\'t finish analyzing this video'}
                 </h2>
                 <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
                   {isRateLimitError
@@ -1582,6 +1885,14 @@ export default function AnalyzePage() {
                 >
                   Go to home
                 </Link>
+                {isRateLimitError && (
+                  <Link
+                    href="/pricing"
+                    className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
+                  >
+                    Upgrade to Pro
+                  </Link>
+                )}
                 {!isRateLimitError && (
                   <button
                     type="button"
@@ -1625,6 +1936,8 @@ export default function AnalyzePage() {
                   setIsPlayingAll={memoizedSetIsPlayingAll}
                   renderControls={false}
                   onDurationChange={setVideoDuration}
+                  selectedLanguage={selectedLanguage}
+                  onRequestTranslation={translateWithContext}
                 />
                 {(themes.length > 0 || isLoadingThemeTopics || themeError || selectedTheme) && (
                   <div className="flex justify-center">
@@ -1634,6 +1947,8 @@ export default function AnalyzePage() {
                       onSelect={handleThemeSelect}
                       isLoading={isLoadingThemeTopics}
                       error={themeError}
+                      selectedLanguage={selectedLanguage}
+                      onRequestTranslation={translateWithContext}
                     />
                   </div>
                 )}
@@ -1651,6 +1966,8 @@ export default function AnalyzePage() {
                   transcript={transcript}
                   isLoadingThemeTopics={isLoadingThemeTopics}
                   videoId={videoId ?? undefined}
+                  selectedLanguage={selectedLanguage}
+                  onRequestTranslation={translateWithContext}
                 />
               </div>
             </div>
@@ -1683,7 +2000,31 @@ export default function AnalyzePage() {
                   onSaveEditingNote={handleSaveEditingNote}
                   onCancelEditing={handleCancelEditing}
                   isAuthenticated={!!user}
-                  onRequestSignIn={promptSignInForNotes}
+                  onRequestSignIn={handleAuthRequired}
+                  selectedLanguage={selectedLanguage}
+                  onRequestTranslation={translateWithContext}
+                  onLanguageChange={(langCode) => {
+                    // Check if this is a request for a native transcript
+                    const availableLanguages = videoInfo?.availableLanguages || [];
+                    if (langCode && availableLanguages.includes(langCode)) {
+                      // It's a native language request
+                      if (videoInfo?.language !== langCode) {
+                         // Only re-fetch if it's different from current
+                         // Set language switching state for loading indicator
+                         setSwitchingToLanguage(langCode);
+                         processVideo(normalizedUrl, mode, langCode);
+                         // Clear any translation override
+                         handleLanguageChange(null);
+                      }
+                    } else {
+                      // It's a translation request
+                      handleLanguageChange(langCode);
+                    }
+                  }}
+                  availableLanguages={videoInfo?.availableLanguages}
+                  currentSourceLanguage={videoInfo?.language}
+                  onRequestExport={handleRequestExport}
+                  exportButtonState={exportButtonState}
                 />
               </div>
             </div>
@@ -1710,6 +2051,34 @@ export default function AnalyzePage() {
           // Check for pending video linking will happen via useEffect
         }}
         currentVideoId={videoId}
+      />
+      <TranscriptExportDialog
+        open={isExportDialogOpen}
+        onOpenChange={handleExportDialogOpenChange}
+        format={exportFormat}
+        onFormatChange={setExportFormat}
+        exportMode={exportMode}
+        onExportModeChange={setExportMode}
+        targetLanguage={targetLanguage}
+        onTargetLanguageChange={setTargetLanguage}
+        includeSpeakers={includeSpeakers}
+        onIncludeSpeakersChange={(value) => setIncludeSpeakers(value && hasSpeakerData)}
+        includeTimestamps={includeTimestamps}
+        onIncludeTimestampsChange={setIncludeTimestamps}
+        disableTimestampToggle={exportFormat === 'srt'}
+        onConfirm={handleConfirmExport}
+        isExporting={isExportingTranscript}
+        error={exportErrorMessage}
+        disableDownloadMessage={exportDisableMessage}
+        hasSpeakerData={hasSpeakerData}
+        willConsumeTopup={subscriptionStatus?.willConsumeTopup}
+        videoTitle={videoInfo?.title}
+        translationProgress={translationProgress}
+      />
+      <TranscriptExportUpsell
+        open={showExportUpsell}
+        onOpenChange={setShowExportUpsell}
+        onUpgradeClick={handleUpgradeClick}
       />
     </div>
   );

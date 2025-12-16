@@ -46,6 +46,26 @@ async function handler(req: NextRequest) {
       );
     }
 
+    // Check if user profile exists (required due to foreign key constraint)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile) {
+      // Profile doesn't exist yet - can happen immediately after OAuth signup
+      console.log('User profile not ready yet:', user.id);
+      return NextResponse.json(
+        {
+          error: 'User profile not ready',
+          message: 'Your account is being set up. Please refresh the page in a moment.',
+          retryable: true
+        },
+        { status: 503 }
+      );
+    }
+
     // Check if video is already linked to user
     const { data: existingLink } = await supabase
       .from('user_videos')
@@ -78,7 +98,14 @@ async function handler(req: NextRequest) {
       });
 
     if (linkError) {
-      console.error('Error linking video to user:', linkError);
+      console.error('Error linking video to user:', {
+        code: linkError.code,
+        message: linkError.message,
+        details: linkError.details,
+        hint: linkError.hint,
+        userId: user.id,
+        videoId: video.id
+      });
       return NextResponse.json(
         { error: 'Failed to link video to user account' },
         { status: 500 }

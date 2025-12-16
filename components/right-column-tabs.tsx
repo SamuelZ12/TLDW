@@ -5,12 +5,22 @@ import { TranscriptViewer } from "@/components/transcript-viewer";
 import { AIChat } from "@/components/ai-chat";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { FileText, MessageSquare, PenLine } from "lucide-react";
-import { TranscriptSegment, Topic, Citation, Note, NoteSource, NoteMetadata, VideoInfo } from "@/lib/types";
+import { Languages, MessageSquare, PenLine } from "lucide-react";
+import { TranscriptSegment, Topic, Citation, Note, NoteSource, NoteMetadata, VideoInfo, TranslationRequestHandler } from "@/lib/types";
 import { SelectionActionPayload } from "@/components/selection-actions";
 import { NotesPanel, EditingNote } from "@/components/notes-panel";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { LanguageSelector } from "@/components/language-selector";
+
+const translationSelectorEnabled = (() => {
+  const raw = process.env.NEXT_PUBLIC_ENABLE_TRANSLATION_SELECTOR;
+  if (!raw) {
+    return false;
+  }
+  const normalized = raw.toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+})();
 
 interface RightColumnTabsProps {
   transcript: TranscriptSegment[];
@@ -29,10 +39,23 @@ interface RightColumnTabsProps {
   onSaveNote?: (payload: { text: string; source: NoteSource; sourceId?: string | null; metadata?: NoteMetadata | null }) => Promise<void>;
   onTakeNoteFromSelection?: (payload: SelectionActionPayload) => void;
   editingNote?: EditingNote | null;
-  onSaveEditingNote?: (noteText: string) => void;
+  onSaveEditingNote?: (payload: { noteText: string; selectedText: string }) => void;
   onCancelEditing?: () => void;
   isAuthenticated?: boolean;
   onRequestSignIn?: () => void;
+  selectedLanguage?: string | null;
+  translationCache?: Map<string, string>;
+  onRequestTranslation?: TranslationRequestHandler;
+  onLanguageChange?: (languageCode: string | null) => void;
+  availableLanguages?: string[];
+  currentSourceLanguage?: string;
+  onRequestExport?: () => void;
+  exportButtonState?: {
+    tooltip?: string;
+    disabled?: boolean;
+    badgeLabel?: string;
+    isLoading?: boolean;
+  };
 }
 
 export interface RightColumnTabsHandle {
@@ -62,8 +85,18 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   onCancelEditing,
   isAuthenticated,
   onRequestSignIn,
+  selectedLanguage = null,
+  translationCache,
+  onRequestTranslation,
+  onLanguageChange,
+  availableLanguages,
+  currentSourceLanguage,
+  onRequestExport,
+  exportButtonState,
+
 }, ref) => {
   const [activeTab, setActiveTab] = useState<"transcript" | "chat" | "notes">("transcript");
+  const showTranslationSelector = translationSelectorEnabled;
 
   // Expose methods to parent to switch tabs
   useImperativeHandle(ref, () => ({
@@ -90,20 +123,42 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
   return (
     <Card className="h-full flex flex-col overflow-hidden p-0 gap-0 border-0">
       <div className="flex items-center gap-2 p-2 rounded-t-3xl border-b">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setActiveTab("transcript")}
-          className={cn(
-            "flex-1 justify-center gap-2 rounded-2xl",
-            activeTab === "transcript"
-              ? "bg-neutral-100 text-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-white/50"
+        <div className="flex-1">
+          {showTranslationSelector ? (
+            <LanguageSelector
+              activeTab={activeTab}
+              selectedLanguage={selectedLanguage}
+              availableLanguages={availableLanguages}
+              currentSourceLanguage={currentSourceLanguage}
+              isAuthenticated={isAuthenticated}
+              onTabSwitch={setActiveTab}
+              onLanguageChange={onLanguageChange}
+              onRequestSignIn={onRequestSignIn}
+            />
+          ) : (
+            <div className={cn(
+              "flex items-center gap-0 rounded-2xl w-full",
+              activeTab === "transcript"
+                ? "bg-neutral-100"
+                : "hover:bg-white/50"
+            )}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setActiveTab("transcript")}
+                className={cn(
+                  "flex-1 justify-center gap-2 rounded-2xl border-0",
+                  activeTab === "transcript"
+                    ? "text-foreground hover:bg-neutral-100"
+                    : "text-muted-foreground hover:text-foreground hover:bg-transparent"
+                )}
+              >
+                <Languages className="h-4 w-4" />
+                Transcript
+              </Button>
+            </div>
           )}
-        >
-          <FileText className="h-4 w-4" />
-          Transcript
-        </Button>
+        </div>
         {showChatTab && (
           <Button
             variant="ghost"
@@ -136,7 +191,7 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
           Notes
         </Button>
       </div>
-      
+
       <div className="flex-1 overflow-hidden relative">
         {/* Keep both components mounted but toggle visibility */}
         <div className={cn("absolute inset-0", activeTab !== "transcript" && "hidden")}>
@@ -149,6 +204,10 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
             citationHighlight={citationHighlight}
             onTakeNoteFromSelection={onTakeNoteFromSelection}
             videoId={videoId}
+            selectedLanguage={selectedLanguage}
+            onRequestTranslation={onRequestTranslation}
+            onRequestExport={onRequestExport}
+            exportButtonState={exportButtonState}
           />
         </div>
         <div className={cn("absolute inset-0", (activeTab !== "chat" || !showChatTab) && "hidden")}>
@@ -163,6 +222,11 @@ export const RightColumnTabs = forwardRef<RightColumnTabsHandle, RightColumnTabs
             cachedSuggestedQuestions={cachedSuggestedQuestions}
             onSaveNote={onSaveNote}
             onTakeNoteFromSelection={onTakeNoteFromSelection}
+            selectedLanguage={selectedLanguage}
+            translationCache={translationCache}
+            onRequestTranslation={onRequestTranslation}
+            isAuthenticated={isAuthenticated}
+            onRequestSignIn={onRequestSignIn}
           />
         </div>
         <div className={cn("absolute inset-0", activeTab !== "notes" && "hidden")}

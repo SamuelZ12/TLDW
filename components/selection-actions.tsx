@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
+import { SafePortal } from "@/lib/safe-portal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { NoteMetadata } from "@/lib/types";
@@ -31,7 +31,6 @@ interface SelectionActionsProps {
   getMetadata?: (range: Range) => NoteMetadata | undefined | null;
   disabled?: boolean;
   source?: SelectionActionPayload["source"];
-  onSelectionChange?: (hasSelection: boolean) => void;
 }
 
 interface SelectionState {
@@ -47,51 +46,36 @@ export function SelectionActions({
   getMetadata,
   disabled,
   source,
-  onSelectionChange,
 }: SelectionActionsProps) {
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const latestSelectionRef = useRef<SelectionState | null>(null);
-  const hasSelectionRef = useRef(false);
-
-  const notifySelectionChange = useCallback(
-    (hasSelection: boolean) => {
-      if (hasSelectionRef.current !== hasSelection) {
-        hasSelectionRef.current = hasSelection;
-        onSelectionChange?.(hasSelection);
-      }
-    },
-    [onSelectionChange],
-  );
+  const container = containerRef.current;
 
   const clearSelection = useCallback(() => {
     setSelection(null);
     latestSelectionRef.current = null;
-    notifySelectionChange(false);
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) {
       sel.removeAllRanges();
     }
-  }, [notifySelectionChange]);
+  }, []);
 
   const handleSelectionChange = useCallback(() => {
     if (disabled) {
       setSelection(null);
-      notifySelectionChange(false);
       return;
     }
 
     const container = containerRef.current;
     if (!container) {
       setSelection(null);
-      notifySelectionChange(false);
       return;
     }
 
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
       setSelection(null);
-      notifySelectionChange(false);
       return;
     }
 
@@ -102,21 +86,18 @@ export function SelectionActions({
 
     if (!commonAncestor || (!container.contains(commonAncestor) && commonAncestor !== container)) {
       setSelection(null);
-      notifySelectionChange(false);
       return;
     }
 
     const text = sel.toString().trim();
     if (!text) {
       setSelection(null);
-      notifySelectionChange(false);
       return;
     }
 
     const rect = range.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) {
       setSelection(null);
-      notifySelectionChange(false);
       return;
     }
 
@@ -130,12 +111,10 @@ export function SelectionActions({
 
     latestSelectionRef.current = nextState;
     setSelection(nextState);
-    notifySelectionChange(true);
-  }, [containerRef, getMetadata, disabled, notifySelectionChange]);
+  }, [containerRef, getMetadata, disabled]);
 
   useEffect(() => {
     if (disabled) {
-      notifySelectionChange(false);
       return;
     }
 
@@ -167,7 +146,7 @@ export function SelectionActions({
       document.removeEventListener("scroll", handleScroll, true);
       document.removeEventListener("mousedown", clearSelection);
     };
-  }, [handleSelectionChange, selection, clearSelection, disabled, notifySelectionChange]);
+  }, [handleSelectionChange, selection, clearSelection, disabled]);
 
   useEffect(() => {
     if (disabled) {
@@ -208,46 +187,47 @@ export function SelectionActions({
   const top = rect.top + window.scrollY - 48;
   const left = rect.left + window.scrollX + rect.width / 2;
 
-  return createPortal(
-    <Card
-      className={cn(
-        "fixed z-[9999] flex flex-row items-center gap-1 rounded-xl border border-border/40 bg-primary/5 backdrop-blur-md shadow-lg",
-        "transition-opacity animate-in fade-in",
-        "px-3 py-1.5",
-      )}
-      style={{
-        top: Math.max(top, 12),
-        left,
-        transform: "translateX(-50%)",
-      }}
-      onMouseDown={(event) => event.stopPropagation()}
-    >
-      {onExplain && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2.5 text-sm font-normal rounded-lg transition-all duration-200 hover:bg-primary/10 hover:scale-105 hover:text-foreground"
-          disabled={isProcessing}
-          onClick={() => handleAction("explain")}
-        >
-          Explain
-        </Button>
-      )}
-      {onExplain && onTakeNote && (
-        <div className="h-6 w-px bg-border/60" />
-      )}
-      {onTakeNote && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2.5 text-sm font-normal rounded-lg transition-all duration-200 hover:bg-primary/10 hover:scale-105 hover:text-foreground"
-          disabled={isProcessing}
-          onClick={() => handleAction("note")}
-        >
-          Take Notes
-        </Button>
-      )}
-    </Card>,
-    document.body
+  return (
+    <SafePortal>
+      <Card
+        className={cn(
+          "fixed z-[9999] flex flex-row items-center gap-1 rounded-xl border border-border/40 bg-primary/5 backdrop-blur-md shadow-lg",
+          "transition-opacity animate-in fade-in",
+          "px-3 py-1.5",
+        )}
+        style={{
+          top: Math.max(top, 12),
+          left,
+          transform: "translateX(-50%)",
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        {onExplain && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-sm font-normal rounded-lg transition-all duration-200 hover:bg-primary/10 hover:scale-105 hover:text-foreground"
+            disabled={isProcessing}
+            onClick={() => handleAction("explain")}
+          >
+            Explain
+          </Button>
+        )}
+        {onExplain && onTakeNote && (
+          <div className="h-6 w-px bg-border/60" />
+        )}
+        {onTakeNote && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-sm font-normal rounded-lg transition-all duration-200 hover:bg-primary/10 hover:scale-105 hover:text-foreground"
+            disabled={isProcessing}
+            onClick={() => handleAction("note")}
+          >
+            Take Notes
+          </Button>
+        )}
+      </Card>
+    </SafePortal>
   );
 }

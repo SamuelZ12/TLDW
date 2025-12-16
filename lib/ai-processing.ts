@@ -1,13 +1,22 @@
-import { TranscriptSegment, Topic, TopicCandidate, VideoInfo, TopicGenerationMode } from '@/lib/types';
+import {
+  TranscriptSegment,
+  Topic,
+  TopicCandidate,
+  VideoInfo,
+  TopicGenerationMode
+} from '@/lib/types';
 import {
   normalizeWhitespace,
   buildTranscriptIndex,
   findTextInTranscript,
   TranscriptIndex
 } from '@/lib/quote-matcher';
-import { generateWithFallback } from '@/lib/gemini-client';
+import { generateAIResponse } from '@/lib/ai-client';
+import { getProviderKey } from '@/lib/ai-providers';
 import { topicGenerationSchema } from '@/lib/schemas';
 import { parseTimestampRange } from '@/lib/timestamp-utils';
+import { getLanguageName } from '@/lib/language-utils';
+import { repairJson } from '@/lib/json-utils';
 import { z } from 'zod';
 
 interface ParsedTopic {
@@ -17,6 +26,13 @@ interface ParsedTopic {
     text: string;
   };
 }
+
+const DEFAULT_AI_MODEL =
+  process.env.AI_DEFAULT_MODEL ?? 'grok-4-1-fast-non-reasoning';
+const FAST_MODEL_DEFAULT =
+  process.env.AI_FAST_MODEL ?? DEFAULT_AI_MODEL;
+const PRO_MODEL_DEFAULT =
+  process.env.AI_PRO_MODEL ?? FAST_MODEL_DEFAULT;
 
 interface GenerateTopicsOptions {
   videoInfo?: Partial<VideoInfo>;
@@ -29,6 +45,7 @@ interface GenerateTopicsOptions {
   includeCandidatePool?: boolean;
   mode?: TopicGenerationMode;
   proModel?: string;
+  language?: string;
 }
 
 interface TranscriptChunk {
@@ -60,7 +77,10 @@ function chunkTranscript(
   const totalDuration = lastSegment.start + lastSegment.duration;
 
   const effectiveChunkDuration = Math.max(180, chunkDurationSeconds);
-  const effectiveOverlap = Math.min(Math.max(overlapSeconds, 0), Math.floor(effectiveChunkDuration / 2));
+  const effectiveOverlap = Math.min(
+    Math.max(overlapSeconds, 0),
+    Math.floor(effectiveChunkDuration / 2)
+  );
   const step = Math.max(60, effectiveChunkDuration - effectiveOverlap);
 
   let windowStart = segments[0].start;
@@ -104,7 +124,8 @@ function chunkTranscript(
     }
 
     const chunkStart = chunkSegments[0].start;
-    const chunkEnd = chunkSegments[chunkSegments.length - 1].start +
+    const chunkEnd =
+      chunkSegments[chunkSegments.length - 1].start +
       chunkSegments[chunkSegments.length - 1].duration;
 
     chunks.push({
@@ -121,10 +142,16 @@ function chunkTranscript(
   if (lastChunk) {
     const coverageGap = totalDuration - lastChunk.end;
     if (coverageGap > 5) {
-      const tailStartTime = Math.max(segments[0].start, totalDuration - effectiveChunkDuration);
-      const tailSegments = segments.filter(seg => seg.start + seg.duration >= tailStartTime);
+      const tailStartTime = Math.max(
+        segments[0].start,
+        totalDuration - effectiveChunkDuration
+      );
+      const tailSegments = segments.filter(
+        (seg) => seg.start + seg.duration >= tailStartTime
+      );
       if (tailSegments.length > 0) {
-        const tailEnd = tailSegments[tailSegments.length - 1].start +
+        const tailEnd =
+          tailSegments[tailSegments.length - 1].start +
           tailSegments[tailSegments.length - 1].duration;
         if (tailEnd > lastChunk.end + 1) {
           chunks.push({
@@ -147,7 +174,9 @@ function dedupeCandidates(candidates: CandidateTopic[]): CandidateTopic[] {
 
   for (const candidate of candidates) {
     if (!candidate.quote?.timestamp || !candidate.quote.text) continue;
-    const key = `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`;
+    const key = `${candidate.quote.timestamp}|${normalizeWhitespace(
+      candidate.quote.text
+    )}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(candidate);
@@ -165,16 +194,20 @@ function formatVideoInfoForPrompt(videoInfo?: Partial<VideoInfo>): string {
   const parts: string[] = [];
   if (videoInfo.title) parts.push(`Title: ${videoInfo.title}`);
   if (videoInfo.author) parts.push(`Speaker: ${videoInfo.author}`);
-  if (videoInfo.description) parts.push(`Description: ${videoInfo.description}`);
+  if (videoInfo.description)
+    parts.push(`Description: ${videoInfo.description}`);
 
-  return parts.length > 0 ? parts.join('\n') : 'Unknown video title and speaker';
+  return parts.length > 0
+    ? parts.join('\n')
+    : 'Unknown video title and speaker';
 }
 
 function buildChunkPrompt(
   chunk: TranscriptChunk,
   maxCandidates: number,
   videoInfo?: Partial<VideoInfo>,
-  theme?: string
+  theme?: string,
+  language?: string
 ): string {
   const transcript = formatTranscriptWithTimestamps(chunk.segments);
   const chunkWindow = `[${formatTime(chunk.start)}-${formatTime(chunk.end)}]`;
@@ -183,8 +216,25 @@ function buildChunkPrompt(
     ? `  <item>Focus exclusively on material that clearly expresses the theme "${theme}". Skip anything unrelated.</item>\n`
     : '';
 
+  const languageInstruction = language
+    ? (() => {
+        const langName = getLanguageName(language);
+        return `\n<languageRequirement>IMPORTANT: You MUST generate all content in ${langName}. All titles and quotes must be in ${langName} to match the transcript language.</languageRequirement>\n`;
+      })()
+    : '';
+
+  // Adapt duration guidance to short chunks (e.g., short videos)
+  const chunkDuration = Math.max(0, Math.round(chunk.end - chunk.start));
+  let durationInstruction =
+    '  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote lasting roughly 45-75 seconds.</item>';
+  if (chunkDuration > 0 && chunkDuration < 45) {
+    durationInstruction = `  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote that fits within this ${chunkDuration}s chunk. It's OK if the quote is shorter than 45s; pick the single best self-contained passage (the entire chunk is acceptable).</item>`;
+  } else if (chunkDuration > 0 && chunkDuration <= 75) {
+    durationInstruction = `  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote up to ${chunkDuration}s that stands alone.</item>`;
+  }
+
   return `<task>
-<role>You are an expert content strategist reviewing a portion of a video transcript.</role>
+<role>You are an expert content strategist reviewing a portion of a video transcript.</role>${languageInstruction}
 <context>
 ${videoInfoBlock}
 Chunk window: ${chunkWindow}
@@ -192,7 +242,8 @@ Chunk window: ${chunkWindow}
 <goal>Identify up to ${maxCandidates} compelling highlight reel ideas that originate entirely within this transcript slice.</goal>
 <instructions>
   <item>Only use content from this chunk. If nothing stands out, return an empty list.</item>
-  <item>Each highlight must include a punchy, specific title (max 10 words) and a contiguous quote lasting between 30 and 300 seconds.</item>
+${durationInstruction}
+  <item>Write titles as concise statements (avoid question marks unless the quote itself is a question).</item>
   <item>Quote text must match the transcript exactly—no paraphrasing, ellipses, or stitching from multiple places.</item>
   <item>Use absolute timestamps in [MM:SS-MM:SS] format that match the transcript lines.</item>
   <item>Focus on contrarian insights, vivid stories, or data-backed arguments that could stand alone.</item>
@@ -209,26 +260,42 @@ function buildReducePrompt(
   maxTopics: number,
   videoInfo?: Partial<VideoInfo>,
   minTopics: number = 0,
-  segmentLabel?: string
+  segmentLabel?: string,
+  language?: string
 ): string {
   const videoInfoBlock = formatVideoInfoForPrompt(videoInfo);
-  const segmentContext = segmentLabel ? `Focus: ${segmentLabel} of the video.` : '';
-  const selectionGuidance = minTopics > 0
-    ? `Select between ${minTopics} and ${maxTopics} highlights when possible. If fewer than ${minTopics} candidates meet the quality bar, return the strongest available options.`
-    : `Select up to ${maxTopics} highlights that maximize diversity, insight, and narrative punch while reusing the provided quotes.`;
-  const candidateBlock = candidates.map((candidate, idx) => {
-    const timestamp = candidate.quote?.timestamp ?? '[??:??-??:??]';
-    const quoteText = candidate.quote?.text ?? '';
-    const chunkWindow = `[${formatTime(candidate.chunkStart)}-${formatTime(candidate.chunkEnd)}]`;
-    return `Candidate ${idx + 1}
+  const segmentContext = segmentLabel
+    ? `Focus: ${segmentLabel} of the video.`
+    : '';
+  const safeMin = Math.max(0, Math.min(minTopics, maxTopics));
+  const selectionGuidance =
+    safeMin > 0
+      ? `Return between ${safeMin} and ${maxTopics} standout highlights. If fewer than ${safeMin} candidates truly meet the quality bar, respond with only the clips that do—even if that's less. Never exceed ${maxTopics}.`
+      : `Return up to ${maxTopics} standout highlights that maximize diversity, insight, and narrative punch while reusing the provided quotes. It's acceptable to send back a single clip if only one deserves the spotlight.`;
+  const languageInstruction = language
+    ? (() => {
+        const langName = getLanguageName(language);
+        return `\n<languageRequirement>IMPORTANT: You MUST generate all titles in ${langName} to match the transcript language. Keep quote text and timestamps unchanged.</languageRequirement>\n`;
+      })()
+    : '';
+
+  const candidateBlock = candidates
+    .map((candidate, idx) => {
+      const timestamp = candidate.quote?.timestamp ?? '[??:??-??:??]';
+      const quoteText = candidate.quote?.text ?? '';
+      const chunkWindow = `[${formatTime(candidate.chunkStart)}-${formatTime(
+        candidate.chunkEnd
+      )}]`;
+      return `Candidate ${idx + 1}
 Chunk window: ${chunkWindow}
 Original title: ${candidate.title}
 Quote timestamp: ${timestamp}
 Quote text: ${quoteText}`;
-  }).join('\n\n');
+    })
+    .join('\n\n');
 
   return `<task>
-<role>You are a senior editorial strategist assembling the final highlight reel lineup.</role>
+<role>You are a senior editorial strategist assembling the final highlight reel lineup.</role>${languageInstruction}
 <context>
 ${videoInfoBlock}
 You have ${candidates.length} candidate quotes extracted from the transcript.
@@ -249,12 +316,14 @@ ${candidateBlock}
 }
 
 function createReduceSelectionSchema(limit: number) {
-  return z.array(
-    z.object({
-      candidateIndex: z.number().int().min(1),
-      title: z.string().min(1).max(120)
-    })
-  ).max(limit);
+  return z
+    .array(
+      z.object({
+        candidateIndex: z.number().int().min(1),
+        title: z.string().min(1).max(120)
+      })
+    )
+    .max(limit);
 }
 
 async function reduceCandidateSubset(
@@ -265,6 +334,7 @@ async function reduceCandidateSubset(
     fastModel: string;
     videoInfo?: Partial<VideoInfo>;
     segmentLabel?: string;
+    language?: string;
   }
 ): Promise<ParsedTopic[]> {
   if (!candidates || candidates.length === 0) {
@@ -282,16 +352,17 @@ async function reduceCandidateSubset(
     constrainedMax,
     options.videoInfo,
     constrainedMin,
-    options.segmentLabel
+    options.segmentLabel,
+    options.language
   );
 
   const selectionSchema = createReduceSelectionSchema(constrainedMax);
   let reduceSelections: Array<{ candidateIndex: number; title: string }> = [];
 
   try {
-    const reduceResponse = await generateWithFallback(reducePrompt, {
+    const reduceResponse = await generateAIResponse(reducePrompt, {
       preferredModel: options.fastModel,
-      generationConfig: { temperature: 0.4 },
+      temperature: 0.4,
       zodSchema: selectionSchema
     });
 
@@ -303,7 +374,10 @@ async function reduceCandidateSubset(
       }
     }
   } catch (error) {
-    console.error(`Error reducing candidate topics (${options.segmentLabel || 'segment'}):`, error);
+    console.error(
+      `Error reducing candidate topics (${options.segmentLabel || 'segment'}):`,
+      error
+    );
   }
 
   const usedIndices = new Set<number>();
@@ -332,10 +406,15 @@ async function reduceCandidateSubset(
   }
 
   if (reducedTopics.length === 0) {
-    return candidates.slice(0, constrainedMax).map(candidate => ({
-      title: candidate.title,
-      quote: candidate.quote
-    }));
+    if (options.minTopics > 0) {
+      return candidates
+        .slice(0, Math.min(options.minTopics, constrainedMax))
+        .map((candidate) => ({
+          title: candidate.title,
+          quote: candidate.quote
+        }));
+    }
+    return [];
   }
 
   return reducedTopics;
@@ -347,15 +426,24 @@ function buildFallbackTopics(
   fullText: string,
   theme?: string
 ): ParsedTopic[] {
+  // Don't generate generic fallbacks for theme-based generation
+  // If AI can't find theme-relevant content, return empty array
+  if (theme) {
+    console.log(`[buildFallbackTopics] Skipping fallback generation for theme: "${theme}"`);
+    return [];
+  }
+
   if (transcript.length === 0) {
     if (!fullText) return [];
-    return [{
-      title: theme ? `${theme} overview` : 'Full Video',
-      quote: {
-        timestamp: '[00:00-00:30]',
-        text: fullText.substring(0, 200)
+    return [
+      {
+        title: theme ? `${theme} overview` : 'Full Video',
+        quote: {
+          timestamp: '[00:00-00:30]',
+          text: fullText.substring(0, 200)
+        }
       }
-    }];
+    ];
   }
 
   const fallbackCount = Math.min(6, Math.max(1, maxTopics));
@@ -377,7 +465,11 @@ function buildFallbackTopics(
       title: theme ? `${theme} — part ${i + 1}` : `Part ${i + 1}`,
       quote: {
         timestamp: `[${formatTime(startTime)}-${formatTime(endTime)}]`,
-        text: chunkSegments.map(s => s.text).join(' ').substring(0, 200) + '...'
+        text:
+          chunkSegments
+            .map((s) => s.text)
+            .join(' ')
+            .substring(0, 200) + '...'
       }
     });
   }
@@ -400,27 +492,51 @@ async function runSinglePassTopicGeneration(
   transcriptWithTimestamps: string,
   fullText: string,
   model: string,
-  theme?: string
+  theme?: string,
+  language?: string
 ): Promise<ParsedTopic[]> {
+  // Determine overall video duration to adapt duration guidance for short videos
+  const totalDuration =
+    transcript && transcript.length > 0
+      ? transcript[transcript.length - 1].start + transcript[transcript.length - 1].duration
+      : 0;
+  const isVeryShort = totalDuration > 0 && totalDuration < 45;
+  const isShort = totalDuration >= 45 && totalDuration <= 75;
+
   const themeGuidance = theme
     ? `<themeAlignment>
   <criterion name="ThemeRelevance">Every highlight must directly reinforce the theme "${theme}". Discard compelling ideas if they are off-theme.</criterion>
+  <criterion name="ThemeDiscipline">If only one passage perfectly embodies "${theme}", return just that one.</criterion>
 </themeAlignment>`
     : '';
 
+  const durationGuidance = isVeryShort
+    ? '<criterion name="Duration">The video is shorter than 45 seconds; choose the best contiguous passage within the available window (it may be <45s, and using the entire video is acceptable).</criterion>'
+    : isShort
+      ? `<criterion name="Duration">Choose a contiguous passage up to ${Math.round(totalDuration)} seconds that stands alone.</criterion>`
+      : '<criterion name="Duration" targetSeconds="60">Choose a contiguous passage around 60 seconds long (aim for 45-75 seconds) so the highlight provides full context.</criterion>';
+
+  const languageInstruction = language
+    ? (() => {
+        const langName = getLanguageName(language);
+        return `\n<languageRequirement>IMPORTANT: You MUST generate all content in ${langName}. All titles, quotes, and themes must be in ${langName} to match the transcript language.</languageRequirement>\n`;
+      })()
+    : '';
+
   const prompt = `<task>
-<role>You are an expert content strategist.</role>
-<goal>Analyze the provided video transcript and description to create up to five distinct highlight reels that let a busy, intelligent viewer absorb the video's most valuable insights in minutes.</goal>
+<role>You are an expert content strategist.</role>${languageInstruction}
+<goal>Analyze the provided video transcript and description to create between one and five distinct highlight reels that let a busy, intelligent viewer absorb the video's most valuable insights in minutes.</goal>
 <audience>The audience is forward-thinking and curious. They have a short attention span and expect contrarian insights, actionable mental models, and bold predictions rather than generic advice.</audience>
 <instructions>
   <step name="IdentifyThemes">
-    <description>Analyze the entire transcript to surface up to five high-value, thought-provoking themes.</description>
+    <description>Analyze the entire transcript to surface no more than five high-value, thought-provoking themes. Return fewer if only one or two moments truly earn inclusion.</description>
     <themeCriteria>
       <criterion name="Insightful">Challenge a common assumption or reframe a known concept.</criterion>
       <criterion name="Specific">Avoid vague or catch-all wording.</criterion>
-      <criterion name="Format">Write each title as a complete sentence or question.</criterion>
+      <criterion name="Format">Write each title as a crisp statement. Only use a question if the quoted passage is literally a question.</criterion>
       <criterion name="LengthLimit">Keep titles to a maximum of 10 words.</criterion>
       <criterion name="Synthesized">Connect ideas that span multiple moments in the talk.</criterion>
+      <criterion name="TemporalDistribution">Ensure topics are distributed throughout the video timeline. Explicitly consider content from the beginning, middle, and end sections. Avoid clustering all topics in the opening portion—scan the entire duration for valuable insights.</criterion>
     </themeCriteria>
   </step>
   <step name="SelectPassage">
@@ -430,14 +546,14 @@ async function runSinglePassTopicGeneration(
       <criterion name="SelfContained">Ensure the passage stands alone. If earlier context is required, expand the selection to include it.</criterion>
       <criterion name="HighSignal">Prefer memorable stories, bold predictions, data points, specific examples, or contrarian thinking.</criterion>
       <criterion name="NoFluff">Exclude unrelated tangents or filler.</criterion>
-      <criterion name="Duration" targetSeconds="60">Choose a contiguous passage that falls between 30 and 300 seconds so the highlight provides full context.</criterion>
+      ${durationGuidance}
       <criterion name="MostImpactful">Select the single quote that best encapsulates the entire theme by itself.</criterion>
     </passageCriteria>
   </step>
 </instructions>
 <qualityControl>
   <distinctThemes>Each highlight reel title must represent a clearly distinct idea.</distinctThemes>
-  <valueOverQuantity>If only three or four themes meet the quality bar, return that smaller number rather than adding generic options.</valueOverQuantity>
+  <valueOverQuantity>If only one or two themes meet the quality bar, return that smaller number rather than adding filler.</valueOverQuantity>
   <completenessCheck>Verify each passage contains a complete thought that can stand alone; extend the timestamp range if necessary.</completenessCheck>
 </qualityControl>
 ${themeGuidance}
@@ -449,11 +565,9 @@ ${transcriptWithTimestamps}
 </task>`;
 
   try {
-    const response = await generateWithFallback(prompt, {
+    const response = await generateAIResponse(prompt, {
       preferredModel: model,
-      generationConfig: {
-        temperature: 0.7,
-      },
+      temperature: 0.7,
       zodSchema: topicGenerationSchema
     });
 
@@ -464,18 +578,40 @@ ${transcriptWithTimestamps}
     let parsedResponse: ParsedTopic[];
     try {
       parsedResponse = JSON.parse(response);
-    } catch {
-      return [{
-        title: 'Full Video',
-        quote: {
-          timestamp: '[00:00-00:30]',
-          text: fullText.substring(0, 200)
+    } catch (error) {
+      // Try to repair JSON before falling back (handles truncated/malformed responses)
+      try {
+        const repairedResponse = repairJson(response);
+        parsedResponse = JSON.parse(repairedResponse);
+        console.log('Successfully repaired malformed JSON response');
+      } catch (repairError) {
+        console.warn('Failed to parse single-pass topic response as JSON (repair also failed)', error);
+
+        // For themed requests, avoid returning generic fallbacks that do not respect the theme.
+        if (theme) {
+          console.warn(
+            `[runSinglePassTopicGeneration] Skipping fallback after parse failure because a theme was requested: "${theme}"`
+          );
+          return [];
         }
-      }];
+
+        // Dynamic fallback: if total duration is known and short, use the full video window
+        const fallbackEnd = totalDuration > 0 ? Math.min(60, Math.round(totalDuration)) : 30;
+        const fallbackLabel = isVeryShort || isShort ? 'Full Video' : 'Full Video';
+        return [
+          {
+            title: fallbackLabel,
+            quote: {
+              timestamp: `[00:00-${formatTime(fallbackEnd)}]`,
+              text: fullText.substring(0, 200)
+            }
+          }
+        ];
+      }
     }
 
     if (!Array.isArray(parsedResponse)) {
-      console.warn('Invalid response format from Gemini - expected array');
+      console.warn('Invalid response format from AI provider - expected array');
       return [];
     }
 
@@ -487,42 +623,50 @@ ${transcriptWithTimestamps}
 }
 
 function combineTranscript(segments: TranscriptSegment[]): string {
-  return segments.map(s => s.text).join(' ');
+  return segments.map((s) => s.text).join(' ');
 }
 
 function formatTranscriptWithTimestamps(segments: TranscriptSegment[]): string {
-  return segments.map(s => {
-    const startTime = formatTime(s.start);
-    const endTime = formatTime(s.start + s.duration);
-    return `[${startTime}-${endTime}] ${s.text}`;
-  }).join('\n');
+  return segments
+    .map((s) => {
+      const startTime = formatTime(s.start);
+      const endTime = formatTime(s.start + s.duration);
+      return `[${startTime}-${endTime}] ${s.text}`;
+    })
+    .join('\n');
 }
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  return `${mins.toString().padStart(2, '0')}:${secs
+    .toString()
+    .padStart(2, '0')}`;
 }
 
 async function findExactQuotes(
   transcript: TranscriptSegment[],
   quotes: Array<{ timestamp: string; text: string }>,
   index: TranscriptIndex
-): Promise<{
-  start: number;
-  end: number;
-  text: string;
-  startSegmentIdx?: number;
-  endSegmentIdx?: number;
-  startCharOffset?: number;
-  endCharOffset?: number;
-  hasCompleteSentences?: boolean;
-  confidence?: number;
-}[]> {
+): Promise<
+  {
+    start: number;
+    end: number;
+    text: string;
+    startSegmentIdx?: number;
+    endSegmentIdx?: number;
+    startCharOffset?: number;
+    endCharOffset?: number;
+    hasCompleteSentences?: boolean;
+    confidence?: number;
+  }[]
+> {
   // Process quotes in parallel for better performance
   const quotePromises = quotes.map(async (quote) => {
     // Parse timestamp if provided
-    const timestampRange = quote.timestamp ? parseTimestampRange(quote.timestamp) : null;
+    const timestampRange = quote.timestamp
+      ? parseTimestampRange(quote.timestamp)
+      : null;
     if (!timestampRange) return null;
 
     const { start: timestampStart, end: timestampEnd } = timestampRange;
@@ -534,7 +678,7 @@ async function findExactQuotes(
     // Try to find text match using optimized strategies
     const match = findTextInTranscript(transcript, quoteText, index, {
       strategy: 'all',
-      minSimilarity: 0.80,
+      minSimilarity: 0.8,
       maxSegmentWindow: 20
     });
 
@@ -607,7 +751,7 @@ async function findExactQuotes(
       // Final fallback: Use timestamp range
       const firstSegment = segmentsInRange[0];
       const lastSegment = segmentsInRange[segmentsInRange.length - 1];
-      const joinedText = segmentsInRange.map(s => s.segment.text).join(' ');
+      const joinedText = segmentsInRange.map((s) => s.segment.text).join(' ');
 
       return {
         start: firstSegment.segment.start,
@@ -626,82 +770,107 @@ async function findExactQuotes(
   });
 
   const results = await Promise.all(quotePromises);
-  return results.filter(r => r !== null) as any[];
+  return results.filter((r) => r !== null) as any[];
 }
 
 /**
  * Generate highlight reel topics from a video transcript using AI
  * @param transcript The video transcript segments
- * @param model The AI model to use (default: gemini-2.5-flash)
+ * @param model The AI model to use (defaults to the configured provider model)
  * @returns Array of topics with segments and quotes
  */
 export async function generateTopicsFromTranscript(
   transcript: TranscriptSegment[],
-  _model: string = 'gemini-2.5-flash',
+  _model: string = DEFAULT_AI_MODEL,
   options: GenerateTopicsOptions = {}
-): Promise<{ topics: Topic[]; candidates?: TopicCandidate[]; modelUsed: string }> {
+): Promise<{
+  topics: Topic[];
+  candidates?: TopicCandidate[];
+  modelUsed: string;
+}> {
   const {
     videoInfo,
     chunkDurationSeconds = DEFAULT_CHUNK_DURATION_SECONDS,
     chunkOverlapSeconds = DEFAULT_CHUNK_OVERLAP_SECONDS,
-    fastModel = 'gemini-2.5-flash-lite',
+    fastModel = FAST_MODEL_DEFAULT,
     maxTopics = 5,
     theme,
     excludeTopicKeys,
     includeCandidatePool,
     mode = 'smart',
-    proModel = 'gemini-2.5-flash'
+    proModel = PRO_MODEL_DEFAULT,
+    language
   } = options;
 
+  const providerKey = getProviderKey();
+  const forceFullTranscript = providerKey === 'grok';
   const requestedTopics = Math.max(1, Math.min(maxTopics, 5));
   const isSmartMode = mode === 'smart';
   const fullText = combineTranscript(transcript);
   const transcriptWithTimestamps = formatTranscriptWithTimestamps(transcript);
-  const videoDurationSeconds = transcript.length > 0
-    ? transcript[transcript.length - 1].start + transcript[transcript.length - 1].duration
-    : 0;
+  const videoDurationSeconds =
+    transcript.length > 0
+      ? transcript[transcript.length - 1].start +
+        transcript[transcript.length - 1].duration
+      : 0;
   const isShortVideo = videoDurationSeconds <= 30 * 60;
-  const smartModeModel = isShortVideo ? 'gemini-2.5-flash' : proModel;
+  const smartModeModel = isShortVideo ? fastModel : proModel;
 
   let topicsArray: ParsedTopic[] = [];
   let candidateTopics: CandidateTopic[] = [];
   const excludedKeys = excludeTopicKeys ?? new Set<string>();
   let resolvedModel = isSmartMode ? smartModeModel : fastModel;
 
-  if (isSmartMode) {
+  if (isSmartMode || forceFullTranscript) {
+    const singlePassModel = isSmartMode ? smartModeModel : fastModel;
+    resolvedModel = singlePassModel;
+
     const smartTopics = await runSinglePassTopicGeneration(
       transcript,
       transcriptWithTimestamps,
       fullText,
-      smartModeModel,
-      theme
+      singlePassModel,
+      theme,
+      language
     );
 
-    topicsArray = smartTopics.filter(topic => {
+    topicsArray = smartTopics.filter((topic) => {
       if (!topic.quote?.timestamp || !topic.quote.text) return false;
-      const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
+      const key = `${topic.quote.timestamp}|${normalizeWhitespace(
+        topic.quote.text
+      )}`;
       return !excludedKeys.has(key);
     });
 
-    if (topicsArray.length === 0) {
+    if (topicsArray.length === 0 && isSmartMode && !forceFullTranscript) {
       // Fallback to fast pipeline if smart fails to produce topics
       resolvedModel = fastModel;
     }
   }
 
-  if (!isSmartMode && isShortVideo && transcript.length > 0) {
+  if (
+    !forceFullTranscript &&
+    !isSmartMode &&
+    isShortVideo &&
+    transcript.length > 0
+  ) {
     const fullTranscriptTopics = await runSinglePassTopicGeneration(
       transcript,
       transcriptWithTimestamps,
       fullText,
       fastModel,
-      theme
+      theme,
+      language
     );
-    const filteredFullTranscriptTopics = fullTranscriptTopics.filter(topic => {
-      if (!topic.quote?.timestamp || !topic.quote.text) return false;
-      const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
-      return !excludedKeys.has(key);
-    });
+    const filteredFullTranscriptTopics = fullTranscriptTopics.filter(
+      (topic) => {
+        if (!topic.quote?.timestamp || !topic.quote.text) return false;
+        const key = `${topic.quote.timestamp}|${normalizeWhitespace(
+          topic.quote.text
+        )}`;
+        return !excludedKeys.has(key);
+      }
+    );
     if (filteredFullTranscriptTopics.length > 0) {
       topicsArray = filteredFullTranscriptTopics;
     }
@@ -711,18 +880,31 @@ export async function generateTopicsFromTranscript(
   if (!isSmartMode && isShortVideo && topicsArray.length > 0) {
     shouldRunFastPipeline = false;
   }
+  if (forceFullTranscript) {
+    shouldRunFastPipeline = false;
+  }
 
-  if (shouldRunFastPipeline && transcript.length > 0) {
+  if (!forceFullTranscript && shouldRunFastPipeline && transcript.length > 0) {
     try {
-      const chunks = chunkTranscript(transcript, chunkDurationSeconds, chunkOverlapSeconds);
+      const chunks = chunkTranscript(
+        transcript,
+        chunkDurationSeconds,
+        chunkOverlapSeconds
+      );
       const chunkResults = await Promise.all(
         chunks.map(async (chunk) => {
-          const chunkPrompt = buildChunkPrompt(chunk, CHUNK_MAX_CANDIDATES, videoInfo, theme);
+          const chunkPrompt = buildChunkPrompt(
+            chunk,
+            CHUNK_MAX_CANDIDATES,
+            videoInfo,
+            theme,
+            language
+          );
 
           try {
-            const response = await generateWithFallback(chunkPrompt, {
+            const response = await generateAIResponse(chunkPrompt, {
               preferredModel: fastModel,
-              generationConfig: { temperature: 0.6 },
+              temperature: 0.6,
               zodSchema: topicGenerationSchema
             });
 
@@ -734,7 +916,10 @@ export async function generateTopicsFromTranscript(
             try {
               parsedChunk = JSON.parse(response);
             } catch (error) {
-              console.warn(`Failed to parse chunk response (${chunk.id}):`, error);
+              console.warn(
+                `Failed to parse chunk response (${chunk.id}):`,
+                error
+              );
               return [];
             }
 
@@ -742,9 +927,10 @@ export async function generateTopicsFromTranscript(
               return [];
             }
 
-            return parsedChunk.slice(0, CHUNK_MAX_CANDIDATES)
-              .filter(topic => topic?.quote?.timestamp && topic.quote.text)
-              .map(topic => ({
+            return parsedChunk
+              .slice(0, CHUNK_MAX_CANDIDATES)
+              .filter((topic) => topic?.quote?.timestamp && topic.quote.text)
+              .map((topic) => ({
                 title: topic.title,
                 quote: topic.quote,
                 sourceChunkId: chunk.id,
@@ -752,7 +938,10 @@ export async function generateTopicsFromTranscript(
                 chunkEnd: chunk.end
               })) as CandidateTopic[];
           } catch (error) {
-            console.error(`Chunk topic generation failed (${chunk.id}):`, error);
+            console.error(
+              `Chunk topic generation failed (${chunk.id}):`,
+              error
+            );
             return [] as CandidateTopic[];
           }
         })
@@ -767,9 +956,11 @@ export async function generateTopicsFromTranscript(
   if (candidateTopics.length > 0) {
     candidateTopics = dedupeCandidates(candidateTopics);
     if (excludedKeys.size > 0) {
-      candidateTopics = candidateTopics.filter(candidate => {
+      candidateTopics = candidateTopics.filter((candidate) => {
         if (!candidate.quote?.timestamp || !candidate.quote.text) return false;
-        const key = `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`;
+        const key = `${candidate.quote.timestamp}|${normalizeWhitespace(
+          candidate.quote.text
+        )}`;
         return !excludedKeys.has(key);
       });
     }
@@ -791,64 +982,51 @@ export async function generateTopicsFromTranscript(
       }
     }
 
-    if (firstSegmentCandidates.length === 0 && secondSegmentCandidates.length === 0) {
+    if (
+      firstSegmentCandidates.length === 0 &&
+      secondSegmentCandidates.length === 0
+    ) {
       firstSegmentCandidates = [...candidateTopics];
-      secondSegmentCandidates = [];
-    }
-
-    if (firstSegmentCandidates.length === 0 || secondSegmentCandidates.length === 0) {
-      const totalCandidates = candidateTopics.length;
-      if (totalCandidates > 1) {
-        const boundaryIndex = Math.max(
-          1,
-          Math.min(
-            totalCandidates - 1,
-            Math.floor((totalCandidates * 3) / 5)
-          )
-        );
-        firstSegmentCandidates = candidateTopics.slice(0, boundaryIndex);
-        secondSegmentCandidates = candidateTopics.slice(boundaryIndex);
-
-        if (firstSegmentCandidates.length === 0 && secondSegmentCandidates.length > 0) {
-          const pivot = Math.ceil(secondSegmentCandidates.length / 2);
-          firstSegmentCandidates = secondSegmentCandidates.slice(0, pivot);
-          secondSegmentCandidates = secondSegmentCandidates.slice(pivot);
-        } else if (secondSegmentCandidates.length === 0 && firstSegmentCandidates.length > 1) {
-          const pivot = Math.floor(firstSegmentCandidates.length / 2);
-          secondSegmentCandidates = firstSegmentCandidates.slice(pivot);
-          firstSegmentCandidates = firstSegmentCandidates.slice(0, pivot);
-        }
-      } else if (totalCandidates === 1) {
-        firstSegmentCandidates = [...candidateTopics];
-        secondSegmentCandidates = [];
-      }
+    } else if (
+      firstSegmentCandidates.length === 0 &&
+      secondSegmentCandidates.length > 0
+    ) {
+      const pivot = Math.ceil(secondSegmentCandidates.length / 2);
+      firstSegmentCandidates = secondSegmentCandidates.slice(0, pivot);
+      secondSegmentCandidates = secondSegmentCandidates.slice(pivot);
     }
 
     const firstTarget = Math.min(3, requestedTopics);
-    const secondTarget = Math.min(2, Math.max(0, requestedTopics - firstTarget));
+    const secondTarget = Math.min(
+      2,
+      Math.max(0, requestedTopics - firstTarget)
+    );
 
     const segmentConfigs = [
       {
         label: 'first 3/5 of the video',
         candidates: firstSegmentCandidates,
         maxTopics: firstTarget,
-        minTopics: firstTarget
+        minTopics: firstTarget > 0 ? 1 : 0
       },
       {
         label: 'final 2/5 of the video',
         candidates: secondSegmentCandidates,
         maxTopics: secondTarget,
-        minTopics: secondTarget
+        minTopics: 0
       }
-    ].filter(segment => segment.candidates.length > 0 && segment.maxTopics > 0);
+    ].filter(
+      (segment) => segment.candidates.length > 0 && segment.maxTopics > 0
+    );
 
-    const selectionPromises = segmentConfigs.map(segment =>
+    const selectionPromises = segmentConfigs.map((segment) =>
       reduceCandidateSubset(segment.candidates, {
-        minTopics: Math.max(1, segment.minTopics),
+        minTopics: segment.minTopics,
         maxTopics: segment.maxTopics,
         fastModel,
         videoInfo,
-        segmentLabel: segment.label
+        segmentLabel: segment.label,
+        language
       })
     );
 
@@ -860,49 +1038,15 @@ export async function generateTopicsFromTranscript(
         combinedSelections.push(...result.value);
       } else {
         console.error(
-          `Topic reduction failed for ${segmentConfigs[idx]?.label ?? 'segment'}:`,
+          `Topic reduction failed for ${
+            segmentConfigs[idx]?.label ?? 'segment'
+          }:`,
           result.reason
         );
       }
     });
 
-    topicsArray = combinedSelections;
-
-    if (topicsArray.length < requestedTopics) {
-      const usedKeys = new Set(
-        topicsArray
-          .map(topic => topic.quote)
-          .filter((quote): quote is { timestamp: string; text: string } => !!quote?.timestamp && !!quote.text)
-          .map(quote => `${quote.timestamp}|${normalizeWhitespace(quote.text)}`)
-      );
-      for (const key of excludedKeys) {
-        usedKeys.add(key);
-      }
-
-      for (const candidate of candidateTopics) {
-        if (!candidate.quote?.timestamp || !candidate.quote.text) continue;
-        const candidateKey = `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`;
-        if (usedKeys.has(candidateKey)) continue;
-
-        topicsArray.push({
-          title: candidate.title,
-          quote: candidate.quote
-        });
-        usedKeys.add(candidateKey);
-
-        if (topicsArray.length >= requestedTopics) {
-          break;
-        }
-      }
-    }
-
-    if (topicsArray.length === 0) {
-      topicsArray = candidateTopics.slice(0, Math.min(requestedTopics, candidateTopics.length))
-        .map(candidate => ({
-          title: candidate.title,
-          quote: candidate.quote
-        }));
-    }
+    topicsArray = combinedSelections.slice(0, requestedTopics);
   }
 
   if (topicsArray.length === 0) {
@@ -911,26 +1055,38 @@ export async function generateTopicsFromTranscript(
       transcriptWithTimestamps,
       fullText,
       isSmartMode ? smartModeModel : fastModel,
-      theme
+      theme,
+      language
     );
-    topicsArray = singlePassTopics.filter(topic => {
+    topicsArray = singlePassTopics.filter((topic) => {
       if (!topic.quote?.timestamp || !topic.quote.text) return false;
-      const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
+      const key = `${topic.quote.timestamp}|${normalizeWhitespace(
+        topic.quote.text
+      )}`;
       return !excludedKeys.has(key);
     });
   }
 
   if (topicsArray.length === 0) {
-    const fallbackTopics = buildFallbackTopics(transcript, requestedTopics, fullText, theme);
-    topicsArray = fallbackTopics.filter(topic => {
-      if (!topic.quote?.timestamp || !topic.quote.text) return false;
-      const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
-      return !excludedKeys.has(key);
-    }).slice(0, requestedTopics);
+    const fallbackTopics = buildFallbackTopics(
+      transcript,
+      requestedTopics,
+      fullText,
+      theme
+    );
+    topicsArray = fallbackTopics
+      .filter((topic) => {
+        if (!topic.quote?.timestamp || !topic.quote.text) return false;
+        const key = `${topic.quote.timestamp}|${normalizeWhitespace(
+          topic.quote.text
+        )}`;
+        return !excludedKeys.has(key);
+      })
+      .slice(0, requestedTopics);
   }
 
   topicsArray = topicsArray
-    .filter(topic => topic?.quote?.timestamp && topic.quote.text)
+    .filter((topic) => topic?.quote?.timestamp && topic.quote.text)
     .slice(0, requestedTopics);
 
   if (topicsArray.length === 0) {
@@ -946,15 +1102,23 @@ export async function generateTopicsFromTranscript(
   const topicsWithSegments = await Promise.all(
     topicsArray.map(async (topic: ParsedTopic, index: number) => {
       const quotesArray = topic.quote ? [topic.quote] : [];
-      const segments = await findExactQuotes(transcript, quotesArray, transcriptIndex);
+      const segments = await findExactQuotes(
+        transcript,
+        quotesArray,
+        transcriptIndex
+      );
       const normalizedSegments = segments
-        .filter(segment =>
-          Number.isFinite(segment.start) &&
-          Number.isFinite(segment.end) &&
-          segment.end >= segment.start
+        .filter(
+          (segment) =>
+            Number.isFinite(segment.start) &&
+            Number.isFinite(segment.end) &&
+            segment.end >= segment.start
         )
         .sort((a, b) => a.start - b.start);
-      const totalDuration = normalizedSegments.reduce((sum, seg) => sum + (seg.end - seg.start), 0);
+      const totalDuration = normalizedSegments.reduce(
+        (sum, seg) => sum + (seg.end - seg.start),
+        0
+      );
 
       return {
         id: `topic-${index}`,
@@ -966,14 +1130,16 @@ export async function generateTopicsFromTranscript(
     })
   );
 
-  const topics = topicsWithSegments.length > 0 ? topicsWithSegments :
-    topicsArray.map((topic: ParsedTopic, index: number) => ({
-      id: `topic-${index}`,
-      title: topic.title,
-      duration: 0,
-      segments: [],
-      quote: topic.quote || undefined
-    }));
+  const topics =
+    topicsWithSegments.length > 0
+      ? topicsWithSegments
+      : topicsArray.map((topic: ParsedTopic, index: number) => ({
+          id: `topic-${index}`,
+          title: topic.title,
+          duration: 0,
+          segments: [],
+          quote: topic.quote || undefined
+        }));
 
   topics.sort((a: any, b: any) => {
     const startA = getTopicStartTime(a);
@@ -1003,7 +1169,9 @@ export async function generateTopicsFromTranscript(
     const candidateMap = new Map<string, TopicCandidate>();
     for (const candidate of sourceCandidates) {
       if (!candidate.quote?.timestamp || !candidate.quote.text) continue;
-      const key = `${candidate.quote.timestamp}|${normalizeWhitespace(candidate.quote.text)}`;
+      const key = `${candidate.quote.timestamp}|${normalizeWhitespace(
+        candidate.quote.text
+      )}`;
       if (candidateMap.has(key) || excludedKeys.has(key)) continue;
       candidateMap.set(key, {
         key,
@@ -1017,7 +1185,9 @@ export async function generateTopicsFromTranscript(
 
     for (const topic of topics) {
       if (!topic.quote?.timestamp || !topic.quote.text) continue;
-      const key = `${topic.quote.timestamp}|${normalizeWhitespace(topic.quote.text)}`;
+      const key = `${topic.quote.timestamp}|${normalizeWhitespace(
+        topic.quote.text
+      )}`;
       if (candidateMap.has(key)) continue;
       candidateMap.set(key, {
         key,
@@ -1063,8 +1233,8 @@ function getTopicStartTime(topic: {
     return Infinity;
   }
 
-  const timeSegments = startPart.split(':').map(part => Number(part));
-  if (timeSegments.some(segment => Number.isNaN(segment))) {
+  const timeSegments = startPart.split(':').map((part) => Number(part));
+  if (timeSegments.some((segment) => Number.isNaN(segment))) {
     return Infinity;
   }
 
@@ -1102,42 +1272,44 @@ function sanitizeThemeList(themes: string[]): string[] {
 }
 
 const THEME_STOP_WORDS = new Set([
-  "a",
-  "an",
-  "the",
-  "and",
-  "or",
-  "but",
-  "for",
-  "nor",
-  "with",
-  "without",
-  "of",
-  "on",
-  "in",
-  "into",
-  "onto",
-  "to",
-  "from",
-  "by",
-  "about",
-  "over",
-  "under",
-  "across",
-  "between",
-  "vs",
-  "versus",
-  "per",
-  "via"
+  'a',
+  'an',
+  'the',
+  'and',
+  'or',
+  'but',
+  'for',
+  'nor',
+  'with',
+  'without',
+  'of',
+  'on',
+  'in',
+  'into',
+  'onto',
+  'to',
+  'from',
+  'by',
+  'about',
+  'over',
+  'under',
+  'across',
+  'between',
+  'vs',
+  'versus',
+  'per',
+  'via'
 ]);
 
 function extractThemeTokens(theme: string): string[] {
   return theme
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .map((token) => token.replace(/'s$/, ""))
-    .map((token) => (token.endsWith("s") && token.length > 3 ? token.slice(0, -1) : token))
+    .map((token) => token.replace(/'s$/, ''))
+    .map((token) =>
+      token.endsWith('s') && token.length > 3 ? token.slice(0, -1) : token
+    )
     .filter((token) => token.length > 0 && !THEME_STOP_WORDS.has(token));
 }
 
@@ -1187,7 +1359,7 @@ function promoteDistinctThemes(themes: string[], primaryCount = 3): string[] {
 
   const themedTokens: ThemeTokenInfo[] = themes.map((theme) => ({
     value: theme,
-    tokens: extractThemeTokens(theme),
+    tokens: extractThemeTokens(theme)
   }));
 
   const selected: ThemeTokenInfo[] = [];
@@ -1195,7 +1367,9 @@ function promoteDistinctThemes(themes: string[], primaryCount = 3): string[] {
 
   for (const item of themedTokens) {
     if (selected.length < primaryCount) {
-      const isSimilar = selected.some((sel) => areThemesSimilar(sel.tokens, item.tokens));
+      const isSimilar = selected.some((sel) =>
+        areThemesSimilar(sel.tokens, item.tokens)
+      );
       if (!isSimilar) {
         selected.push(item);
         continue;
@@ -1216,7 +1390,8 @@ function promoteDistinctThemes(themes: string[], primaryCount = 3): string[] {
 export async function generateThemesFromTranscript(
   transcript: TranscriptSegment[],
   videoInfo?: Partial<VideoInfo>,
-  model: string = 'gemini-2.5-flash-lite'
+  model: string = FAST_MODEL_DEFAULT,
+  language?: string
 ): Promise<string[]> {
   if (!transcript || transcript.length === 0) {
     return [];
@@ -1225,8 +1400,15 @@ export async function generateThemesFromTranscript(
   const transcriptWithTimestamps = formatTranscriptWithTimestamps(transcript);
   const videoInfoBlock = formatVideoInfoForPrompt(videoInfo);
 
+  const languageInstruction = language
+    ? (() => {
+        const langName = getLanguageName(language);
+        return `\n\n**IMPORTANT:** You MUST generate all keywords in ${langName} to match the transcript language.\n`;
+      })()
+    : '';
+
   const prompt = `## Persona
-You are an expert content analyst and a specialist in semantic keyword extraction. Your goal is to distill complex information into its most essential conceptual components for easy discovery.
+You are an expert content analyst and a specialist in semantic keyword extraction. Your goal is to distill complex information into its most essential conceptual components for easy discovery.${languageInstruction}
 
 ## Objective
 Analyze the provided video transcript to identify and extract its core concepts. Generate a list of 5-7 keywords or short key phrases that precisely capture the main topics discussed without overlapping. These keywords will be used to help potential viewers quickly understand the video's specific focus and determine its relevance to their interests.
@@ -1259,9 +1441,9 @@ Now, apply these rules to the following video transcript.
 ${videoInfoBlock ? `${videoInfoBlock}\n\n` : ''}${transcriptWithTimestamps}`;
 
   try {
-    const response = await generateWithFallback(prompt, {
+    const response = await generateAIResponse(prompt, {
       preferredModel: model,
-      generationConfig: { temperature: 0.3 }
+      temperature: 0.3
     });
 
     if (!response) {
@@ -1270,17 +1452,18 @@ ${videoInfoBlock ? `${videoInfoBlock}\n\n` : ''}${transcriptWithTimestamps}`;
 
     const lines = response
       .split('\n')
-      .map(line => line.trim())
-      .filter(line => !!line);
+      .map((line) => line.trim())
+      .filter((line) => !!line);
 
-    const bulletLines = lines.length > 0 && lines.some(line => /^[-*•]/.test(line))
-      ? lines.filter(line => /^[-*•]/.test(line))
-      : lines;
+    const bulletLines =
+      lines.length > 0 && lines.some((line) => /^[-*•]/.test(line))
+        ? lines.filter((line) => /^[-*•]/.test(line))
+        : lines;
 
     const themes = bulletLines
-      .map(line => line.replace(/^[-*•]\s*/, '').trim())
+      .map((line) => line.replace(/^[-*•]\s*/, '').trim())
       .filter(Boolean)
-      .filter(line => {
+      .filter((line) => {
         const wordCount = line.split(/\s+/).length;
         return wordCount >= 1 && wordCount <= 3;
       });

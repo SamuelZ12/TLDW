@@ -23,6 +23,7 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [pendingVideoId, setPendingVideoId] = useState<string | null>(null);
+  const [isFeelingLucky, setIsFeelingLucky] = useState(false);
   const authPromptHandled = useRef(false);
   const { mode, setMode } = useModePreference();
 
@@ -60,7 +61,7 @@ function HomeContent() {
 
     authPromptHandled.current = true;
 
-    let message = "You've used today's free analysis. Sign in to keep going.";
+    let message = "You've used your free preview. Sign in to keep going.";
     try {
       const storedMessage = sessionStorage.getItem("limitRedirectMessage");
       if (storedMessage) {
@@ -83,6 +84,36 @@ function HomeContent() {
     params.delete("auth");
     const queryString = params.toString();
     router.replace(queryString ? `/?${queryString}` : "/", { scroll: false });
+  }, [searchParams, router]);
+
+  useEffect(() => {
+    if (!searchParams) return;
+
+    const authError = searchParams.get('auth_error');
+    const authStatus = searchParams.get('auth_status');
+
+    if (authStatus === 'link_expired') {
+      toast.info('Your verification link has expired or was already used. Please try signing in.', {
+        duration: 5000,
+      });
+      setAuthModalOpen(true);
+
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('auth_status');
+      const queryString = params.toString();
+      router.replace(queryString ? `/?${queryString}` : '/', { scroll: false });
+      return;
+    }
+
+    if (!authError) return;
+
+    toast.error(`Authentication failed: ${decodeURIComponent(authError)}`);
+
+    // Clean up the URL
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('auth_error');
+    const queryString = params.toString();
+    router.replace(queryString ? `/?${queryString}` : '/', { scroll: false });
   }, [searchParams, router]);
 
   useEffect(() => {
@@ -116,28 +147,83 @@ function HomeContent() {
     [router]
   );
 
+  const handleFeelingLucky = useCallback(async () => {
+    if (isFeelingLucky) {
+      return;
+    }
+
+    setIsFeelingLucky(true);
+    try {
+      const response = await fetch("/api/random-video");
+      let data: { youtubeId?: string; url?: string | null; error?: string } | null = null;
+
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok || !data) {
+        const message =
+          typeof data?.error === "string" && data.error.trim().length > 0
+            ? data.error
+            : "Failed to load a sample video. Please try again.";
+        throw new Error(message);
+      }
+
+      if (!data.youtubeId) {
+        throw new Error("No sample video is available right now. Please try again.");
+      }
+
+      const params = new URLSearchParams();
+      params.set("cached", "true");
+      params.set("source", "lucky");
+
+      if (data.url) {
+        params.set("url", data.url);
+      }
+
+      router.push(`/analyze/${data.youtubeId}?${params.toString()}`);
+    } catch (error) {
+      console.error("Failed to load random analyzed video:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to load a sample video. Please try again."
+      );
+    } finally {
+      setIsFeelingLucky(false);
+    }
+  }, [isFeelingLucky, router]);
+
   return (
     <>
       <div className="flex min-h-screen items-center justify-center bg-white">
         <div className="mx-auto flex w-full max-w-[660px] -translate-y-[5vh] transform flex-col items-center gap-9 px-6 py-16 text-center sm:py-24">
           <header className="flex flex-col items-center gap-4">
             <div className="flex items-center gap-3">
-              <h1 className="text-[21px] font-bold tracking-tight text-[#787878]">TLDW</h1>
+              <h1 className="text-[21px] font-bold tracking-tight text-[#787878]">LongCut</h1>
             </div>
             <p className="text-[14px] leading-[15px] text-[#787878]">
-              Too Long; Didn&apos;t Watch - Learn from long videos 10x faster
+              The best way to learn from long videos.
             </p>
           </header>
           <div className="flex w-full flex-col items-center gap-9">
-            <UrlInput onSubmit={handleSubmit} mode={mode} onModeChange={setMode} />
+            <UrlInput
+              onSubmit={handleSubmit}
+              mode={mode}
+              onModeChange={setMode}
+              onFeelingLucky={handleFeelingLucky}
+              isFeelingLucky={isFeelingLucky}
+            />
 
             <Card className="relative flex w-[425px] max-w-full flex-col gap-2.5 overflow-hidden rounded-[22px] border border-[#f0f1f1] bg-white p-6 text-left shadow-[2px_11px_40.4px_rgba(0,0,0,0.06)]">
               <div className="relative z-10 flex flex-col gap-2.5">
                 <h3 className="text-[14px] font-medium leading-[15px] text-[#5c5c5c]">
-                  Jump to top insights immediately
+                  Don&apos;t take the shortcut.
                 </h3>
-                <p className="max-w-[60%] text-[14px] leading-[1.5] text-[#8d8d8d]">
-                  Paste a link, and we&apos;ll generate highlight reels for you. Consume a 1-hour video in 5 minutes.
+                <p className="max-w-[70%] text-[14px] leading-[1.5] text-[#8d8d8d]">
+                  LongCut doesn&apos;t summarize. We show you where to look instead. Find the highlights. Take notes. Ask questions.
                 </p>
               </div>
               <div className="pointer-events-none absolute right-[10px] top-[-00px] h-[110px] w-[110px]">

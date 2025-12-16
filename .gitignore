@@ -24,6 +24,16 @@
 .DS_Store
 *.pem
 .mcp.json
+.claude/
+
+# supabase
+supabase/.temp/
+
+# documentation (local only)
+docs/
+
+# test resources (transcripts for testing)
+resources/transcripts/
 
 # debug
 npm-debug.log*
@@ -40,3 +50,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+CLAUDE.md

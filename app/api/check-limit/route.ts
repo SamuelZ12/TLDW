@@ -1,16 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { RateLimiter, RATE_LIMITS } from '@/lib/rate-limiter';
 import { withSecurity, SECURITY_PRESETS } from '@/lib/security-middleware';
 import { hasUnlimitedVideoAllowance } from '@/lib/access-control';
+import {
+  canGenerateVideo,
+  TIER_LIMITS,
+} from '@/lib/subscription-manager';
+import { getGuestAccessState, setGuestCookies } from '@/lib/guest-usage';
 
-async function handler(request: NextRequest) {
+/**
+ * GET /api/check-limit
+ *
+ * Checks if a user can generate a video based on their subscription tier and usage
+ *
+ * Response:
+ * {
+ *   canGenerate: boolean,
+ *   isAuthenticated: boolean,
+ *   tier?: 'free' | 'pro',
+ *   remaining: number | null,
+ *   limit: number | null,
+ *   topupCredits?: number,
+ *   resetAt: string | null,
+ *   unlimited?: boolean,
+ *   requiresAuth?: boolean
+ * }
+ */
+async function handler(_request: NextRequest) {
   try {
     const supabase = await createClient();
 
     // Check if user is authenticated
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
+    // Handle anonymous guests with a one-time allowance
+    if (!user) {
+      const guestState = await getGuestAccessState({ supabase });
+      const canGenerate = !guestState.used;
+
+      const response = NextResponse.json({
+        canGenerate,
+        isAuthenticated: false,
+        tier: 'anonymous',
+        status: null,
+        reason: canGenerate ? null : 'AUTH_REQUIRED',
+        warning: null,
+        unlimited: false,
+        requiresAuth: !canGenerate,
+        resetAt: null,
+        requiresTopup: false,
+        willConsumeTopup: false,
+        usage: {
+          counted: null,
+          cached: null,
+          baseLimit: 1,
+          baseRemaining: canGenerate ? 1 : 0,
+          topupRemaining: 0,
+          totalRemaining: canGenerate ? 1 : 0,
+        },
+      });
+
+      // Persist a stable guest token for this browser
+      setGuestCookies(response, guestState);
+
+      return response;
+    }
+
+    // Check for unlimited access (whitelist)
     const unlimitedAccess = hasUnlimitedVideoAllowance(user);
 
     if (unlimitedAccess) {
@@ -18,29 +76,81 @@ async function handler(request: NextRequest) {
         canGenerate: true,
         isAuthenticated: true,
         unlimited: true,
-        remaining: null,
-        limit: null,
+        tier: 'pro',
+        status: 'active',
+        reason: null,
+        warning: null,
+        usage: {
+          counted: null,
+          cached: null,
+          baseLimit: null,
+          baseRemaining: null,
+          topupRemaining: null,
+          totalRemaining: null,
+        },
         resetAt: null,
-        windowMs: null
+        requiresTopup: false,
+        willConsumeTopup: false,
       });
     }
 
-    // Use appropriate rate limit config based on auth status
-    const rateLimitConfig = user ? RATE_LIMITS.AUTH_VIDEO_GENERATION : RATE_LIMITS.ANON_GENERATION;
+    // Handle authenticated users with subscription system
+    if (user) {
+      const decision = await canGenerateVideo(user.id, undefined, {
+        client: supabase,
+        skipCacheCheck: true,
+      });
 
-    // Use the peek method to check rate limit without consuming it
-    const rateLimitResult = await RateLimiter.peek('video-analysis', rateLimitConfig);
+      const stats = decision.stats;
+      const tier = decision.subscription?.tier ?? 'free';
+      const resetAt =
+        stats?.resetAt ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const fallbackBaseLimit = tier === 'pro' ? TIER_LIMITS.pro : TIER_LIMITS.free;
 
+      return NextResponse.json({
+        canGenerate: decision.allowed,
+        isAuthenticated: true,
+        unlimited: false,
+        tier,
+        status: decision.subscription?.status ?? null,
+        reason: decision.allowed ? null : decision.reason,
+        warning: decision.warning ?? null,
+        resetAt,
+        requiresTopup: decision.requiresTopupPurchase ?? false,
+        willConsumeTopup: decision.willConsumeTopup ?? false,
+        usage: {
+          counted: stats?.counted ?? 0,
+          cached: stats?.cached ?? 0,
+          baseLimit: stats?.baseLimit ?? fallbackBaseLimit,
+          baseRemaining: stats?.baseRemaining ?? 0,
+          topupRemaining: stats?.topupRemaining ?? 0,
+          totalRemaining: stats?.totalRemaining ?? 0,
+        },
+      });
+    }
+
+    // Anonymous users cannot generate analyses — force authentication
     return NextResponse.json({
-      canGenerate: rateLimitResult.allowed,
-      isAuthenticated: !!user,
+      canGenerate: false,
+      isAuthenticated: false,
+      tier: 'anonymous',
+      status: null,
+      reason: 'AUTH_REQUIRED',
+      warning: null,
       unlimited: false,
-      remaining: rateLimitResult.remaining,
-      limit: rateLimitConfig.maxRequests,
-      resetAt: rateLimitResult.resetAt.toISOString(),
-      windowMs: rateLimitConfig.windowMs
+      requiresAuth: true,
+      resetAt: null,
+      requiresTopup: false,
+      willConsumeTopup: false,
+      usage: {
+        counted: null,
+        cached: null,
+        baseLimit: 0,
+        baseRemaining: 0,
+        topupRemaining: 0,
+        totalRemaining: 0,
+      },
     });
-
   } catch (error) {
     // Log error details server-side only
     console.error('Error checking generation limit:', error);
