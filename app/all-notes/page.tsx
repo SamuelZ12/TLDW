@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, type ReactNode } from 'react';
+import { useEffect, useState, useMemo, type ReactNode, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { NoteWithVideo, NoteSource } from '@/lib/types';
 import { fetchAllNotes, deleteNote } from '@/lib/notes-client';
@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { Search, Trash2, Video, NotebookPen, Loader2, ArrowUpDown } from 'lucide-react';
+import { Search, Trash2, Video, NotebookPen, Loader2, ArrowUpDown, Check, Copy } from 'lucide-react';
 import { buildVideoSlug, formatDuration } from '@/lib/utils';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -133,6 +133,17 @@ export default function AllNotesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSource, setFilterSource] = useState<NoteSource | 'all'>('all');
   const [sortBy, setSortBy] = useState<SortOption>('recent');
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async (content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy:', error);
+    }
+  }, []);
 
   useEffect(() => {
     loadNotes();
@@ -374,7 +385,7 @@ export default function AllNotesPage() {
                 return (
                 <Card
                   key={videoId}
-                  className="overflow-hidden border-border/60 shadow-none hover:shadow-lg transition-shadow duration-200"
+                  className="overflow-hidden gap-0 border-border/60 shadow-none hover:shadow-lg transition-shadow duration-200"
                 >
                   {/* Video Header Section */}
                   <Link href={href} className="block group">
@@ -414,7 +425,7 @@ export default function AllNotesPage() {
                   </Link>
 
                   {/* Divider */}
-                  <div className="border-t border-border/50" />
+                  <div className="mt-5 border-t border-border/50" />
 
                   {/* Notes List */}
                   <div className="divide-y divide-border/40">
@@ -441,10 +452,10 @@ export default function AllNotesPage() {
                       return (
                         <div
                           key={note.id}
-                          className="group p-4 first:pt-0 last:pb-0 hover:bg-accent/20 transition-colors"
+                          className="group relative p-4 last:pb-0 hover:bg-accent/20 transition-colors"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 space-y-2.5">
+                          <div className="flex items-start gap-3">
+                            <div className="flex-1 min-w-0 space-y-2.5">
                               {/* Source Badge and Timestamp */}
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider ${getSourceColor(note.source)}`}>
@@ -491,26 +502,51 @@ export default function AllNotesPage() {
                               </div>
                             </div>
 
-                            {/* Delete Button */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    handleDeleteNote(note.id);
-                                  }}
-                                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all"
-                                  aria-label="Delete note"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="left">
-                                <span className="text-xs">Delete note</span>
-                              </TooltipContent>
-                            </Tooltip>
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="absolute top-3 right-3 flex items-center gap-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                              {/* Copy Button */}
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleCopy(note.text)}
+                                    className="h-8 w-8 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all"
+                                  >
+                                    {copied ? (
+                                      <Check className="h-4 w-4" />
+                                    ) : (
+                                      <Copy className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">{copied ? 'Copied!' : 'Copy'}</p>
+                                </TooltipContent>
+                              </Tooltip>
+
+                              {/* Delete Button */}
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      handleDeleteNote(note.id);
+                                    }}
+                                    className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all"
+                                    aria-label="Delete note"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <span className="text-xs">Delete note</span>
+                                </TooltipContent>
+                              </Tooltip>
                           </div>
                         </div>
                       );
